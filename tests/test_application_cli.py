@@ -113,6 +113,14 @@ def test_rollout_reports_requested_and_post_guard_action_diagnostics(
     assert diagnostics["adjusted_fraction"] == pytest.approx(2 / 3)
     assert diagnostics["requested_short_fraction"] == pytest.approx(1 / 3)
     assert diagnostics["requested_long_fraction"] == pytest.approx(2 / 3)
+    assert diagnostics["requested_target_change_abs_mean"] == pytest.approx(0.85)
+    assert diagnostics["requested_direction_comparison_pair_count"] == 2
+    assert diagnostics["requested_direction_flip_count"] == 2
+    assert diagnostics["requested_direction_flip_fraction"] == pytest.approx(1.0)
+    assert diagnostics["executed_exposure_change_abs_mean"] == pytest.approx(0.4)
+    assert diagnostics["executed_direction_comparison_pair_count"] == 1
+    assert diagnostics["executed_direction_flip_count"] == 1
+    assert diagnostics["executed_direction_flip_fraction"] == pytest.approx(1.0)
     attribution = report["execution_attribution"]
     assert attribution["components_known"] is plan_metadata
     assert attribution["missing_plan_count"] == (0 if plan_metadata else 3)

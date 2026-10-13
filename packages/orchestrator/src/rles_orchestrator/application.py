@@ -163,6 +163,19 @@ def audit_market(config: dict) -> dict:
             "snapshot_hash": store.snapshot_hash, "splits": splits}
 
 
+def _action_dynamics(values: np.ndarray) -> dict[str, float | int]:
+    delta = np.diff(values)
+    previous, current = values[:-1], values[1:]
+    comparable = (np.abs(previous) > 1e-6) & (np.abs(current) > 1e-6)
+    flips = previous[comparable] * current[comparable] < 0
+    return {
+        "change_abs_mean": float(np.mean(np.abs(delta))) if delta.size else 0.0,
+        "direction_comparison_pair_count": int(np.count_nonzero(comparable)),
+        "direction_flip_count": int(np.count_nonzero(flips)),
+        "direction_flip_fraction": float(np.mean(flips)) if flips.size else 0.0,
+    }
+
+
 def rollout(factory: HistoricalEnvironmentFactory, predict, *, seed: int,
             soft_parameters: dict | None = None,
             collect_observations: bool = True) -> tuple[dict, np.ndarray]:
@@ -247,6 +260,8 @@ def rollout(factory: HistoricalEnvironmentFactory, predict, *, seed: int,
         requested = np.asarray(requested_actions, dtype=np.float64)
         executed = np.asarray(executed_actions, dtype=np.float64)
         action_gap = np.abs(requested - executed)
+        requested_dynamics = _action_dynamics(requested)
+        executed_dynamics = _action_dynamics(executed)
         report["action_diagnostics"] = {
             "count": int(requested.size),
             "requested_mean": float(np.mean(requested)),
@@ -263,6 +278,14 @@ def rollout(factory: HistoricalEnvironmentFactory, predict, *, seed: int,
             "requested_executed_gap_abs_mean": float(np.mean(action_gap)),
             "requested_executed_gap_abs_p95": float(np.quantile(action_gap, 0.95)),
             "adjusted_fraction": float(np.mean(action_gap > 1e-6)),
+            "requested_target_change_abs_mean": requested_dynamics["change_abs_mean"],
+            "requested_direction_comparison_pair_count": requested_dynamics["direction_comparison_pair_count"],
+            "requested_direction_flip_count": requested_dynamics["direction_flip_count"],
+            "requested_direction_flip_fraction": requested_dynamics["direction_flip_fraction"],
+            "executed_exposure_change_abs_mean": executed_dynamics["change_abs_mean"],
+            "executed_direction_comparison_pair_count": executed_dynamics["direction_comparison_pair_count"],
+            "executed_direction_flip_count": executed_dynamics["direction_flip_count"],
+            "executed_direction_flip_fraction": executed_dynamics["direction_flip_fraction"],
         }
         if soft_targets and len(soft_targets) == len(requested) and len(risk_targets) == len(requested):
             soft = np.asarray(soft_targets, dtype=np.float64)
