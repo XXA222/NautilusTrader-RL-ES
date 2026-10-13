@@ -414,6 +414,34 @@ def _training_actor_spec(training: HistoricalEnvironmentFactory, hidden: tuple[i
     return ActorGenomeSpec(training.schema.names, hidden, version=2, input_scale=scales)
 
 
+def _training_coverage_report(*, rl_steps: int, num_envs: int,
+                              episode_decision_steps: int) -> dict[str, Any]:
+    """Bound how much of the fixed historical episode the RL budget can visit."""
+    if (type(rl_steps) is not int or rl_steps < 0 or type(num_envs) is not int or num_envs < 1
+            or type(episode_decision_steps) is not int or episode_decision_steps < 1):
+        raise DataError("invalid RL interaction coverage facts")
+    quotient, remainder = divmod(rl_steps, num_envs)
+    per_env = [quotient + int(rank < remainder) for rank in range(num_envs)]
+    unique_steps = [min(count, episode_decision_steps) for count in per_env]
+    return {
+        "rl_interaction_steps": rl_steps,
+        "environment_count": num_envs,
+        "nominal_episode_decision_steps": episode_decision_steps,
+        "interaction_steps_per_environment": per_env,
+        "upper_bound_unique_decision_steps_per_environment": unique_steps,
+        "upper_bound_time_coverage_fraction_per_environment": [
+            count / episode_decision_steps for count in unique_steps
+        ],
+        "nominal_full_episode_passes_per_environment": [
+            count // episode_decision_steps for count in per_env
+        ],
+        "nominal_partial_episode_steps_per_environment": [
+            count % episode_decision_steps for count in per_env
+        ],
+        "interpretation": "upper bound for the deterministic full-window replay; early termination can reduce coverage",
+    }
+
+
 def _worker_memory_policy(config: dict) -> tuple[bool, int, dict]:
     """Validate resource policy before allocating data, queries, or workers."""
     enforce_worker_memory_limit = config.get("enforce_worker_memory_limit", os.name == "nt")
@@ -716,9 +744,15 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
             actor_metadata = {"kind": "es", "spec": asdict(actor_spec), "genome_hash": genome_hash(actor_spec, genome)}
         else:
             actor_metadata = {"kind": "rl", "path": "r1", "actor_hash": (output / "r1" / "COMPLETED").read_text(encoding="ascii")}
+        actual_rl_steps = sum(a.usage.rl_steps for a in lineage if a.stage == "R1")
+        training_coverage = _training_coverage_report(
+            rl_steps=actual_rl_steps, num_envs=rl_config.num_envs,
+            episode_decision_steps=len(training.rows) - 3,
+        )
         bundle = {"schema": "rles.historical-bundle.v1", "actor": actor_metadata, "soft_multipliers": risk_parameters,
                   "rl_device": rl_device,
                   "runtime_resources": {"es_worker_policy": worker_resources, "coordinator_learner_enforcement": "quota_only"},
+                  "training_coverage": training_coverage,
                   "environment": config["environment"], "training_end_ns": training.end_ns,
                   "preprocessing": training.metadata(),
                   "lineage": [{"stage": a.stage, "usage": asdict(a.usage), "actor_hash": a.actor_hash,
@@ -732,7 +766,7 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
             "bundle_sha256": bundle_hash, "report_sha256": report_hash,
         })
         result = {"output": str(output), "route": route.value, "algorithm": algorithm,
-                  "rl_device": rl_device}
+                  "rl_device": rl_device, "training_coverage": training_coverage}
         if report is not None:
             result.update({"metrics": report["metrics"], "terminal_flat": report["terminal_flat"]})
         return result

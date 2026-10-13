@@ -65,7 +65,8 @@ class SyntheticSession:
             output.update({
                 "initial_equity": initial_equity, "final_equity": final_equity,
                 "step_log_returns": [score / 10_000], "drawdowns": [0.0],
-                "constraint_violations": 0.0,
+                "risk_intervention_count": 0, "risk_intervention_steps": 1,
+                "risk_intervention_rate": 0.0,
             })
         return output
 
@@ -544,7 +545,8 @@ def test_worker_dispatcher_transmits_and_reconciles_account_context() -> None:
             return {key["candidate_id"]: {
                 "initial_equity": 100.0, "final_equity": 101.0,
                 "step_log_returns": [0.01], "drawdowns": [0.0],
-                "constraint_violations": 0.0, "evidence_hash": "a" * 64,
+                "risk_intervention_count": 0, "risk_intervention_steps": 1,
+                "risk_intervention_rate": 0.0, "evidence_hash": "a" * 64,
                 "request_hash": context["request_hash"],
                 "account_isolation_id": ("other-account" if self.wrong_account
                                           else context["account_isolation_id"]),

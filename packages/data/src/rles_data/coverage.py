@@ -23,6 +23,7 @@ class CoveragePolicy:
     provenance: str
     settlement_max_delay_ns: int = 0
     settlement_timestamp_tolerance_ns: int = 0
+    known_schedule_times_ns: Mapping[str, tuple[int, ...]] | None = None
 
     def __post_init__(self) -> None:
         if type(self.provenance) is not str or not self.provenance.strip():
@@ -49,8 +50,27 @@ class CoveragePolicy:
             for left, right in zip(times, times[1:])
         ):
             raise DataError("settlement timestamp tolerance overlaps scheduled settlements")
+        known = None
+        if self.known_schedule_times_ns is not None:
+            if (not isinstance(self.known_schedule_times_ns, Mapping)
+                    or set(self.known_schedule_times_ns) != set(schedule)):
+                raise DataError("known funding calendar must name every audited instrument")
+            known = {}
+            for symbol, times in self.known_schedule_times_ns.items():
+                if not isinstance(times, (list, tuple)):
+                    raise DataError("known funding calendar timestamps must be sequences")
+                frozen = tuple(require_ns(t) for t in times)
+                if frozen != tuple(sorted(set(frozen))):
+                    raise DataError("known funding calendar must be ordered and unique")
+                expected = schedule[symbol]
+                if any(not any(abs(actual - expected_ts) <= self.settlement_timestamp_tolerance_ns
+                               for actual in frozen) for expected_ts in expected):
+                    raise DataError("known funding calendar omits audited settlement timestamps")
+                known[symbol] = frozen
         object.__setattr__(self, "maximum_age_ns", FrozenDict(self.maximum_age_ns))
         object.__setattr__(self, "settlement_times_ns", FrozenDict(schedule))
+        if known is not None:
+            object.__setattr__(self, "known_schedule_times_ns", FrozenDict(known))
 
 
 def assess_coverage(store: CuratedStore, policy: CoveragePolicy, *,

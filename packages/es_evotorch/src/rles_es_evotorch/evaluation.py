@@ -494,7 +494,7 @@ class WorkerLaneDispatcher:
 
     @property
     def signature(self) -> str:
-        return _sha_json(("worker-lane-dispatch-v3", self._lane_runtime_signature,
+        return _sha_json(("worker-lane-dispatch-v4", self._lane_runtime_signature,
                           self.payload_builder_id,
                           tuple(vars(self.fitness_spec).items()), self.tail_fraction))
 
@@ -539,7 +539,8 @@ class WorkerLaneDispatcher:
         for lane_id, request in lane_to_request.items():
             value = output[lane_id]
             required = {"initial_equity", "final_equity", "step_log_returns", "drawdowns",
-                        "constraint_violations", "evidence_hash", "request_hash",
+                        "risk_intervention_count", "risk_intervention_steps",
+                        "risk_intervention_rate", "evidence_hash", "request_hash",
                         "account_isolation_id"}
             if not isinstance(value, Mapping) or not required.issubset(value):
                 raise ValueError("L6 output needs native episode facts, evidence, and echoed request/account identity")
@@ -549,11 +550,25 @@ class WorkerLaneDispatcher:
             raw_returns, raw_drawdowns = value["step_log_returns"], value["drawdowns"]
             if not isinstance(raw_returns, list) or not isinstance(raw_drawdowns, list):
                 raise ValueError("L6 episode facts must use JSON arrays")
+            intervention_count, intervention_steps = (
+                value["risk_intervention_count"], value["risk_intervention_steps"],
+            )
+            intervention_rate = value["risk_intervention_rate"]
+            if (type(intervention_count) is not int or intervention_count < 0
+                    or type(intervention_steps) is not int or intervention_steps < 1
+                    or intervention_steps != len(raw_returns)
+                    or intervention_count > intervention_steps
+                    or isinstance(intervention_rate, bool)
+                    or not isinstance(intervention_rate, (int, float))
+                    or not math.isfinite(intervention_rate)
+                    or not math.isclose(intervention_rate, intervention_count / intervention_steps,
+                                        rel_tol=0.0, abs_tol=1e-12)):
+                raise ValueError("L6 risk intervention count, denominator and rate disagree")
             fitness = self.fitness_spec.score_episode(
                 split=request.split,
                 initial_equity=value["initial_equity"], final_equity=value["final_equity"],
                 step_log_returns=raw_returns, drawdowns=raw_drawdowns,
-                constraint_violations=value["constraint_violations"],
+                risk_intervention_rate=intervention_rate,
                 tail_fraction=self.tail_fraction,
             )
             results.append(CandidateResult(

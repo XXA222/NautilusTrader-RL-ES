@@ -198,7 +198,7 @@ class NativeESCandidateSession:
             returns: list[float] = []
             drawdowns: list[float] = []
             native_step_evidence: list[str] = []
-            violations = 0.0
+            risk_interventions = 0
             terminal_info: Mapping[str, object] | None = None
             for _ in range(self.episode_steps):
                 if self.l4_actor is not None:
@@ -221,7 +221,7 @@ class NativeESCandidateSession:
                 hard_adjustment = float(info["risk_hard_adjustment"])
                 if not math.isfinite(hard_adjustment) or hard_adjustment < 0:
                     raise ValueError("native hard-risk adjustment is invalid")
-                violations += int(hard_adjustment > 0)
+                risk_interventions += int(hard_adjustment > 0)
                 if terminated or truncated:
                     if info.get("terminal_settled") is not True:
                         raise ValueError("native candidate terminal settlement is unproven")
@@ -231,17 +231,23 @@ class NativeESCandidateSession:
                 raise ValueError("native candidate did not reach a settled terminal boundary")
             final_equity = float(cast(Any, terminal_info["native_equity"]))
             if (not math.isfinite(final_equity) or final_equity < 0
-                    or any(not math.isfinite(value) for value in (*returns, *drawdowns))
-                    or not math.isfinite(violations)):
+                    or any(not math.isfinite(value) for value in (*returns, *drawdowns))):
                 raise ValueError("nonfinite native episode fitness facts")
+            if not returns:
+                raise ValueError("native candidate episode contains no scored decisions")
+            risk_intervention_rate = risk_interventions / len(returns)
             evidence_hash = _digest((
                 request.request_hash, request.account_isolation_id, initial_equity,
-                final_equity, returns, drawdowns, violations, native_step_evidence,
+                final_equity, returns, drawdowns, risk_interventions, len(returns),
+                risk_intervention_rate, native_step_evidence,
             ))
             return {
                 "initial_equity": initial_equity, "final_equity": final_equity,
                 "step_log_returns": returns, "drawdowns": drawdowns,
-                "constraint_violations": violations, "evidence_hash": evidence_hash,
+                "risk_intervention_count": risk_interventions,
+                "risk_intervention_steps": len(returns),
+                "risk_intervention_rate": risk_intervention_rate,
+                "evidence_hash": evidence_hash,
                 "request_hash": request.request_hash,
                 "account_isolation_id": request.account_isolation_id,
             }

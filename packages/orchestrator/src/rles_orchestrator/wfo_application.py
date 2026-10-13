@@ -59,10 +59,15 @@ def _coverage(template: dict, instrument: str, start_ns: int, end_ns: int) -> di
         raise DataError("invalid source-declared funding schedule")
     interval = interval_minutes * 60_000_000_000
     first = anchor + max(0, (start_ns - anchor + interval - 1) // interval) * interval
-    settlements = tuple(range(first, end_ns, interval))
+    # Settlement verification remains limited to this scoring window. The
+    # separate source-declared calendar includes 24h of known future schedule
+    # so an identical decision time gets the same causal countdown at fold edges.
+    calendar = tuple(range(first, end_ns + 24 * 60 * 60 * 1_000_000_000, interval))
+    settlements = tuple(timestamp for timestamp in calendar if timestamp < end_ns)
     return {
         "maximum_age_ns": template["maximum_age_ns"],
         "settlement_times_ns": {instrument: settlements},
+        "known_schedule_times_ns": {instrument: calendar},
         "settlement_max_delay_ns": template["settlement_max_delay_ns"],
         "settlement_timestamp_tolerance_ns": template.get("settlement_timestamp_tolerance_ns", 0),
         "provenance": template["provenance"],

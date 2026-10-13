@@ -207,6 +207,9 @@ class HistoricalEnvironmentFactory:
         time_names = (("time.funding_settlement_within_24h",
                        "time.funding_settlement_time_to_event_24h")
                       if self.feature_profile == "causal_mtf_v3" else ())
+        if (self.feature_profile == "causal_mtf_v3"
+                and self.coverage.known_schedule_times_ns is None):
+            raise DataError("causal_mtf_v3 requires a source-declared future funding calendar")
         self.schema = ObservationSchema("0.4.0", names + time_names + ("risk.guard_intervention", "risk.headroom")
                                         + tuple("execution." + n for n in execution_names),
                                         units + ("ratio",) * len(time_names)
@@ -259,7 +262,14 @@ class HistoricalEnvironmentFactory:
             "scaler": self.scaler.hash, "window": [start_ns, end_ns],
         }
         if self.feature_profile == "causal_mtf_v3":
+            known_schedule = self.coverage.known_schedule_times_ns
+            if known_schedule is None:
+                raise DataError("causal_mtf_v3 requires a source-declared future funding calendar")
             transition_identity["feature_profile"] = self.feature_profile
+            transition_identity["known_schedule"] = digest({
+                symbol: tuple(times)
+                for symbol, times in known_schedule.items()
+            })
         self.transition_hash = digest(transition_identity)
         self.snapshots: list[Any] = []
         self.fill_references: dict[str, Decimal] = {}
@@ -428,7 +438,7 @@ class HistoricalEnvironmentFactory:
                                                                   decision_ts_ns=row.decision_ts_ns),
                                           scheduled_funding_time_features(
                                               row.decision_ts_ns,
-                                              self.coverage.settlement_times_ns[self.instrument],
+                                              self.coverage.known_schedule_times_ns[self.instrument],
                                           ) if self.feature_profile == "causal_mtf_v3" else {}))
             episode = BarrierEpisode(
                 native_session=session,
@@ -451,6 +461,9 @@ class HistoricalEnvironmentFactory:
         return {
             "quality": asdict(self.quality), "features": asdict(self.features),
             "feature_profile": self.feature_profile,
+            "known_schedule_times_ns": (None if self.coverage.known_schedule_times_ns is None else
+                                         {symbol: tuple(times) for symbol, times in
+                                          self.coverage.known_schedule_times_ns.items()}),
             "schema": asdict(self.schema), "scaler": asdict(self.scaler),
             "transition_hash": self.transition_hash,
             "identities": {

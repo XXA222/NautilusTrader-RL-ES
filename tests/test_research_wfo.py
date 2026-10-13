@@ -170,7 +170,23 @@ def test_application_wfo_expands_declared_funding_schedule_without_guessing() ->
         8 * 60 * MINUTE_NS,
         16 * 60 * MINUTE_NS,
     )
+    assert policy["known_schedule_times_ns"][instrument] == (
+        8 * 60 * MINUTE_NS,
+        16 * 60 * MINUTE_NS,
+        24 * 60 * MINUTE_NS,
+        32 * 60 * MINUTE_NS,
+        40 * 60 * MINUTE_NS,
+    )
     assert policy["settlement_timestamp_tolerance_ns"] == 0
+    overlapping = _coverage(template, instrument, 9 * 60 * MINUTE_NS, 19 * 60 * MINUTE_NS)
+    point_in_time = 16 * 60 * MINUTE_NS + 30 * MINUTE_NS
+    from rles_gym_bridge.historical import scheduled_funding_time_features
+
+    assert scheduled_funding_time_features(
+        point_in_time, policy["known_schedule_times_ns"][instrument],
+    ) == scheduled_funding_time_features(
+        point_in_time, overlapping["known_schedule_times_ns"][instrument],
+    )
     tolerant = _coverage({**template, "settlement_timestamp_tolerance_ns": 1_000_000},
                          instrument, start, end)
     assert tolerant["settlement_timestamp_tolerance_ns"] == 1_000_000

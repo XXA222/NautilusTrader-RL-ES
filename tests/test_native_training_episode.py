@@ -216,7 +216,7 @@ class _NativeESSession:
         initial_equity = None
         step_log_returns = []
         drawdowns = []
-        constraint_violations = 0.0
+        risk_interventions = 0
         try:
             observation, reset_info = env.reset(seed=int(rles_context["seed"]))
             initial_equity = float(reset_info["initial_equity"])
@@ -228,7 +228,7 @@ class _NativeESSession:
                 observation, _reward, terminated, truncated, last_info = env.step(action)
                 step_log_returns.append(float(last_info["r_econ"]))
                 drawdowns.append(float(last_info["drawdown"]))
-                constraint_violations += float(last_info["risk_guard_intervention"])
+                risk_interventions += int(last_info["risk_hard_adjustment"] > 0)
                 if terminated:
                     raise RuntimeError("native candidate episode terminated unexpectedly")
             if not truncated or not last_info.get("terminal_settled"):
@@ -236,14 +236,16 @@ class _NativeESSession:
             evidence_hash = sha256(repr((
                 rles_context["request_hash"], rles_context["account_isolation_id"],
                 initial_equity, last_info["native_equity"], step_log_returns,
-                drawdowns, constraint_violations, last_info["evidence_hash"],
+                drawdowns, risk_interventions, len(step_log_returns), last_info["evidence_hash"],
             )).encode()).hexdigest()
             return {
                 "initial_equity": initial_equity,
                 "final_equity": float(last_info["native_equity"]),
                 "step_log_returns": step_log_returns,
                 "drawdowns": drawdowns,
-                "constraint_violations": constraint_violations,
+                "risk_intervention_count": risk_interventions,
+                "risk_intervention_steps": len(step_log_returns),
+                "risk_intervention_rate": risk_interventions / len(step_log_returns),
                 "evidence_hash": evidence_hash,
                 "request_hash": rles_context["request_hash"],
                 "account_isolation_id": rles_context["account_isolation_id"],

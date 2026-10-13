@@ -27,6 +27,25 @@ def test_config_loader_accepts_es_scale_and_rejects_other_unknown_keys(tmp_path)
         application.load_config(path)
 
 
+def test_training_coverage_report_separates_interaction_budget_from_full_episode_passes():
+    short = application._training_coverage_report(
+        rl_steps=64, num_envs=1, episode_decision_steps=60 * 24 * 60,
+    )
+    assert short["upper_bound_unique_decision_steps_per_environment"] == [64]
+    assert short["nominal_full_episode_passes_per_environment"] == [0]
+    assert short["upper_bound_time_coverage_fraction_per_environment"][0] == pytest.approx(
+        64 / (60 * 24 * 60),
+    )
+
+    repeated = application._training_coverage_report(
+        rl_steps=2_900, num_envs=2, episode_decision_steps=1_000,
+    )
+    assert repeated["interaction_steps_per_environment"] == [1_450, 1_450]
+    assert repeated["upper_bound_unique_decision_steps_per_environment"] == [1_000, 1_000]
+    assert repeated["nominal_full_episode_passes_per_environment"] == [1, 1]
+    assert repeated["nominal_partial_episode_steps_per_environment"] == [450, 450]
+
+
 @pytest.mark.parametrize("settings", [
     {"enforce_worker_memory_limit": "true"}, {"worker_ram_bytes": True},
     {"worker_ram_bytes": 0}, {"worker_ram_bytes": 4 * 1024**3 + 1},

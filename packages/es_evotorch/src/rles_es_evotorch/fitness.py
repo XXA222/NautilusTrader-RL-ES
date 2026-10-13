@@ -10,7 +10,7 @@ class FitnessSpec:
     return_weight: float = 1.0
     tail_weight: float = 1.0
     drawdown_weight: float = 1.0
-    constraint_weight: float = 1.0
+    risk_intervention_weight: float = 0.05
 
     def __post_init__(self) -> None:
         for name, value in vars(self).items():
@@ -20,28 +20,31 @@ class FitnessSpec:
             raise ValueError("return_weight must be positive")
 
     def score(self, *, split: str, net_return: float, tail_loss: float,
-              max_drawdown: float, constraint_violations: float) -> float:
+              max_drawdown: float, risk_intervention_rate: float) -> float:
         if split != "train_inner":
             raise PermissionError("population fitness may consume only Train-inner")
-        vals = (net_return, tail_loss, max_drawdown, constraint_violations)
+        vals = (net_return, tail_loss, max_drawdown, risk_intervention_rate)
         if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in vals):
             raise ValueError("fitness inputs must be finite real numbers")
-        if any(v < 0 for v in vals[1:]) or max_drawdown > 1:
-            raise ValueError("negative loss, drawdown outside [0,1], or invalid constraints")
+        if any(v < 0 for v in vals[1:]) or max_drawdown > 1 or risk_intervention_rate > 1:
+            raise ValueError("loss, drawdown and risk intervention rate must be within valid ranges")
         score = (self.return_weight * net_return - self.tail_weight * tail_loss
-                 - self.drawdown_weight * max_drawdown - self.constraint_weight * constraint_violations)
+                 - self.drawdown_weight * max_drawdown
+                 - self.risk_intervention_weight * risk_intervention_rate)
         if not math.isfinite(score):
             raise OverflowError("nonfinite aggregate fitness")
         return score
 
     def score_episode(self, *, split: str, initial_equity: float, final_equity: float,
                       step_log_returns: Sequence[float], drawdowns: Sequence[float],
-                      constraint_violations: float, tail_fraction: float) -> float:
+                      risk_intervention_rate: float, tail_fraction: float) -> float:
         """Score native episode facts without using shaped Gym reward.
 
         Tail loss is the mean of the worst ``ceil(tail_fraction * steps)``
         nonnegative losses derived from unshaped per-step log returns.
-        Constraint violations are supplied by the frozen risk/execution adapter.
+        Risk-intervention rate is the fraction of decisions where HardRisk
+        adjusted the requested action. It is a bounded diagnostic penalty, not
+        a count of infeasible or unsafe episodes.
         """
         if (isinstance(initial_equity, bool) or not isinstance(initial_equity, (int, float))
                 or not math.isfinite(initial_equity) or initial_equity <= 0
@@ -68,5 +71,5 @@ class FitnessSpec:
         return self.score(
             split=split, net_return=net_return, tail_loss=tail_loss,
             max_drawdown=max(float(value) for value in drawdowns),
-            constraint_violations=constraint_violations,
+            risk_intervention_rate=risk_intervention_rate,
         )

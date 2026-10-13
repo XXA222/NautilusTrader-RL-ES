@@ -77,6 +77,8 @@ def test_historical_factory_accepts_v2_profile_and_binds_its_schema(tmp_path):
 
 def test_historical_factory_v3_binds_schedule_time_inputs_separately(tmp_path):
     environment = recipe(tmp_path, bar_count=80, start_minute=62)
+    symbol = environment["instrument"]
+    environment["coverage_policy"]["known_schedule_times_ns"] = {symbol: (90 * MINUTE_NS,)}
     factory = HistoricalEnvironmentFactory(**environment, feature_profile="causal_mtf_v3")
     v2 = HistoricalEnvironmentFactory(**environment, feature_profile="causal_mtf_v2")
 
