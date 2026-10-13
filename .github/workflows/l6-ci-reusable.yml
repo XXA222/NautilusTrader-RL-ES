@@ -1,0 +1,114 @@
+# L6-owned reusable CI orchestration integrated in the monorepo. The project
+# test suite lives at the workspace root under tests/.
+name: Nautilus-RLES L6 gated CI
+on:
+  workflow_call:
+    inputs:
+      lane:
+        description: "pr / nightly / gpu / release"
+        type: string
+        required: true
+jobs:
+  cpu:
+    if: ${{ inputs.lane == 'pr' || inputs.lane == 'nightly' || inputs.lane == 'release' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14.7'
+      - uses: astral-sh/setup-uv@v6
+      - name: Install locked workspace and audit tools
+        run: uv sync --locked --all-packages --all-extras --group dev
+      - name: Build all workspace distributions
+        run: uv build --all-packages --out-dir artifacts/wheels
+      - name: Install the eleven built wheels into the locked environment
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          import subprocess
+          wheels = sorted(Path('artifacts/wheels').glob('*.whl'))
+          if len(wheels) != 11:
+              raise SystemExit(f'Expected eleven workspace wheels, got {len(wheels)}')
+          python = Path('.venv') / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+          subprocess.run(['uv', 'pip', 'install', '--python', str(python),
+                          '--no-deps', '--reinstall', *map(str, wheels)], check=True)
+      - name: Verify installed wheel provenance and import locations
+        run: uv run --locked --no-sync python qa/smoke/wheel_imports.py
+      - name: Check integration test presence (fail-closed)
+        shell: python
+        run: |
+          from pathlib import Path
+          expected = Path('tests')
+          if not expected.is_dir():
+              raise SystemExit('BLOCKED: integration owner has not supplied tests/')
+      - name: Type check with the locked workspace Python
+        run: uv run --locked --no-sync python -m mypy packages
+      - name: Require native golden and fixed-budget performance cases
+        if: ${{ inputs.lane == 'nightly' }}
+        shell: python
+        run: |
+          import subprocess
+          for marker in ('real_golden', 'perf'):
+              subprocess.run(['uv', 'run', '--locked', '--no-sync', 'python', '-m',
+                              'pytest', '--collect-only', '-q', 'tests/', '-m', marker],
+                             check=True)
+      - name: PR contract and unit layers
+        if: ${{ inputs.lane == 'pr' }}
+        run: uv run --locked --no-sync python -m pytest -q tests/ -m 'contracts or unit or micro_golden or algorithm_smoke'
+      - name: Nightly golden, WFO and recovery layers
+        if: ${{ inputs.lane == 'nightly' }}
+        run: uv run --locked --no-sync python -m pytest -q tests/ -m 'real_golden or short_wfo or dependency_resolver or artifact_restore or perf' --junitxml artifacts/nightly.xml -o junit_family=xunit1 --basetemp artifacts/nightly-tmp
+      - name: Preserve nightly measurements and test results
+        if: ${{ always() && inputs.lane == 'nightly' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-measurements-${{ matrix.os }}
+          path: |
+            artifacts/nightly.xml
+            artifacts/nightly-tmp/**/snapshot-perf.json
+      - name: Release complete regression
+        if: ${{ inputs.lane == 'release' }}
+        run: uv run --locked --no-sync python -m pytest -q tests/
+      - name: Lint workspace packages
+        if: ${{ inputs.lane == 'pr' || inputs.lane == 'nightly' || inputs.lane == 'release' }}
+        run: uv run --locked --no-sync python -m ruff check packages ci qa tests
+  gpu:
+    if: ${{ inputs.lane == 'gpu' }}
+    runs-on: [self-hosted, linux, gpu, rles-approved]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14.7'
+      - uses: astral-sh/setup-uv@v6
+      - name: Install locked workspace and audit tools
+        run: uv sync --locked --all-packages --all-extras --group dev
+      - name: Select pinned CUDA PyTorch backend
+        run: uv pip install --python .venv/bin/python --require-hashes --torch-backend cu130 -r requirements/cuda-linux.lock
+      - name: Check CUDA runtime is genuinely available
+        run: |
+          uv run --no-sync python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'unavailable'); raise SystemExit(0 if torch.cuda.is_available() else 'BLOCKED: no real CUDA learner GPU')"
+      - name: Invoke integration-owned GPU stress/benchmark tests
+        run: uv run --no-sync python -m pytest -q tests/ -m gpu
+  release:
+    if: ${{ inputs.lane == 'release' }}
+    needs: [cpu]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14.7'
+      - uses: astral-sh/setup-uv@v6
+      - name: Install isolated L6 release gate inspector
+        run: uv pip install --system ./ci/l6
+      - name: Verify gate reports, frozen checks, dependency graph and external evidence
+        run: python -m l6_ci_release.attestation --reports artifacts/gates --trusted-producers artifacts/gates/trusted_producers.json
+      - name: Source/wheel/lock/SBOM assembly owned by final integrator
+        run: echo "READY FOR USER ASSEMBLY; no tag, merge or release is performed"

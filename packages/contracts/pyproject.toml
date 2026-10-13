@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rles-contracts"
+version = "0.4.0"
+description = "Nautilus-RLES engine-neutral immutable contracts and deterministic metadata"
+requires-python = ">=3.14,<3.15"
+authors = [{ name = "Nautilus-RLES L1" }]
+classifiers = ["Programming Language :: Python :: 3 :: Only", "Programming Language :: Python :: 3.14"]
+dependencies = []
+
+[project.optional-dependencies]
+arrow = ["pyarrow>=20,<26"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rles_contracts"]

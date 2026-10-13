@@ -1,0 +1,11 @@
+[build-system]
+requires = ["hatchling>=1.25,<2"]
+build-backend = "hatchling.build"
+[project]
+name = "rles-research"
+version = "0.4.1"
+requires-python = ">=3.14,<3.15"
+description = "Nautilus-RLES L6 research and artifact governance"
+dependencies = ["rles-contracts>=0.4.0.dev0,<0.5.0"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/rles_research"]

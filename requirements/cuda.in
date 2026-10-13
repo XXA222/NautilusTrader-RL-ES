@@ -1,0 +1,11 @@
+# L1 CUDA target input only; NOT a verified CUDA hash lock.
+# Resolve with the PyTorch cu130 index and freeze all transitive hashes separately.
+# For uv: `uv pip install --torch-backend cu130 -r requirements/cuda.in`.
+nautilus-trader==2.0.0rc6
+stable-baselines3==2.9.0
+gymnasium>=1.2,<1.4
+numpy>=2,<3
+torch==2.14.1+cu130
+evotorch
+pyarrow>=20,<26
+# Install the L1 local wheel separately; never resolve rles-contracts from public PyPI.

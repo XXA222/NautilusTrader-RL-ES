@@ -1,0 +1,37 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+
+_GENERATOR = Path(__file__).resolve().parents[1] / "qa" / "source_manifest.py"
+
+
+def _generate(root: Path, output: Path) -> dict:
+    subprocess.run(
+        [sys.executable, str(_GENERATOR), "--root", str(root), "--output", str(output)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(output.read_text(encoding="utf-8"))
+
+
+def test_source_identity_tracks_workspace_inputs_and_ignores_generated_reports(tmp_path: Path) -> None:
+    (tmp_path / "packages" / "demo").mkdir(parents=True)
+    (tmp_path / "packages" / "demo" / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_demo.py").write_text("def test_demo(): pass\n", encoding="utf-8")
+    (tmp_path / "qa" / "reports").mkdir(parents=True)
+    manifest_path = tmp_path / "qa" / "reports" / "source_manifest_current.json"
+
+    first = _generate(tmp_path, manifest_path)
+    second = _generate(tmp_path, manifest_path)
+    assert first["source_identity_sha256"] == second["source_identity_sha256"]
+    assert [item["path"] for item in first["files"]] == ["packages/demo/module.py", "tests/test_demo.py"]
+
+    (tmp_path / "packages" / "demo" / "module.py").write_text("VALUE = 2\n", encoding="utf-8")
+    changed = _generate(tmp_path, manifest_path)
+    assert changed["source_identity_sha256"] != first["source_identity_sha256"]

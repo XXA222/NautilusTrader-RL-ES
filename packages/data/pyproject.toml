@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rles-data"
+version = "0.4.1"
+description = "Nautilus-RLES point-in-time market data and fold manifests"
+requires-python = "==3.14.7"
+dependencies = ["rles-contracts>=0.4.0.dev0,<0.5.0"]
+
+[project.optional-dependencies]
+arrow = ["pyarrow>=20,<26"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rles_data"]

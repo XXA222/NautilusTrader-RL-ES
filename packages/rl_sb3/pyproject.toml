@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rles-rl-sb3"
+version = "0.4.1"
+description = "Independent SB3 RL provider for Nautilus-RLES v0.4.0"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+  "rles-contracts>=0.4.0.dev0,<0.5.0",
+  "rles-gym-bridge>=0.4.0.dev2,<0.5.0",
+  "stable-baselines3==2.9.0",
+  "cloudpickle>=3,<4",
+  "gymnasium>=1.2,<1.4",
+  "torch>=2.14,<2.15",
+  "numpy>=2,<3",
+]
+
+[project.entry-points."nautilus_rles.rl"]
+sb3 = "rles_rl_sb3:provider"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rles_rl_sb3"]

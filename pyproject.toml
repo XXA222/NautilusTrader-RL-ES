@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nautilus-rles-workspace"
+version = "0.4.0"
+requires-python = "==3.14.7"
+description = "L1-owned workspace metadata only; not a distribution"
+
+[dependency-groups]
+dev = [
+    "mypy==2.3.0",
+    "pytest==9.1.1",
+    "ruff==0.17.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+rles-contracts = { workspace = true }
+rles-data = { workspace = true }
+rles-execution = { workspace = true }
+rles-risk = { workspace = true }
+rles-nautilus-adapter = { workspace = true }
+rles-gym-bridge = { workspace = true }
+rles-es-evotorch = { workspace = true }
+rles-compute-runtime = { workspace = true }
+rles-research = { workspace = true }
+rles-rl-sb3 = { workspace = true }
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E9", "F"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+  "contracts: cross-package contracts and wire invariants",
+  "unit: isolated deterministic component tests",
+  "micro_golden: synthetic expected-output integration checks",
+  "algorithm_smoke: short dependency and algorithm runtime checks",
+  "real_golden: verified native-engine market/account trace tests",
+  "short_wfo: bounded walk-forward integration tests",
+  "dependency_resolver: clean dependency lock and install tests",
+  "artifact_restore: checkpoint and artifact restore tests",
+  "perf: fixed-budget performance regression tests",
+  "gpu: tests requiring an approved CUDA learner",
+]
+
+[tool.mypy]
+exclude = "(?x)(^|[\\\\/])build[\\\\/]"
+
+[[tool.mypy.overrides]]
+module = ["nautilus_trader.*", "evotorch.*", "psutil", "pyarrow.*", "cloudpickle"]
+ignore_missing_imports = true

@@ -1,0 +1,180 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-11",
+  "scope": "Windows CPython 3.14.7 CPU engineering verification",
+  "release_attestation": false,
+  "source_sha256": {
+    "pyproject.toml": "fbf57273fd283fc2db00c014eb3ec9cef467148bd4c3858570590d8d969f6b61",
+    "packages/compute_runtime/src/rles_compute_runtime/validation.py": "6aa90ff405c6524a99e05b0b67b8830cf366ed5653b8e04c617f290646c998ab",
+    "packages/compute_runtime/src/rles_compute_runtime/workers.py": "da91de1fe2bab45a5719ec70b40a7becf73e874aba511501220b989a1377f7f0",
+    "uv.lock": "8fad3cfaa1812cbe3e47149471fc7d974bb52572bca2002ab73f38d029e66b7f",
+    ".github/workflows/l6-ci-reusable.yml": "132d1f449258fd89850846de613215b4c841c605c70db7986f84b4a006907e48",
+    "packages/compute_runtime/src/rles_compute_runtime/benchmark.py": "08a6e0983d23890c9fa933ee4729abb20a94846a8e634d67046b6739154b742e",
+    "tests/test_compute_worker_pool.py": "2aa3abe5a962e5b03ce7a07cb9cbfd5ab63353467b7c346c1f11a08ed3a54ab3",
+    "qa/smoke/wheel_imports.py": "a0f9326dc48df4321e69d65cc417bf5407b4e3fca393b4444779ce58118e5f68",
+    "tests/test_compute_runtime_contracts.py": "6c24aee08ece8a883f45fbd4a045a34634abef8d32103435bd8a0152d00ed294"
+  },
+  "clean_editable_tests": {
+    "errors": 0,
+    "skipped": 4,
+    "failures": 0,
+    "tests": 126
+  },
+  "clean_wheel_tests": {
+    "errors": 0,
+    "skipped": 4,
+    "failures": 0,
+    "tests": 126
+  },
+  "wheel_pr_selector": {
+    "deselected": 7,
+    "passed": 119
+  },
+  "installed_packages": 68,
+  "resolved_lock_packages": 88,
+  "local_mypy_version": "2.3.0",
+  "mypy_source_files": 83,
+  "mypy_errors": 0,
+  "real_golden_collection_exit": 5,
+  "perf_collection_exit": 5,
+  "wheel_origins": {
+    "python": "3.14.7",
+    "prefix": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\clean-locked-cpu-r1",
+    "installed_wheels": {
+      "rles_contracts": {
+        "version": "0.4.0",
+        "module_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\clean-locked-cpu-r1\\Lib\\site-packages\\rles_contracts\\__init__.py"
+      },
+      "rles_data": {
+        "version": "0.4.1",
+        "module_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\clean-locked-cpu-r1\\Lib\\site-packages\\rles_data\\__init__.py"
+      },
+      "rles_nautilus_adapter": {
+        "version": "0.4.0.dev2",
+        "module_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\clean-locked-cpu-r1\\Lib\\site-packages\\rles_nautilus_adapter\\__init__.py"
+      },
+      "rles_execution": {
+        "version": "0.4.0.dev2",
+        "module_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\clean-locked-cpu-r1\\Lib\\site-packages\\rles_execution\\__init__.py"
+      },
+      "rles_risk": {
+        "version": "0.4.0.dev2",
+        "module_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\clean-locked-cpu-r1\\Lib\\site-packages\\rles_risk\\__init__.py"
+      },
+      "rles_gym_bridge": {
+        "version": "0.4.0.dev2",
+        "module_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\clean-locked-cpu-r1\\Lib\\site-packages\\rles_gym_bridge\\__init__.py"
+      },
+      "rles_rl_sb3": {
+        "version": "0.4.1",
+        "module_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\clean-locked-cpu-r1\\Lib\\site-packages\\rles_rl_sb3\\__init__.py"
+      },
+      "rles_es_evotorch": {
+        "version": "0.4.0.dev2",
+        "module_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\clean-locked-cpu-r1\\Lib\\site-packages\\rles_es_evotorch\\__init__.py"
+      },
+      "rles_orchestrator": {
+        "version": "0.4.0.dev2",
+        "module_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\clean-locked-cpu-r1\\Lib\\site-packages\\rles_orchestrator\\__init__.py"
+      },
+      "rles_compute_runtime": {
+        "version": "0.4.1",
+        "module_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\clean-locked-cpu-r1\\Lib\\site-packages\\rles_compute_runtime\\__init__.py"
+      },
+      "rles_research": {
+        "version": "0.4.1",
+        "module_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\clean-locked-cpu-r1\\Lib\\site-packages\\rles_research\\__init__.py"
+      }
+    }
+  },
+  "built_archives": [
+    {
+      "name": "rles_compute_runtime-0.4.1-py3-none-any.whl",
+      "sha256": "085e2ee352717b670e25362783a13805d6bef579c422558d24d481aa660aa33b"
+    },
+    {
+      "name": "rles_compute_runtime-0.4.1.tar.gz",
+      "sha256": "3d5369ba74cc19f96bc4d5027e981a826b080474c7f1547b4f4d8000f589966c"
+    },
+    {
+      "name": "rles_contracts-0.4.0-py3-none-any.whl",
+      "sha256": "3218a2435a99c5073c6d9de7b9c85da46e93b5894dcddf8d75e454754e7c289e"
+    },
+    {
+      "name": "rles_contracts-0.4.0.tar.gz",
+      "sha256": "e80682538ab953f5b1af379406b19a0dc06c2055003a5ff49e429e884d561cc6"
+    },
+    {
+      "name": "rles_data-0.4.1-py3-none-any.whl",
+      "sha256": "7804984dedda16b8e89f2c085388a98977f706b2c9a1f89feb504aa26f03f2bc"
+    },
+    {
+      "name": "rles_data-0.4.1.tar.gz",
+      "sha256": "683792735f71e9eab335ebc6d94af841c854bdc9b275ad39fed51e5ffe310b51"
+    },
+    {
+      "name": "rles_es_evotorch-0.4.0.dev2-py3-none-any.whl",
+      "sha256": "922d41fe662169fe4e70e2be399060709cd89f440616704219df769e24465310"
+    },
+    {
+      "name": "rles_es_evotorch-0.4.0.dev2.tar.gz",
+      "sha256": "17ff2630b5a59337a0048542c8f0cac65a2bda7155617ee8393a60b6767428f7"
+    },
+    {
+      "name": "rles_execution-0.4.0.dev2-py3-none-any.whl",
+      "sha256": "60559f71e161f288b702cccd0094d0ab615f76f679794f856288e6edba4d26b7"
+    },
+    {
+      "name": "rles_execution-0.4.0.dev2.tar.gz",
+      "sha256": "96522cb5413c4360ad878df4cf25ebb29435059514fe8648b4cca59a4724fe52"
+    },
+    {
+      "name": "rles_gym_bridge-0.4.0.dev2-py3-none-any.whl",
+      "sha256": "4b305dcf490703362c83fce5c4542ed4f45e693227b24d9064b272bc482d4bae"
+    },
+    {
+      "name": "rles_gym_bridge-0.4.0.dev2.tar.gz",
+      "sha256": "f60b51d1d5c153e530f6078c0e4c7ddea927d88afa49feba0fe01bfb7055e45a"
+    },
+    {
+      "name": "rles_nautilus_adapter-0.4.0.dev2-py3-none-any.whl",
+      "sha256": "93bfc9c26b15ccf5dc7bff3cf6f3fda21b1b02e7db69562aa86f51cbf7b3933e"
+    },
+    {
+      "name": "rles_nautilus_adapter-0.4.0.dev2.tar.gz",
+      "sha256": "2a9a80cdb8e62edba9bb3779cfd1df7048b86e9de41db3304a46306c8acf27d5"
+    },
+    {
+      "name": "rles_orchestrator-0.4.0.dev2-py3-none-any.whl",
+      "sha256": "58752fcfb85ba589dd9d9037b37119727e32565ae0c3035cb768f8a2c7845882"
+    },
+    {
+      "name": "rles_orchestrator-0.4.0.dev2.tar.gz",
+      "sha256": "dad41e59e4fc680feb58cef9c7ce4b45251c7073240fde7a46cbd0feb8cb3872"
+    },
+    {
+      "name": "rles_research-0.4.1-py3-none-any.whl",
+      "sha256": "598dedd6981ca300c78e1b74c158596f1522b085d9c2f0c38f77f09e64726fc8"
+    },
+    {
+      "name": "rles_research-0.4.1.tar.gz",
+      "sha256": "184440c74b39411f3b65ce9bfde9ca7bff0f6e4ccae53297bf5bb6ca476a9c61"
+    },
+    {
+      "name": "rles_risk-0.4.0.dev2-py3-none-any.whl",
+      "sha256": "fddb9347a37330350c1982baa169eaaf4286404059dcfe8e34fce85101a76b24"
+    },
+    {
+      "name": "rles_risk-0.4.0.dev2.tar.gz",
+      "sha256": "3186cd6af7bca9fc40ad3aac98f369759d73eef504d011037e756b3ad354991d"
+    },
+    {
+      "name": "rles_rl_sb3-0.4.1-py3-none-any.whl",
+      "sha256": "9e5dd6308400bc429db9e2422a3a17b849f4bb887531ac26ffb47e42743b5f0a"
+    },
+    {
+      "name": "rles_rl_sb3-0.4.1.tar.gz",
+      "sha256": "dc7bb1fed9f8ddf7d2e450d30d884b85ccc0df4c27819ae32de9433b8b7e17ab"
+    }
+  ]
+}

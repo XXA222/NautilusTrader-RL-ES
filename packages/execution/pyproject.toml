@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling>=1.26,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rles-execution"
+version = "0.4.0.dev2"
+description = "L3 Nautilus-RLES execution independent module"
+requires-python = "==3.14.7"
+dependencies = [
+  "rles-contracts>=0.4.0.dev0,<0.5.0"
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rles_execution"]

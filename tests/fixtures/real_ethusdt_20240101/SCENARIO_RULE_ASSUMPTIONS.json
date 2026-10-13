@@ -1,0 +1,23 @@
+{
+  "schema": "rles.scenario-rule-assumptions.v1",
+  "classification": "scenario_only_not_historical_rule_evidence",
+  "instrument": "ETHUSDT-PERP.SIM",
+  "reason": "The authentic market archive does not contain dated account fee or complete historical instrument-filter evidence. The terminal reduce-only min-notional exception follows Binance USDⓈ-M contract specifications; the other economic fields below remain scenario assumptions.",
+  "evidence": {
+    "reduce_only_min_notional_exempt": "https://www.binance.com/en-AE/support/faq/detail/360033161972",
+    "claim": "Reduce-Only orders are not affected by the minimum order notional limit rule."
+  },
+  "assumptions": {
+    "tick_size": "0.01",
+    "step_size": "0.001",
+    "min_qty": "0.001",
+    "min_notional": "20",
+    "reduce_only_min_notional_exempt": true,
+    "maker_fee": "0.0002",
+    "taker_fee": "0.0005",
+    "initial_margin_rate": "1",
+    "maintenance_margin_rate": "0.004"
+  },
+  "effective_ns": 1704067200000000000,
+  "valid_until_ns": null
+}

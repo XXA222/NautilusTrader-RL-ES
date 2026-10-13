@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rles-orchestrator"
+version = "0.4.0.dev2"
+description = "Independent Nautilus-RLES L5 E1/R1/E2 Hybrid workflow orchestrator"
+readme = "README.md"
+requires-python = ">=3.14.7,<3.15"
+dependencies = ["rles-contracts>=0.4.0.dev0,<0.5.0", "numpy>=2.0"]
+
+[project.scripts]
+rles = "rles_orchestrator.application:main"
+
+[project.optional-dependencies]
+application = ["rles-gym-bridge[historical]>=0.4.0.dev2,<0.5.0", "rles-rl-sb3>=0.4.1,<0.5.0", "rles-es-evotorch>=0.4.0.dev2,<0.5.0", "rles-research>=0.4.1,<0.5.0", "rles-compute-runtime>=0.4.1,<0.5.0"]
+native-es-worker = ["rles-es-evotorch>=0.4.0.dev2,<0.5.0", "rles-gym-bridge>=0.4.0.dev2,<0.5.0", "rles-rl-sb3>=0.4.1,<0.5.0"]
+native-es-runtime = ["rles-es-evotorch>=0.4.0.dev2,<0.5.0", "rles-compute-runtime>=0.4.1,<0.5.0", "rles-research>=0.4.1,<0.5.0"]
+native-rl-runtime = ["rles-rl-sb3>=0.4.1,<0.5.0", "rles-es-evotorch>=0.4.0.dev2,<0.5.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

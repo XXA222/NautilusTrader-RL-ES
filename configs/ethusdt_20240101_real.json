@@ -1,0 +1,97 @@
+{
+  "environment": {
+    "market_path": "../data/binance_ethusdt_20240101/market.parquet",
+    "rules_path": "../data/binance_ethusdt_20240101/historical_rules.json",
+    "instrument": "ETHUSDT-PERP.SIM",
+    "start_ns": 1704067500000000000,
+    "end_ns": 1704110400000000000,
+    "coverage_policy": {
+      "maximum_age_ns": {
+        "mark": 61000000000,
+        "index": 61000000000,
+        "funding_update": 28861000000000
+      },
+      "settlement_times_ns": {
+        "ETHUSDT-PERP.SIM": [1704096000000000000]
+      },
+      "provenance": "Binance public archive timestamps; one-minute close plus declared 1 ms ingestion delay",
+      "settlement_max_delay_ns": 1000000
+    },
+    "execution": {
+      "schema_version": "0.4.0",
+      "deadband": "0.01",
+      "pending_order_policy": "cancel_replace",
+      "order_type": "MARKET",
+      "tif": "GTC",
+      "terminal_policy": "force_flatten_with_cost",
+      "base_latency": {
+        "model_id": "binance-research-base",
+        "decision_ns": 1000000,
+        "submit_ns": 1000000,
+        "venue_ns": 5000000
+      },
+      "stress_latency": {
+        "model_id": "binance-research-stress",
+        "decision_ns": 5000000,
+        "submit_ns": 5000000,
+        "venue_ns": 20000000
+      },
+      "base_fill": {
+        "model_id": "bar-conservative-1bp",
+        "slippage_bps": "1",
+        "data_granularity": "bar"
+      },
+      "stress_fill": {
+        "model_id": "bar-conservative-5bp",
+        "slippage_bps": "5",
+        "data_granularity": "bar",
+        "fee_multiplier": "2"
+      }
+    },
+    "starting_balance": "10000",
+    "risk_budget_notional": "1000",
+    "hard_risk": {
+      "max_notional": "1000",
+      "max_leverage": "1",
+      "margin_buffer_fraction": "0.10",
+      "min_equity": "1000",
+      "incomplete_data_max_leverage": "1",
+      "require_mark": true,
+      "require_funding": true
+    },
+    "soft_risk": {
+      "target_scale": "1",
+      "max_turnover_fraction": "0.25",
+      "drawdown_throttle": "1",
+      "funding_sensitivity": "1"
+    }
+  },
+  "evaluation": {
+    "start_ns": 1704110400000000000,
+    "end_ns": 1704153660000000000,
+    "coverage_policy": {
+      "maximum_age_ns": {
+        "mark": 61000000000,
+        "index": 61000000000,
+        "funding_update": 28861000000000
+      },
+      "settlement_times_ns": {
+        "ETHUSDT-PERP.SIM": [1704124800000000000, 1704153600000000000]
+      },
+      "provenance": "Binance public archive timestamps; one-minute close plus declared 1 ms ingestion delay",
+      "settlement_max_delay_ns": 1000000
+    }
+  },
+  "route": "A0",
+  "algorithm": "PPO",
+  "steps": 64,
+  "seed": 31,
+  "hidden_layers": [64, 64],
+  "normalize_observation": true,
+  "hyperparameters": {
+    "n_steps": 32,
+    "batch_size": 32,
+    "n_epochs": 5
+  },
+  "output": "../runs/ethusdt_20240101_ppo_a0"
+}

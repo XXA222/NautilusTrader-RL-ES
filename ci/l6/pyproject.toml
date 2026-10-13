@@ -1,0 +1,10 @@
+[build-system]
+requires = ["hatchling>=1.25,<2"]
+build-backend = "hatchling.build"
+[project]
+name = "rles-l6-ci-release"
+version = "0.4.1"
+requires-python = ">=3.14,<3.15"
+description = "L6 gate, upgrade and release manifest orchestration"
+[tool.hatch.build.targets.wheel]
+packages = ["src/l6_ci_release"]

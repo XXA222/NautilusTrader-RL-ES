@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rles-es-evotorch"
+version = "0.4.0.dev2"
+description = "Independent Nautilus-RLES E1/E2 evolutionary search and actor genome module"
+readme = "README.md"
+requires-python = ">=3.14.7,<3.15"
+dependencies = ["rles-contracts>=0.4.0.dev0,<0.5.0", "numpy>=2.0", "torch>=2.0", "evotorch>=0.5.1"]
+
+[project.entry-points."nautilus_rles.es"]
+evotorch = "rles_es_evotorch:provider"
+
+[tool.setuptools.packages.find]
+where = ["src"]

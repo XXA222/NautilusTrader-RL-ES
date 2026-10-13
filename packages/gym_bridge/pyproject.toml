@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling>=1.26,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rles-gym-bridge"
+version = "0.4.0.dev2"
+description = "L3 Nautilus-RLES gym_bridge independent module"
+requires-python = "==3.14.7"
+dependencies = [
+  "rles-contracts>=0.4.0.dev0,<0.5.0",
+  "gymnasium>=1.2,<2",
+  "numpy>=2,<3"
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rles_gym_bridge"]
+
+[project.optional-dependencies]
+historical = [
+  "rles-data[arrow]>=0.4.1,<0.5.0",
+  "rles-execution>=0.4.0.dev2,<0.5.0",
+  "rles-risk>=0.4.0.dev2,<0.5.0",
+  "rles-nautilus-adapter>=0.4.0.dev2,<0.5.0",
+]

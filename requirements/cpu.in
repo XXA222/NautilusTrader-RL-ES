@@ -1,0 +1,10 @@
+# L1 CPU target input only; NOT a verified CPU hash lock.
+# G0 must resolve on CPython 3.14.7 with all wheels and transitive SHA256 pins.
+nautilus-trader==2.0.0rc6
+stable-baselines3==2.9.0
+gymnasium>=1.2,<1.4
+numpy>=2,<3
+torch==2.14.1+cpu
+evotorch
+pyarrow>=20,<26
+# Install the L1 local wheel separately; never resolve rles-contracts from public PyPI.

@@ -1,0 +1,25 @@
+name: Nautilus-RLES CI
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+    inputs:
+      lane:
+        description: "CI lane to run manually"
+        type: choice
+        required: true
+        default: pr
+        options:
+          - pr
+          - nightly
+          - gpu
+          - release
+
+jobs:
+  gated:
+    uses: ./.github/workflows/l6-ci-reusable.yml
+    with:
+      lane: ${{ github.event_name == 'schedule' && 'nightly' || (github.event_name == 'workflow_dispatch' && inputs.lane) || 'pr' }}

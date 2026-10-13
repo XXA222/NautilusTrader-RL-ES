@@ -1,0 +1,30 @@
+{
+  "dq_coverage": {
+    "bar_count": 1440,
+    "mark_count": 1,
+    "settlement_count": 1,
+    "rule_expires_at_minute": 2,
+    "grade": "DQ-A",
+    "findings": [],
+    "liquidation_use_authorized": true
+  },
+  "schema_immutability": {
+    "mutable_list_accepted": true,
+    "schema_hash_changed_after_external_mutation": true
+  },
+  "transfer_normalization": {
+    "policy_input_parity_passed": true,
+    "teacher_actions": [
+      0.6420150399208069,
+      0.6824334859848022,
+      0.5810436010360718
+    ],
+    "provider_raw_input_actions": [
+      0.09933924674987793,
+      0.09933924674987793,
+      0.09933924674987793
+    ],
+    "max_raw_input_action_error": 0.5830942392349243,
+    "normalization_enabled": true
+  }
+}

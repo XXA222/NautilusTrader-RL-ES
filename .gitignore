@@ -1,0 +1,40 @@
+# Local environments, caches, and generated build outputs
+.venv*/
+.uv-cache/
+.rles-python/
+.tmp/
+.artifacts/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+build/
+dist/
+dist-*/
+*.egg-info/
+
+# Local data, the separate upstream NautilusTrader checkout, and run outputs
+/data/
+/nautilus_trader/
+outputs/
+runs/
+checkpoints/
+models/
+*.log
+*.sqlite
+*.sqlite3
+*.db
+*.pkl
+*.pickle
+*.pt
+*.pth
+*.onnx
+*.npz
+*.safetensors
+
+# Raw archive and market-data files are excluded except for checked-in tests
+*.parquet
+*.zip
+!tests/fixtures/**/*.parquet
+!tests/fixtures/**/*.zip
