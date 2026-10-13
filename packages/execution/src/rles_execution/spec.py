@@ -126,7 +126,14 @@ class ResolvedExecutionConfig:
 
     def fingerprint(self) -> str:
         from dataclasses import asdict
-        body = json.dumps(asdict(self), sort_keys=True, separators=(",", ":"), default=str)
+        values = asdict(self)
+        # Preserve the v0.4.0 identity for legacy recipes whose base and stress
+        # fees both resolve to 1. The new field is behaviorally neutral there;
+        # any non-default fee stress remains bound into the fingerprint.
+        if self.base_fill.fee_multiplier == self.stress_fill.fee_multiplier == 1:
+            values["base_fill"].pop("fee_multiplier")
+            values["stress_fill"].pop("fee_multiplier")
+        body = json.dumps(values, sort_keys=True, separators=(",", ":"), default=str)
         return sha256(body.encode()).hexdigest()
 
     def latency(self, mode: str) -> LatencyProfile:

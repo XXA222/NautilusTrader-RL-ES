@@ -89,6 +89,7 @@ def test_quote_execution_requires_zero_synthetic_slippage() -> None:
 def test_fee_stress_is_hashed_and_only_increases_positive_fees() -> None:
     config = replace(_planner().config, stress_fill=FillProfile("stress", Decimal("2"), fee_multiplier=Decimal("2")))
     assert config.base_fill.fee_multiplier == 1
+    assert config.fingerprint() != _planner().config.fingerprint()
     scenario = resolve_scenario(config, "stress")
     assert scenario.fee_multiplier == "2"
     assert resolve_scenario(config, "base").fee_multiplier == "1"
@@ -100,6 +101,12 @@ def test_fee_stress_is_hashed_and_only_increases_positive_fees() -> None:
     rebate = {"maker_fee": "-0.0001", "taker_fee": "0.0005"}
     assert _effective_fee_rates(rebate, config, "stress") == (Decimal("-0.0001"), Decimal("0.0010"))
     assert rule["maker_fee"] == "0.0002"  # source facts remain untouched
+
+
+def test_default_fee_multipliers_preserve_legacy_execution_fingerprint() -> None:
+    assert _planner().config.fingerprint() == (
+        "5c45e562d7fd7171d3aaa40cc25a19e3f65980ada7e000bade7ac751c5da0434"
+    )
 
 
 def test_fee_multiplier_must_be_at_least_one() -> None:

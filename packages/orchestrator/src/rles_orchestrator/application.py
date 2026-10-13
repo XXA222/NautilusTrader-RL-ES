@@ -176,6 +176,46 @@ def _action_dynamics(values: np.ndarray) -> dict[str, float | int]:
     }
 
 
+class _ActionFeatureResponse:
+    """Streaming Pearson correlation between policy actions and visible market inputs."""
+
+    def __init__(self, names: tuple[str, ...]) -> None:
+        self.names = names
+        self.count = 0
+        self.mean_features = np.zeros(len(names), dtype=np.float64)
+        self.m2_features = np.zeros(len(names), dtype=np.float64)
+        self.mean_action = 0.0
+        self.m2_action = 0.0
+        self.co_moments = np.zeros(len(names), dtype=np.float64)
+
+    def observe(self, values: np.ndarray, action: float) -> None:
+        features = np.asarray(values, dtype=np.float64)
+        if (features.shape != self.mean_features.shape or not np.isfinite(features).all()
+                or not np.isfinite(action)):
+            raise DataError("action/market-feature diagnostics are invalid")
+        self.count += 1
+        delta_features = features - self.mean_features
+        delta_action = action - self.mean_action
+        self.mean_features += delta_features / self.count
+        self.mean_action += delta_action / self.count
+        self.m2_features += delta_features * (features - self.mean_features)
+        self.m2_action += delta_action * (action - self.mean_action)
+        self.co_moments += delta_features * (action - self.mean_action)
+
+    def report(self) -> dict[str, object]:
+        denominator = np.sqrt(np.maximum(self.m2_features, 0) * max(self.m2_action, 0))
+        correlations = {
+            name: (float(self.co_moments[index] / denominator[index])
+                   if denominator[index] > 0 else None)
+            for index, name in enumerate(self.names)
+        }
+        return {
+            "count": self.count,
+            "pearson_correlation_with_requested_action": correlations,
+            "interpretation": "descriptive Train/evaluation-window dependence; not predictive or causal evidence",
+        }
+
+
 def rollout(factory: HistoricalEnvironmentFactory, predict, *, seed: int,
             soft_parameters: dict | None = None,
             collect_observations: bool = True) -> tuple[dict, np.ndarray]:
@@ -192,11 +232,15 @@ def rollout(factory: HistoricalEnvironmentFactory, predict, *, seed: int,
     soft_adjustment_total = hard_adjustment_total = total_adjustment = 0.0
     components_known = True
     attribution = ExecutionAttribution()
+    schema_names = tuple(getattr(factory.schema, "names", ()))
+    market_indices = tuple(i for i, name in enumerate(schema_names) if name.startswith("market."))
+    action_feature_response = _ActionFeatureResponse(tuple(schema_names[i] for i in market_indices))
     try:
         observation, _ = env.reset(seed=seed)
         if collect_observations:
             observations.append(observation.copy())
         while True:
+            decision_observation = observation
             action = np.asarray(predict(observation[None, :]), dtype=np.float32).reshape(1)
             observation, _, terminated, truncated, info = env.step(action)
             if collect_observations:
@@ -206,6 +250,7 @@ def rollout(factory: HistoricalEnvironmentFactory, predict, *, seed: int,
             if not np.isfinite(requested_action) or not np.isfinite(executed_action):
                 raise DataError("native rollout action diagnostics are not finite")
             requested_actions.append(requested_action)
+            action_feature_response.observe(decision_observation[list(market_indices)], requested_action)
             soft_target = info.get("risk_soft_target")
             risk_target = info.get("risk_adjusted_target")
             if (soft_target is None) != (risk_target is None):
@@ -308,6 +353,7 @@ def rollout(factory: HistoricalEnvironmentFactory, predict, *, seed: int,
             "reason_counts": dict(sorted(plan_reasons.items())),
         }
         report["execution_attribution"] = attribution.report()
+        report["action_market_response"] = action_feature_response.report()
         return report, (np.stack(observations) if collect_observations
                         else np.empty((0, observation.size), dtype=np.float32))
     finally:

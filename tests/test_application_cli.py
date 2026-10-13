@@ -88,6 +88,7 @@ def test_rollout_reports_requested_and_post_guard_action_diagnostics(
         mode = "base"
         snapshots = ()
         fill_references = ()
+        schema = SimpleNamespace(names=("market.feature_1", "market.feature_2"))
         execution = SimpleNamespace(fill=lambda _mode: SimpleNamespace(data_granularity="bar"))
 
         @staticmethod
@@ -121,6 +122,13 @@ def test_rollout_reports_requested_and_post_guard_action_diagnostics(
     assert diagnostics["executed_direction_comparison_pair_count"] == 1
     assert diagnostics["executed_direction_flip_count"] == 1
     assert diagnostics["executed_direction_flip_fraction"] == pytest.approx(1.0)
+    action_market_response = report["action_market_response"]
+    expected_correlation = np.corrcoef([0.0, 1.0, 2.0], [0.8, -0.2, 0.5])[0, 1]
+    assert action_market_response["count"] == 3
+    assert action_market_response["pearson_correlation_with_requested_action"] == {
+        "market.feature_1": pytest.approx(expected_correlation),
+        "market.feature_2": pytest.approx(expected_correlation),
+    }
     attribution = report["execution_attribution"]
     assert attribution["components_known"] is plan_metadata
     assert attribution["missing_plan_count"] == (0 if plan_metadata else 3)
