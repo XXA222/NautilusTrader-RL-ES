@@ -231,6 +231,24 @@ def test_holdout_gate_fails_closed_without_classified_native_risk_facts() -> Non
     assert not _holdout_constraints_pass({**report, "risk_hard_interventions": 2}, spec)
 
 
+def test_zero_return_fails_stress_and_holdout_profitability_gates() -> None:
+    from rles_orchestrator.wfo_application import _holdout_return_gate, _stress_validation_gate
+    from rles_research.selection import SelectionSpec
+
+    spec = SelectionSpec(0.2, 2.0, 0, "median_fold_net_return", min_median_fold_net_return=0.0)
+    stress_report = {
+        "execution_mode": "stress", "terminal_flat": True,
+        "liquidations_observed": True, "liquidations": 0,
+        "risk_intervention_components_known": True, "risk_hard_interventions": 0,
+        "metrics": {"net_return": 0.0, "max_drawdown": 0.0, "turnover_ratio": 0.0},
+    }
+    gate = _stress_validation_gate([stress_report], spec)
+    assert gate["passed"] is False
+    assert "fold_0:nonpositive_net_return" in gate["reasons"]
+    holdout = {"metrics": {"net_return": 0.0}}
+    assert _holdout_return_gate(holdout, spec) == (0.0, False)
+
+
 def test_default_wfo_blocks_before_data_or_compute_when_adapter_lacks_liquidation_support(
     tmp_path, monkeypatch,
 ) -> None:

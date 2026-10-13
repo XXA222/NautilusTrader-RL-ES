@@ -59,9 +59,25 @@ def test_candidate_selection_rejects_negative_validation_net_return() -> None:
     }
     assert choose(spec, (candidate,)) == {
         "status": "NO_FEASIBLE_MODEL",
-        "rejected": {"negative": "CONSTRAINT_VIOLATION"},
+        "rejected": {"negative": "NONPOSITIVE_NET_RETURN"},
         "selection_spec_sha256": spec.sha256(),
     }
+
+
+def test_candidate_selection_rejects_zero_net_return_as_nonprofitable() -> None:
+    spec = SelectionSpec(0.5, 2.0, 1, "median_fold_sharpe")
+    candidate = {
+        "candidate_id": "flat",
+        "liquidations": 0,
+        "max_drawdown": 0.0,
+        "turnover": 0.0,
+        "risk_violations": 0,
+        "median_fold_net_return": 0.0,
+        "median_fold_sharpe": 0.0,
+    }
+    result = choose(spec, (candidate,))
+    assert result["status"] == "NO_FEASIBLE_MODEL"
+    assert result["rejected"] == {"flat": "NONPOSITIVE_NET_RETURN"}
 
 
 def test_baseline_rejects_oversized_market_price() -> None:

@@ -65,7 +65,9 @@ def choose(spec: SelectionSpec, candidates: Sequence[Mapping[str,object]], *,
                 for name in ('liquidations','risk_violations'))
             or metrics['max_drawdown']<0 or metrics['turnover']<0):
             raise ValueError('invalid nonnegative constraint metric')
-        if (metrics['liquidations']!=0 or metrics['max_drawdown']>spec.max_drawdown
+        if metrics['median_fold_net_return'] <= 0:
+            rejected[cid] = 'NONPOSITIVE_NET_RETURN'
+        elif (metrics['liquidations']!=0 or metrics['max_drawdown']>spec.max_drawdown
             or metrics['turnover']>spec.max_turnover
             or metrics['risk_violations']>spec.max_risk_violations
             or metrics['median_fold_net_return']<spec.min_median_fold_net_return):

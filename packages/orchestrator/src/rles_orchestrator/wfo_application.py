@@ -215,6 +215,8 @@ def _stress_validation_gate(reports: list[dict], spec: SelectionSpec) -> dict:
         hard_interventions += report["risk_hard_interventions"]
         if report["liquidations"] != 0:
             reasons.append(f"fold_{index}:liquidation")
+        if net_return <= 0:
+            reasons.append(f"fold_{index}:nonpositive_net_return")
         if net_return < spec.min_median_fold_net_return:
             reasons.append(f"fold_{index}:net_return_below_gate")
         if float(cast(float, values["max_drawdown"])) > spec.max_drawdown:
@@ -263,6 +265,7 @@ def _holdout_return_gate(report: dict, spec: SelectionSpec) -> tuple[object, boo
     passed = (
         isinstance(value, (int, float)) and not isinstance(value, bool)
         and math.isfinite(float(value))
+        and float(value) > 0
         and float(value) >= spec.min_median_fold_net_return
     )
     return value, passed
