@@ -10,9 +10,21 @@ class RewardConfig:
     lambda_dd: float = 0.0
     lambda_guard: float = 0.0
     insolvent_penalty: float = -10.0
+    reward_scale: float = 1.0
 
     def __post_init__(self) -> None:
-        if any(not isfinite(x) for x in (self.lambda_dd, self.lambda_guard, self.insolvent_penalty)):
+        if type(self.reward_scale) not in (int, float):
+            raise ValueError("reward scale must be a real number")
+        try:
+            scale = float(self.reward_scale)
+        except (OverflowError, ValueError) as exc:
+            raise ValueError("reward scale must be finite") from exc
+        if not isfinite(scale) or not 0 < scale <= 1_000_000:
+            raise ValueError("reward scale must be in (0, 1000000]")
+        object.__setattr__(self, "reward_scale", scale)
+        if any(not isfinite(x) for x in (
+            self.lambda_dd, self.lambda_guard, self.insolvent_penalty, self.reward_scale,
+        )):
             raise ValueError("reward config must be finite")
         if self.lambda_dd < 0 or self.lambda_guard < 0 or self.insolvent_penalty >= 0:
             raise ValueError("invalid reward costs")
@@ -36,7 +48,7 @@ class RewardState:
 
 
 class RewardCalculator:
-    """State is reward-related observation memory, NOT an account ledger."""
+    """Track native-unit reward facts and return the frozen learner-scale total."""
     def __init__(self, config: RewardConfig) -> None:
         self.config = config
         self._prev_equity: float | None = None
@@ -83,8 +95,9 @@ class RewardCalculator:
             self._prev_equity = float(native_equity)
             self._prev_dd = 1.0
             shape = -self.config.lambda_dd * dd_growth - self.config.lambda_guard * guard_intervention
-            return RewardBreakdown(self.config.insolvent_penalty, shape,
-                                   self.config.insolvent_penalty + shape, 1.0, self._peak, True)
+            total = (self.config.insolvent_penalty + shape) * self.config.reward_scale
+            return RewardBreakdown(self.config.insolvent_penalty, shape, total,
+                                   1.0, self._peak, True)
         # Log differences avoid overflow/underflow in extreme native-equity ratios.
         if self._prev_equity <= 0:
             raise RuntimeError("insolvent episode cannot continue")
@@ -94,6 +107,7 @@ class RewardCalculator:
         dd_growth = max(0.0, dd - self._prev_dd)
         shape = -self.config.lambda_dd * dd_growth - self.config.lambda_guard * guard_intervention
         self._prev_dd, self._prev_equity, self._peak = dd, native_equity, new_peak
-        if not isfinite(econ) or not isfinite(shape) or not isfinite(econ + shape):
+        total = (econ + shape) * self.config.reward_scale
+        if not isfinite(econ) or not isfinite(shape) or not isfinite(total):
             raise ValueError("reward non-finite")
-        return RewardBreakdown(econ, shape, econ + shape, dd, new_peak, False)
+        return RewardBreakdown(econ, shape, total, dd, new_peak, False)

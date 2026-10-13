@@ -158,7 +158,7 @@ class HistoricalEnvironmentFactory:
                  mode: str = "base", scaler: Scaler | None = None,
                  fit_scaler: bool = False, split: str = "train_inner",
                  compact_native_history: bool = True,
-                 feature_profile: str = "legacy") -> None:
+                 feature_profile: str = "legacy", reward_scale: float = 1.0) -> None:
         if split not in {"train_inner", "validation", "test", "holdout"}:
             raise DataError("unknown historical research split")
         if fit_scaler and split != "train_inner":
@@ -173,6 +173,7 @@ class HistoricalEnvironmentFactory:
             raise DataError("unsupported historical feature profile")
         self.compact_native_history = compact_native_history
         self.feature_profile = feature_profile
+        self.reward_config = RewardConfig(reward_scale=reward_scale)
         self.store = CuratedStore((*read_curated(market_path).events, *load_rules(rules_path)))
         self.instrument, self.split, self.mode = instrument, split, mode
         self.start_ns, self.end_ns = start_ns, end_ns
@@ -248,12 +249,16 @@ class HistoricalEnvironmentFactory:
                for row in self.rows):
             raise DataError("split episode at historical instrument-rule changes")
         self._bars = tuple(bars)
-        config_identity = {
+        config_identity: dict[str, Any] = {
             "execution": execution,
             "quote_max_age_ns": (QUOTE_MAX_AGE_NS if self.execution.base_fill.data_granularity == "quote" else None),
             "hard": hard_risk, "soft": soft_risk,
             "capital": starting_balance, "budget": risk_budget_notional,
         }
+        # Preserve historical default run identities; bind every experimental
+        # non-default optimizer reward scale to its new artifacts.
+        if self.reward_config.reward_scale != 1.0:
+            config_identity["reward_scale"] = self.reward_config.reward_scale
         self.base_config_hash = digest({**config_identity, "mode": "base"})
         self.config_hash = digest({**config_identity, "mode": mode})
         transition_identity: dict[str, Any] = {
@@ -261,6 +266,8 @@ class HistoricalEnvironmentFactory:
             "schema": self.schema.hash, "features": self.features.hash,
             "scaler": self.scaler.hash, "window": [start_ns, end_ns],
         }
+        if self.reward_config.reward_scale != 1.0:
+            transition_identity["reward_scale"] = self.reward_config.reward_scale
         if self.feature_profile == "causal_mtf_v3":
             known_schedule = self.coverage.known_schedule_times_ns
             if known_schedule is None:
@@ -446,7 +453,7 @@ class HistoricalEnvironmentFactory:
                 transition_hash=transition, frames=tuple(frames), scoring_frames=len(frames) - 2,
                 plan_action=plan_action, plan_terminal=lambda s: plan(Decimal(0), s, terminal=True),
                 executed_exposure=lambda s: signed_quantity(s) * s.mark / self.budget,
-                reward_config=RewardConfig(), replay=pending_replay, observation_state=self.observation_state,
+                reward_config=self.reward_config, replay=pending_replay, observation_state=self.observation_state,
             )
             pending_replay = None
             return episode
@@ -455,12 +462,13 @@ class HistoricalEnvironmentFactory:
         return NautilusBarrierEnv(episode_factory=episode_factory,
                                   observation_builder=ObservationBuilder(self.schema, scaler=bridge, expected_scaler_hash=bridge.fingerprint,
                                                                         split="train" if self.split == "train_inner" else self.split),
-                                  reward_config=RewardConfig(), max_steps=len(self.rows) - 3, transition_hash=transition)
+                                  reward_config=self.reward_config, max_steps=len(self.rows) - 3, transition_hash=transition)
 
     def metadata(self) -> dict:
         return {
             "quality": asdict(self.quality), "features": asdict(self.features),
             "feature_profile": self.feature_profile,
+            "reward_config": asdict(self.reward_config),
             "known_schedule_times_ns": (None if self.coverage.known_schedule_times_ns is None else
                                          {symbol: tuple(times) for symbol, times in
                                           self.coverage.known_schedule_times_ns.items()}),

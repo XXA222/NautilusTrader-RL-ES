@@ -207,6 +207,7 @@ class NautilusBarrierEnv(gym.Env):
             self._last_observation = obs.copy()
             info = {
                 "r_econ": breakdown.r_econ, "r_shape": breakdown.r_shape,
+                "r_train": breakdown.r_total,
                 "native_equity": str(snapshot.equity), "drawdown": breakdown.drawdown,
                 "requested_action": raw, "risk_guard_intervention": guard,
                 "risk_soft_adjustment": float(risk_review.soft_adjustment),

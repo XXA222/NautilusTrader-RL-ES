@@ -66,6 +66,20 @@ def test_stress_execution_identity_changes_only_the_mode_from_frozen_base(tmp_pa
     assert stress.scaler.hash == base.scaler.hash
 
 
+def test_nondefault_reward_scale_is_bound_to_historical_training_identity(tmp_path):
+    environment = recipe(tmp_path)
+    raw = HistoricalEnvironmentFactory(**environment)
+    legacy_default = HistoricalEnvironmentFactory(**environment, reward_scale=1.0)
+    scaled = HistoricalEnvironmentFactory(**environment, reward_scale=10_000.0)
+
+    assert raw.config_hash == legacy_default.config_hash
+    assert raw.transition_hash == legacy_default.transition_hash
+    assert scaled.config_hash != raw.config_hash
+    assert scaled.transition_hash != raw.transition_hash
+    assert scaled.metadata()["reward_config"]["reward_scale"] == 10_000.0
+    assert scaled.make_env()._reward.config.reward_scale == 10_000.0
+
+
 def test_historical_factory_accepts_v2_profile_and_binds_its_schema(tmp_path):
     factory = HistoricalEnvironmentFactory(**recipe(tmp_path, bar_count=80, start_minute=62),
                                            feature_profile="causal_mtf_v2")

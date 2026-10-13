@@ -120,7 +120,7 @@ def load_config(path: str | Path) -> dict:
     allowed = {"environment", "evaluation", "route", "algorithm", "steps", "population", "generations",
                "seed", "hidden_layers", "normalize_observation", "hyperparameters", "output", "distillation",
                "checkpoint_interval_steps", "wfo", "resume_checkpoint", "rl_device", "es_input_scaling",
-               "enforce_worker_memory_limit", "worker_ram_bytes"}
+               "enforce_worker_memory_limit", "worker_ram_bytes", "reward_scale"}
     if not isinstance(config, dict) or set(config) - allowed:
         raise DataError("unknown application configuration fields")
     for name in ("market_path", "rules_path"):
@@ -138,7 +138,8 @@ def load_config(path: str | Path) -> dict:
 
 
 def prepare(config: dict) -> HistoricalEnvironmentFactory:
-    return HistoricalEnvironmentFactory(**{**config["environment"], "split": "train_inner", "fit_scaler": True})
+    return HistoricalEnvironmentFactory(**{**config["environment"], "split": "train_inner", "fit_scaler": True,
+                                           "reward_scale": config.get("reward_scale", 1.0)})
 
 
 def audit_market(config: dict) -> dict:
@@ -371,7 +372,8 @@ def _evaluation_factory(config: dict, training: HistoricalEnvironmentFactory) ->
     if evaluation["start_ns"] < training.end_ns:
         raise DataError("evaluation window overlaps training")
     return HistoricalEnvironmentFactory(**{**config["environment"], **evaluation, "split": "validation",
-                                            "fit_scaler": False, "scaler": training.scaler})
+                                            "fit_scaler": False, "scaler": training.scaler,
+                                            "reward_scale": training.reward_config.reward_scale})
 
 
 def _resolve_rl_device(requested: Any, route: Route) -> Literal["cpu", "cuda"]:
@@ -487,7 +489,10 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
         action=action_hash, action_transform=digest("soft-hard-native-quantity"), execution=training.execution.fingerprint(),
         hard_risk=training.hard.signature(),
         soft_risk=digest({name: str(value) for name, value in asdict(training.soft).items()}),
-        reward=digest({"lambda_dd": 0, "lambda_guard": 0}),
+        reward=(digest({"lambda_dd": 0, "lambda_guard": 0})
+                if training.reward_config.reward_scale == 1.0 else
+                digest({"lambda_dd": 0, "lambda_guard": 0,
+                        "reward_scale": training.reward_config.reward_scale})),
         normalization=digest({"VecNormalize": config.get("normalize_observation", False)}),
         engine=digest("nautilus_trader-2.0.0rc6"), adapter=digest("rles.perpetual-native-v2"),
         fold=digest([training.start_ns, training.end_ns]), terminal=digest("force_flatten_with_cost"),
@@ -643,7 +648,10 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
     state: dict[str, Any] = {}
     run_quota = ResourceQuota(output / "quota.sqlite", cpu_cores=1,
                                ram_bytes=4 * 1024**3, gpus=int(rl_device == "cuda"))
-    frozen_recipe = {**config["environment"], "split": "train_inner", "fit_scaler": False}
+    frozen_recipe = {
+        **config["environment"], "split": "train_inner", "fit_scaler": False,
+        "reward_scale": training.reward_config.reward_scale,
+    }
 
     def execute_es(context):
         stage = context.stage
@@ -750,6 +758,7 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
             episode_decision_steps=len(training.rows) - 3,
         )
         bundle = {"schema": "rles.historical-bundle.v1", "actor": actor_metadata, "soft_multipliers": risk_parameters,
+                  "reward_scale": training.reward_config.reward_scale,
                   "rl_device": rl_device,
                   "runtime_resources": {"es_worker_policy": worker_resources, "coordinator_learner_enforcement": "quota_only"},
                   "training_coverage": training_coverage,
@@ -792,9 +801,13 @@ def backtest(config: dict, bundle_path: str | Path, *, factory: HistoricalEnviro
         requested = config["evaluation"].get("split", "test")
         if requested not in {"test", "holdout"}:
             raise DataError("backtest requires an explicit Test or Holdout split")
+        bundle_reward_scale = bundle.get("reward_scale", 1.0)
+        if config.get("reward_scale", bundle_reward_scale) != bundle_reward_scale:
+            raise DataError("backtest reward scale differs from the trained bundle")
         factory = HistoricalEnvironmentFactory(**{**bundle["environment"], **config["evaluation"],
                                                    "fit_scaler": False, "split": requested,
-                                                   "scaler": Scaler(**raw_scaler)})
+                                                   "scaler": Scaler(**raw_scaler),
+                                                   "reward_scale": bundle_reward_scale})
     identities = bundle["preprocessing"].get("identities")
     if not isinstance(identities, dict) or set(identities) != {
         "dataset", "features", "schema", "scaler", "execution", "hard_risk", "config",
@@ -872,7 +885,8 @@ def diagnose_train(config: dict, bundle_path: str | Path) -> dict:
     raw_scaler = dict(bundle["preprocessing"]["scaler"])
     raw_scaler["mean"], raw_scaler["std"] = tuple(raw_scaler["mean"]), tuple(raw_scaler["std"])
     factory = HistoricalEnvironmentFactory(**{**environment, "split": "train_inner",
-                                              "fit_scaler": False, "scaler": Scaler(**raw_scaler)})
+                                              "fit_scaler": False, "scaler": Scaler(**raw_scaler),
+                                              "reward_scale": bundle.get("reward_scale", 1.0)})
     report = backtest(config, root, factory=factory)
     report["diagnostic_scope"] = {
         "split": "train_inner", "start_ns": factory.start_ns, "end_ns": factory.end_ns,

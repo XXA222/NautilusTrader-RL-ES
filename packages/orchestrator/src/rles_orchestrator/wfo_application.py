@@ -326,6 +326,7 @@ def _stress_validation_report(run: dict, bundle_root: Path, *, start_ns: int, en
         **environment, "start_ns": start_ns, "end_ns": end_ns,
         "coverage_policy": coverage_policy, "fit_scaler": False,
         "split": "validation", "mode": "stress", "scaler": _scaler(bundle_root),
+        "reward_scale": bundle.get("reward_scale", 1.0),
     })
     report = backtest(run, bundle_root, factory=factory, allow_execution_stress=True)
     if report.get("execution_mode") != "stress":
@@ -339,6 +340,7 @@ def _baseline_reports(config: dict, bundle_root: Path, *, seed: int) -> dict[str
     factory = HistoricalEnvironmentFactory(**{
         **bundle["environment"], **config["evaluation"], "fit_scaler": False,
         "split": "test", "scaler": scaler,
+        "reward_scale": bundle.get("reward_scale", 1.0),
     })
     output = {}
     for name in ("B0_no_trade", "B1_always_long", "B2_simple_momentum", "B3_random_action"):
