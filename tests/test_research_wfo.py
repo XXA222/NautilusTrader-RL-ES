@@ -52,6 +52,12 @@ def test_wfo_candidate_deadband_is_applied_and_bound_to_its_environment(tmp_path
     assert train_environment["execution"]["deadband"] == "0.05"
     assert train_environment["coverage_policy"] == {"marker": "train"}
 
+    scheduled = _candidate(
+        base, {"candidate_id": "ppo-funding-calendar", "feature_profile": "causal_mtf_v3"},
+        tmp_path / "scheduled",
+    )
+    assert scheduled["environment"]["feature_profile"] == "causal_mtf_v3"
+
     with pytest.raises(DataError, match="deadband is invalid"):
         _candidate(base, {"candidate_id": "bad", "deadband": "1.01"}, tmp_path / "bad")
     with pytest.raises(DataError, match="decimal string or integer"):

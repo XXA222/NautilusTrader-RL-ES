@@ -96,7 +96,9 @@ def _candidate(base: dict, values: dict, output: Path) -> dict:
                    if k not in {"candidate_id", "deadband", "feature_profile"}})
     if "feature_profile" in values:
         profile = values["feature_profile"]
-        if not isinstance(profile, str) or profile not in {"legacy", "causal_mtf_v1", "causal_mtf_v2"}:
+        if not isinstance(profile, str) or profile not in {
+            "legacy", "causal_mtf_v1", "causal_mtf_v2", "causal_mtf_v3",
+        }:
             raise DataError("invalid WFO candidate feature profile")
         environment = base.get("environment")
         if not isinstance(environment, dict):
@@ -481,8 +483,9 @@ def run_wfo(config: dict, *, train_fn: Callable[..., dict] = train,
         values["candidate_id"]: values.get("feature_profile", default_profile)
         for values in candidates
     }
-    if any(not isinstance(profile, str) or profile not in {"legacy", "causal_mtf_v1", "causal_mtf_v2"}
-           for profile in candidate_profiles.values()):
+    if any(not isinstance(profile, str) or profile not in {
+        "legacy", "causal_mtf_v1", "causal_mtf_v2", "causal_mtf_v3",
+    } for profile in candidate_profiles.values()):
         raise DataError("WFO candidates contain an unknown feature profile")
     candidate_features = {
         identity: (historical_feature_spec(dict(template["maximum_age_ns"]))
@@ -490,7 +493,11 @@ def run_wfo(config: dict, *, train_fn: Callable[..., dict] = train,
                    historical_feature_spec(dict(template["maximum_age_ns"]), profile=profile))
         for identity, profile in candidate_profiles.items()
     }
-    candidate_feature_hashes = {identity: spec.hash for identity, spec in candidate_features.items()}
+    candidate_feature_hashes = {
+        identity: (digest({"profile": candidate_profiles[identity], "feature_spec": spec.hash})
+                   if candidate_profiles[identity] == "causal_mtf_v3" else spec.hash)
+        for identity, spec in candidate_features.items()
+    }
     protocol_feature_hash = digest(candidate_feature_hashes)
     scheme = settings["scheme"]
     train_days = {"60/15/15": 60, "360/15/15": 360}.get(scheme)

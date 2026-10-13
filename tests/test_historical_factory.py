@@ -11,7 +11,7 @@ from rles_data.core import Availability, CuratedStore, DataError, Event, MINUTE_
 from rles_data.features import make_feature_row
 from rles_data.io import write_curated
 from rles_gym_bridge.historical import (HistoricalEnvironmentFactory, _visible_batches_by_decision,
-                                        historical_feature_spec)
+                                        historical_feature_spec, scheduled_funding_time_features)
 from rles_risk import SoftRiskParams
 
 pytestmark = pytest.mark.micro_golden
@@ -73,6 +73,37 @@ def test_historical_factory_accepts_v2_profile_and_binds_its_schema(tmp_path):
     assert factory.feature_profile == "causal_mtf_v2"
     assert "market.trend_efficiency_15m" in factory.schema.names
     assert "market.trend_efficiency_60m" in factory.schema.names
+
+
+def test_historical_factory_v3_binds_schedule_time_inputs_separately(tmp_path):
+    environment = recipe(tmp_path, bar_count=80, start_minute=62)
+    factory = HistoricalEnvironmentFactory(**environment, feature_profile="causal_mtf_v3")
+    v2 = HistoricalEnvironmentFactory(**environment, feature_profile="causal_mtf_v2")
+
+    assert "market.trend_efficiency_60m" in factory.schema.names
+    assert "time.funding_settlement_within_24h" in factory.schema.names
+    assert "time.funding_settlement_time_to_event_24h" in factory.schema.names
+    assert factory.schema.hash != v2.schema.hash
+    assert "time.funding_settlement_within_24h" not in v2.schema.names
+
+
+def test_funding_schedule_countdown_is_bounded_and_uses_strict_future_schedule():
+    schedule = (10 * MINUTE_NS, 40 * MINUTE_NS)
+
+    assert scheduled_funding_time_features(9 * MINUTE_NS, schedule) == {
+        "funding_settlement_within_24h": 1.0,
+        "funding_settlement_time_to_event_24h": pytest.approx(1 / 1440),
+    }
+    assert scheduled_funding_time_features(10 * MINUTE_NS, schedule)[
+        "funding_settlement_time_to_event_24h"
+    ] == pytest.approx(30 / 1440)
+    assert scheduled_funding_time_features(20 * MINUTE_NS, schedule)[
+        "funding_settlement_time_to_event_24h"
+    ] == pytest.approx(20 / 1440)
+    assert scheduled_funding_time_features(40 * MINUTE_NS, schedule) == {
+        "funding_settlement_within_24h": 0.0,
+        "funding_settlement_time_to_event_24h": 1.0,
+    }
 
 
 def recipe(tmp_path, *, price_jump=False, bar_count=20, start_minute=6):

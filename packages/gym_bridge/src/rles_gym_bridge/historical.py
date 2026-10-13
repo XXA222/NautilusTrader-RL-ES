@@ -28,6 +28,28 @@ from .observation import ObservationBuilder, ObservationSchema
 from .reward import RewardConfig
 
 
+_FUNDING_TIME_HORIZON_NS = 24 * 60 * 60 * 1_000_000_000
+
+
+def scheduled_funding_time_features(decision_ts_ns: int, settlement_times_ns: tuple[int, ...]) -> dict[str, float]:
+    """Encode only the source-declared next funding time, never realized events."""
+    if type(decision_ts_ns) is not int or decision_ts_ns <= 0:
+        raise DataError("funding time feature requires a positive decision timestamp")
+    if (not isinstance(settlement_times_ns, tuple)
+            or any(type(ts) is not int or ts <= 0 for ts in settlement_times_ns)
+            or settlement_times_ns != tuple(sorted(set(settlement_times_ns)))):
+        raise DataError("funding time feature requires an ordered immutable schedule")
+    future = next((ts for ts in settlement_times_ns if ts > decision_ts_ns), None)
+    if future is None:
+        return {"funding_settlement_within_24h": 0.0,
+                "funding_settlement_time_to_event_24h": 1.0}
+    fraction = min((future - decision_ts_ns) / _FUNDING_TIME_HORIZON_NS, 1.0)
+    return {
+        "funding_settlement_within_24h": float(future - decision_ts_ns <= _FUNDING_TIME_HORIZON_NS),
+        "funding_settlement_time_to_event_24h": fraction,
+    }
+
+
 def _money(value: Any) -> Decimal:
     # Native Money strings carry a currency suffix; account balance dicts may
     # instead carry bare decimal strings. No market-derived balance estimates.
@@ -82,11 +104,13 @@ def historical_feature_spec(maximum_age_ns: dict[str, int], *, profile: str = "l
     ``causal_mtf_v1`` adds closed-bar return and volatility context at longer
     horizons. ``causal_mtf_v2`` also adds bounded trend-efficiency features that
     distinguish persistent directional movement from choppy price paths. The
-    selected recipe is bound into the feature and transition hashes.
+    ``causal_mtf_v3`` adds a source-scheduled next-settlement countdown to the
+    observation schema. Its market features, observation schema and transition
+    identity remain bound to the selected recipe.
     """
     if set(maximum_age_ns) != {"mark", "index", "funding_update"}:
         raise DataError("historical feature recipe requires complete freshness limits")
-    if not isinstance(profile, str) or profile not in {"legacy", "causal_mtf_v1", "causal_mtf_v2"}:
+    if not isinstance(profile, str) or profile not in {"legacy", "causal_mtf_v1", "causal_mtf_v2", "causal_mtf_v3"}:
         raise DataError("unsupported historical feature profile")
     fields: tuple[FeatureField, ...] = (
         FeatureField("return_1m", "float64", "ratio", "ohlcv_1m", 1, 1, "return"),
@@ -96,7 +120,7 @@ def historical_feature_spec(maximum_age_ns: dict[str, int], *, profile: str = "l
         FeatureField("last_settled_funding", "float64", "ratio", "funding_update", 1, 1,
                      "latest", maximum_age_ns["funding_update"]),
     )
-    if profile in {"causal_mtf_v1", "causal_mtf_v2"}:
+    if profile in {"causal_mtf_v1", "causal_mtf_v2", "causal_mtf_v3"}:
         fields += (
             FeatureField("return_5m", "float64", "ratio", "ohlcv_1m", 5, 1, "return"),
             FeatureField("return_15m", "float64", "ratio", "ohlcv_1m", 15, 1, "return"),
@@ -104,7 +128,7 @@ def historical_feature_spec(maximum_age_ns: dict[str, int], *, profile: str = "l
             FeatureField("volatility_15m", "float64", "ratio", "ohlcv_1m", 15, 1, "volatility"),
             FeatureField("volatility_60m", "float64", "ratio", "ohlcv_1m", 60, 1, "volatility"),
         )
-    if profile == "causal_mtf_v2":
+    if profile in {"causal_mtf_v2", "causal_mtf_v3"}:
         fields += (
             FeatureField("trend_efficiency_15m", "float64", "ratio", "ohlcv_1m", 15, 1, "trend_efficiency"),
             FeatureField("trend_efficiency_60m", "float64", "ratio", "ohlcv_1m", 60, 1, "trend_efficiency"),
@@ -144,7 +168,7 @@ class HistoricalEnvironmentFactory:
         if type(compact_native_history) is not bool:
             raise DataError("native history compaction flag must be Boolean")
         if not isinstance(feature_profile, str) or feature_profile not in {
-            "legacy", "causal_mtf_v1", "causal_mtf_v2",
+            "legacy", "causal_mtf_v1", "causal_mtf_v2", "causal_mtf_v3",
         }:
             raise DataError("unsupported historical feature profile")
         self.compact_native_history = compact_native_history
@@ -180,9 +204,13 @@ class HistoricalEnvironmentFactory:
         )
         names = tuple("market." + f.name for f in self.features.fields) + tuple("account." + n for n in account)
         units = tuple(f.unit for f in self.features.fields) + ("USDT", "USDT", "ratio", "USDT", "USDT", "USDT", "USDT", "USDT", "ratio", "ETH")
-        self.schema = ObservationSchema("0.4.0", names + ("risk.guard_intervention", "risk.headroom")
+        time_names = (("time.funding_settlement_within_24h",
+                       "time.funding_settlement_time_to_event_24h")
+                      if self.feature_profile == "causal_mtf_v3" else ())
+        self.schema = ObservationSchema("0.4.0", names + time_names + ("risk.guard_intervention", "risk.headroom")
                                         + tuple("execution." + n for n in execution_names),
-                                        units + ("ratio", "ratio", "ratio", "ratio", "count", "ratio", "ratio", "ratio"))
+                                        units + ("ratio",) * len(time_names)
+                                        + ("ratio", "ratio", "ratio", "ratio", "count", "ratio", "ratio", "ratio"))
         # Fold membership uses economic event time. Availability still becomes
         # each row's decision clock, so delayed facts never become observable
         # early and cannot drift into a different score split merely due to
@@ -225,9 +253,14 @@ class HistoricalEnvironmentFactory:
         }
         self.base_config_hash = digest({**config_identity, "mode": "base"})
         self.config_hash = digest({**config_identity, "mode": mode})
-        self.transition_hash = digest({"data": self.store.snapshot_hash, "config": self.config_hash,
-                                       "schema": self.schema.hash, "features": self.features.hash,
-                                       "scaler": self.scaler.hash, "window": [start_ns, end_ns]})
+        transition_identity: dict[str, Any] = {
+            "data": self.store.snapshot_hash, "config": self.config_hash,
+            "schema": self.schema.hash, "features": self.features.hash,
+            "scaler": self.scaler.hash, "window": [start_ns, end_ns],
+        }
+        if self.feature_profile == "causal_mtf_v3":
+            transition_identity["feature_profile"] = self.feature_profile
+        self.transition_hash = digest(transition_identity)
         self.snapshots: list[Any] = []
         self.fill_references: dict[str, Decimal] = {}
 
@@ -392,7 +425,11 @@ class HistoricalEnvironmentFactory:
             for row, frame_batches in zip(self.rows, frame_batch_groups, strict=True):
                 frames.append(BarrierFrame(row.decision_ts_ns, frame_batches,
                                           visible_market_features(row, self.features, self.schema, instrument=self.instrument,
-                                                                  decision_ts_ns=row.decision_ts_ns), {}))
+                                                                  decision_ts_ns=row.decision_ts_ns),
+                                          scheduled_funding_time_features(
+                                              row.decision_ts_ns,
+                                              self.coverage.settlement_times_ns[self.instrument],
+                                          ) if self.feature_profile == "causal_mtf_v3" else {}))
             episode = BarrierEpisode(
                 native_session=session,
                 native_identity={"dataset_hash": self.store.snapshot_hash, "fold_hash": digest([self.start_ns, self.end_ns]), "config_hash": self.config_hash},
@@ -413,6 +450,7 @@ class HistoricalEnvironmentFactory:
     def metadata(self) -> dict:
         return {
             "quality": asdict(self.quality), "features": asdict(self.features),
+            "feature_profile": self.feature_profile,
             "schema": asdict(self.schema), "scaler": asdict(self.scaler),
             "transition_hash": self.transition_hash,
             "identities": {
