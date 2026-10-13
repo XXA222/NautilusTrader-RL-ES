@@ -18,10 +18,12 @@ def test_config_loader_accepts_es_scale_and_rejects_other_unknown_keys(tmp_path)
     path = tmp_path / "config.json"
     config = {"environment": {"market_path": "market.parquet", "rules_path": "rules.json"},
               "output": "run", "es_input_scaling": "account_units",
-              "enforce_worker_memory_limit": True, "worker_ram_bytes": 2147483648}
+              "enforce_worker_memory_limit": True, "worker_ram_bytes": 2147483648,
+              "rl_num_envs": 4, "rl_episode_steps": 1000}
     path.write_text(json.dumps(config))
     assert application.load_config(path)["es_input_scaling"] == "account_units"
     assert application.load_config(path)["worker_ram_bytes"] == 2147483648
+    assert application.load_config(path)["rl_num_envs"] == 4
     path.write_text(json.dumps({**config, "unknown_policy_setting": True}))
     with pytest.raises(DataError, match="unknown application configuration"):
         application.load_config(path)
@@ -29,21 +31,34 @@ def test_config_loader_accepts_es_scale_and_rejects_other_unknown_keys(tmp_path)
 
 def test_training_coverage_report_separates_interaction_budget_from_full_episode_passes():
     short = application._training_coverage_report(
-        rl_steps=64, num_envs=1, episode_decision_steps=60 * 24 * 60,
+        rl_steps=64, num_envs=1, train_window_decision_steps=60 * 24 * 60,
+        episode_decision_steps=60 * 24 * 60, episode_start_offsets=(0,),
     )
     assert short["upper_bound_unique_decision_steps_per_environment"] == [64]
     assert short["nominal_full_episode_passes_per_environment"] == [0]
-    assert short["upper_bound_time_coverage_fraction_per_environment"][0] == pytest.approx(
+    assert short["upper_bound_train_window_coverage_fraction"] == pytest.approx(
         64 / (60 * 24 * 60),
     )
 
     repeated = application._training_coverage_report(
-        rl_steps=2_900, num_envs=2, episode_decision_steps=1_000,
+        rl_steps=2_900, num_envs=2, train_window_decision_steps=3_000,
+        episode_decision_steps=1_000, episode_start_offsets=(0, 2_000),
     )
     assert repeated["interaction_steps_per_environment"] == [1_450, 1_450]
     assert repeated["upper_bound_unique_decision_steps_per_environment"] == [1_000, 1_000]
+    assert repeated["upper_bound_unique_train_window_steps"] == 2_000
+    assert repeated["fixed_episode_start_offsets"] == [0, 2_000]
     assert repeated["nominal_full_episode_passes_per_environment"] == [1, 1]
     assert repeated["nominal_partial_episode_steps_per_environment"] == [450, 450]
+
+
+def test_rl_sampling_policy_requires_bounded_distinct_parallel_episodes():
+    assert application._rl_sampling_policy({}) == (1, None)
+    assert application._rl_sampling_policy({"rl_num_envs": 4, "rl_episode_steps": 10_000}) == (4, 10_000)
+    with pytest.raises(Exception, match="explicit fixed episode steps"):
+        application._rl_sampling_policy({"rl_num_envs": 2})
+    with pytest.raises(Exception, match="1-4 environments"):
+        application._rl_sampling_policy({"rl_num_envs": 5, "rl_episode_steps": 100})
 
 
 @pytest.mark.parametrize("settings", [

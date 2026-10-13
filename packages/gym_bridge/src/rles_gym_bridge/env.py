@@ -156,6 +156,7 @@ class NautilusBarrierEnv(gym.Env):
                 "observation_schema_hash": self._observation_builder.schema.hash,
                 "decision_ts_ns": first.decision_ts_ns,
                 "initial_equity": str(first.equity),
+                "episode_window": self._episode.episode_window,
             }
         except BaseException:
             self.close()

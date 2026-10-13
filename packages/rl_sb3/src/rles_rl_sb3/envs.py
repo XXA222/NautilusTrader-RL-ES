@@ -33,18 +33,18 @@ def _spawn_worker(factory: EnvFactory, rank: int, seed: int,
             self._first = True
 
         def reset(self, *, seed=None, options=None):
+            if seed is not None and (type(seed) is not int or not 0 <= seed < 2**32):
+                raise ContractError("episode reset seed must be uint32")
             if self._first:
                 seed = self._root_seed
                 self._first = False
                 self._next_episode = 1
-            elif seed is None:
+            else:
+                # L1 owns the immutable environment seed tree. SB3 may pass its
+                # algorithm seed through VecEnv.seed(); it must not replace the
+                # independently frozen environment stream.
                 seed = _episode_seed(self._root_seed, self._next_episode)
                 self._next_episode += 1
-            else:
-                if type(seed) is not int or not 0 <= seed < 2**32:
-                    raise ContractError("episode reset seed must be uint32")
-                self._root_seed = seed
-                self._next_episode = 1
             return self.env.reset(seed=seed, options=options)
 
         @property

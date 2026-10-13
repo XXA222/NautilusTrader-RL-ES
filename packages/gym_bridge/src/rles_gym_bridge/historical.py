@@ -316,9 +316,28 @@ class HistoricalEnvironmentFactory:
         }
 
     def make_env(self, transition_hash: str | None = None, *, replay: EpisodeReplay | None = None,
-                 soft_multipliers: dict | None = None) -> NautilusBarrierEnv:
+                 soft_multipliers: dict | None = None, episode_rank: int = 0,
+                 episode_count: int = 1, episode_steps: int | None = None) -> NautilusBarrierEnv:
         transition = transition_hash or self.transition_hash
         pending_replay = replay
+        full_steps = len(self.rows) - 3
+        selected_steps = full_steps if episode_steps is None else episode_steps
+        if (type(episode_rank) is not int or type(episode_count) is not int
+                or type(selected_steps) is not int or not 0 <= episode_rank < episode_count
+                or selected_steps < 1 or selected_steps > full_steps):
+            raise DataError("invalid fixed historical episode partition")
+        maximum_offset = full_steps - selected_steps
+        if episode_count > maximum_offset + 1:
+            raise DataError("historical episode partitions require distinct start positions")
+        start_offset = (0 if episode_count == 1 else
+                        episode_rank * maximum_offset // (episode_count - 1))
+        episode_rows = self.rows[start_offset:start_offset + selected_steps + 3]
+        episode_fold_hash = (digest([self.start_ns, self.end_ns])
+                             if episode_steps is None and episode_count == 1 else digest({
+                                 "window": [episode_rows[0].decision_ts_ns,
+                                            episode_rows[-1].decision_ts_ns],
+                                 "partition": [episode_rank, episode_count, selected_steps],
+                             }))
 
         def episode_factory(*, seed, options):
             nonlocal pending_replay
@@ -368,7 +387,7 @@ class HistoricalEnvironmentFactory:
                 liquidations = (None if snapshot.liquidation_orders is None else
                                 unique_delta(snapshot.liquidation_orders, seen_liquidations,
                                             "client_order_id"))
-                final_boundary = snapshot.decision_ts_ns >= self.rows[-2].decision_ts_ns
+                final_boundary = snapshot.decision_ts_ns >= episode_rows[-2].decision_ts_ns
                 compact = SimpleNamespace(
                     equity=snapshot.equity, currency=snapshot.currency,
                     positions=snapshot.positions, orders=snapshot.orders,
@@ -439,7 +458,8 @@ class HistoricalEnvironmentFactory:
             frame_batch_groups = _visible_batches_by_decision(
                 tuple(batches), tuple(row.decision_ts_ns for row in self.rows),
             )
-            for row, frame_batches in zip(self.rows, frame_batch_groups, strict=True):
+            selected_groups = frame_batch_groups[start_offset:start_offset + selected_steps + 3]
+            for row, frame_batches in zip(episode_rows, selected_groups, strict=True):
                 frames.append(BarrierFrame(row.decision_ts_ns, frame_batches,
                                           visible_market_features(row, self.features, self.schema, instrument=self.instrument,
                                                                   decision_ts_ns=row.decision_ts_ns),
@@ -449,7 +469,9 @@ class HistoricalEnvironmentFactory:
                                           ) if self.feature_profile == "causal_mtf_v3" else {}))
             episode = BarrierEpisode(
                 native_session=session,
-                native_identity={"dataset_hash": self.store.snapshot_hash, "fold_hash": digest([self.start_ns, self.end_ns]), "config_hash": self.config_hash},
+                native_identity={"dataset_hash": self.store.snapshot_hash,
+                                 "fold_hash": episode_fold_hash,
+                                 "config_hash": self.config_hash},
                 transition_hash=transition, frames=tuple(frames), scoring_frames=len(frames) - 2,
                 plan_action=plan_action, plan_terminal=lambda s: plan(Decimal(0), s, terminal=True),
                 executed_exposure=lambda s: signed_quantity(s) * s.mark / self.budget,
@@ -462,7 +484,8 @@ class HistoricalEnvironmentFactory:
         return NautilusBarrierEnv(episode_factory=episode_factory,
                                   observation_builder=ObservationBuilder(self.schema, scaler=bridge, expected_scaler_hash=bridge.fingerprint,
                                                                         split="train" if self.split == "train_inner" else self.split),
-                                  reward_config=self.reward_config, max_steps=len(self.rows) - 3, transition_hash=transition)
+                                  reward_config=self.reward_config, max_steps=selected_steps,
+                                  transition_hash=transition)
 
     def metadata(self) -> dict:
         return {

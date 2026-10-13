@@ -319,6 +319,28 @@ def test_wfo_invalid_worker_policy_cannot_consume_queries(tmp_path, monkeypatch,
     assert not output.exists()
 
 
+def test_wfo_invalid_rl_sampling_cannot_read_data_or_open_query_ledger(tmp_path, monkeypatch) -> None:
+    import rles_orchestrator.wfo_application as wfo_application
+
+    settings = {
+        "protocol_id": "invalid-rl-sampling", "scheme": "60/15/15",
+        "start_ns": 1, "end_ns": 4, "data_start_ns": 0, "warmup_ns": 1,
+        "execution_lag_guard_ns": 0, "embargo_ns": 0,
+        "holdout_start_ns": 2, "holdout_end_ns": 3,
+        "coverage_template": {}, "candidates": [{"candidate_id": "a"}, {"candidate_id": "b"}],
+        "selection": {}, "bootstrap": {}, "pbo_max_partitions": 0,
+        "reviewer_approval_sha": "", "cost_stress_validation": False,
+    }
+    monkeypatch.setattr(wfo_application, "read_curated", lambda _path: pytest.fail("data read"))
+    monkeypatch.setattr(wfo_application, "ResearchLedger", lambda _path: pytest.fail("query ledger opened"))
+    output = tmp_path / "must-not-start"
+    with pytest.raises(DataError, match="explicit fixed episode steps"):
+        wfo_application.run_wfo({
+            "output": str(output), "wfo": settings, "rl_num_envs": 2,
+        })
+    assert not output.exists()
+
+
 @pytest.mark.short_wfo
 @pytest.mark.artifact_restore
 def test_wfo_suspends_validation_protocol_on_keyboard_interrupt(tmp_path, monkeypatch) -> None:

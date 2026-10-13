@@ -35,7 +35,8 @@ from rles_research.statistics import (
     pbo_cscv,
 )
 
-from .application import _file_hash, _verify_file, _worker_memory_policy, _write_verified, backtest, rollout, train
+from .application import (_file_hash, _rl_sampling_policy, _verify_file,
+                          _worker_memory_policy, _write_verified, backtest, rollout, train)
 
 
 _CANDIDATE_FIELDS = {
@@ -455,6 +456,7 @@ def run_wfo(config: dict, *, train_fn: Callable[..., dict] = train,
     if type(cost_stress_validation) is not bool:
         raise DataError("cost_stress_validation must be an explicit boolean")
     _worker_memory_policy(config)
+    _rl_sampling_policy(config)
     root = Path(config["output"]).resolve()
     if root.exists() and not resume:
         raise DataError("WFO output already exists; pass --resume to recover validation-stage work")

@@ -161,6 +161,15 @@ class BarrierEpisode:
             raise RuntimeError("episode not bootstrapped")
         return self._snapshot.decision_ts_ns
 
+    @property
+    def episode_window(self) -> dict[str, int]:
+        """Return the exact causal decision segment selected for this episode."""
+        return {
+            "start_ns": self._frames[0].timestamp_ns,
+            "end_ns": self._frames[self._scoring_frames - 1].timestamp_ns,
+            "decision_steps": self._scoring_frames - 1,
+        }
+
     def transition_fingerprint_hash(self) -> str:
         return self._transition
 

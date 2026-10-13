@@ -84,11 +84,14 @@ def _seed_schedule(vec, expected_seeds: tuple[int, ...]) -> list[dict[str, int]]
     if len(states) != len(expected_seeds):
         raise ContractError("environment seed-schedule count differs from SeedTree")
     checked = []
-    for state, expected in zip(states, expected_seeds):
+    for rank, (state, expected) in enumerate(zip(states, expected_seeds)):
         if (not isinstance(state, dict) or set(state) != {"root_seed", "next_episode"}
                 or type(state["root_seed"]) is not int or state["root_seed"] != expected
                 or type(state["next_episode"]) is not int or state["next_episode"] < 1):
-            raise ContractError("invalid environment seed-schedule state")
+            raise ContractError(
+                f"invalid environment seed-schedule state at rank {rank}: "
+                f"expected root {expected}, observed {state!r}"
+            )
         checked.append({"root_seed": state["root_seed"], "next_episode": state["next_episode"]})
     return checked
 

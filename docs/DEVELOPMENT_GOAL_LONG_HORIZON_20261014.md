@@ -30,4 +30,14 @@
 
 2026-10-14 首项实现结果：新增 root `reward_scale` 配置（上限 1,000,000），`info.r_train` 标记缩放后的 learner reward，`r_econ` / `r_shape` 维持原单位；默认值不改变历史 application fingerprint、factory config hash 和 transition hash。bundle 保存尺度；Train、Validation、ES worker recipe、Train diagnostic、WFO Stress/Base/Test factory 都使用同一冻结值；非默认值与 bundle 不匹配时回放拒绝。定向集成回归 **116 passed**，后加的默认/非默认身份绑定测试所在文件组合 **42 passed**；全仓 CPU 回归 **417 passed、4 CUDA-only skipped、45 warnings**；独立 CUDA smoke **4 passed**；Ruff 通过，MyPy **107 个源码文件**通过。两次 CPU 回归相互重叠，不能相加宣称全仓通过数。以上验证工程行为，不是学习效果证据。尚未在新鲜合格行情上训练或比较 raw/1,000×/10,000×，也没有收益改善结论。
 
+## 第二项实现：固定分段的并行 RL Episode
+
+应用新增 `rl_num_envs`（1–4）和 `rl_episode_steps`（至少 2）两个独立训练参数。`steps` 继续表示所有环境合计的真实交互数；`rl_episode_steps` 表示每个原生账户 Episode 的决策步数；`rl_num_envs` 表示隔离的并行 Nautilus Engine 数。多环境必须显式声明 Episode 长度，不能悄悄复制完整窗口。每个 rank 在整个 Train 窗口内取得确定、均匀展开且互不相同的固定起点；窗口不足以提供不重复起点时启动失败。训练 scaler 仍拟合完整 Train，Validation/Test/Holdout 不采用训练分段。
+
+并行 Engine 在 Windows spawn 子进程内从冻结的 environment recipe 和 scaler 重建，避开原生进程级注册表冲突。rank、环境数、Episode 长度和起点写入 transition/fold 身份与 `training_coverage`；默认单环境完整窗口继续使用旧身份。报告现在区分完整 Train 决策数、Episode 长度、各环境交互数、固定起点、每环境完整/部分 Episode 次数，以及所有固定片段并集能覆盖的 Train 决策比例。Gym reset info 同时给出实际 Episode 起止时刻与步数。
+
+checkpoint 已实测覆盖两个隔离环境在各执行一步后的中间边界：两个 action journal 分别落盘，恢复时按 rank 重建同一子窗口、核对边界 token、继续完成剩余预算。该测试还暴露并修复了多环境下 SB3 algorithm seed 覆盖 L1 environment seed tree 的旧问题；环境 seed tree 现在保持冻结，后续 Episode 只按其确定性派生。WFO 在读数据、创建查询账本前预检并行采样配置。当前分段方式有意保持每个 rank 的起点固定，以维持 checkpoint 可证明恢复；尚未引入每次 reset 随机起点。
+
+2026-10-14 工程验收使用已消费的 2026-08 Train 窗口做机制回放：Train 共 7,197 个决策步，4 个隔离环境分别从偏移 0、2,313、4,627、6,941 开始，各执行 256 步，合计 1,024 个互不重叠决策点，覆盖上界 14.23%。运行生成四份 episode replay、环境 seed tree、1,024 步检查点、完整性文件和最终强制平仓。该小预算 PPO 净收益为 -1.074%，费用 91.76、滑点成本 19.11，说明并行机制可运行，但不构成策略改善或参数选择证据。全仓 CPU 回归 **424 passed、4 CUDA-only skipped、45 warnings**，独立 CUDA smoke **4 passed**，Ruff 通过，MyPy **101 个源码文件**通过。
+
 该目标持续有效，完成一个工程阶段不等于目标整体完成。每次续开发先检查最新数据质量、使用台账、代码和硬件占用，再记录当期可验证的进展与下一项工作。

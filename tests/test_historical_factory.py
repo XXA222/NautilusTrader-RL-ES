@@ -80,6 +80,37 @@ def test_nondefault_reward_scale_is_bound_to_historical_training_identity(tmp_pa
     assert scaled.make_env()._reward.config.reward_scale == 10_000.0
 
 
+def test_rank_partitioned_training_episodes_cover_distinct_causal_segments(tmp_path):
+    factory = HistoricalEnvironmentFactory(**recipe(tmp_path, bar_count=30))
+    full_steps = len(factory.rows) - 3
+    episode_steps = 4
+    first = factory.make_env(episode_rank=0, episode_count=2, episode_steps=episode_steps)
+    try:
+        _first_obs, first_info = first.reset(seed=11)
+    finally:
+        first.close()
+    last = factory.make_env(episode_rank=1, episode_count=2, episode_steps=episode_steps)
+    try:
+        _last_obs, last_info = last.reset(seed=22)
+        assert first_info["episode_window"]["decision_steps"] == episode_steps
+        assert last_info["episode_window"]["decision_steps"] == episode_steps
+        assert first_info["episode_window"]["start_ns"] < last_info["episode_window"]["start_ns"]
+        assert last_info["episode_window"]["start_ns"] == factory.rows[
+            full_steps - episode_steps
+        ].decision_ts_ns
+    finally:
+        last.close()
+
+
+def test_rank_partition_rejects_duplicate_or_oversized_segments(tmp_path):
+    factory = HistoricalEnvironmentFactory(**recipe(tmp_path, bar_count=12))
+    full_steps = len(factory.rows) - 3
+    with pytest.raises(DataError, match="distinct start positions"):
+        factory.make_env(episode_rank=0, episode_count=2, episode_steps=full_steps)
+    with pytest.raises(DataError, match="invalid fixed historical episode partition"):
+        factory.make_env(episode_steps=full_steps + 1)
+
+
 def test_historical_factory_accepts_v2_profile_and_binds_its_schema(tmp_path):
     factory = HistoricalEnvironmentFactory(**recipe(tmp_path, bar_count=80, start_minute=62),
                                            feature_profile="causal_mtf_v2")
@@ -499,6 +530,75 @@ def test_application_rl_train_bundle_load_and_disjoint_native_backtest(tmp_path,
         with pytest.raises(DataError, match="integrity mismatch"):
             backtest(resolved, result["output"])
         bundle.write_bytes(original)
+
+
+def test_application_parallel_rl_uses_distinct_fixed_train_segments(tmp_path):
+    from rles_orchestrator.application import train
+
+    config = recipe(tmp_path)
+    config["end_ns"] = 12 * MINUTE_NS
+    config["market_path"], config["rules_path"] = str(config["market_path"]), str(config["rules_path"])
+    run = {
+        "environment": config,
+        "evaluation": {"start_ns": 12 * MINUTE_NS, "end_ns": 20 * MINUTE_NS,
+                       "coverage_policy": config["coverage_policy"]},
+        "output": str(tmp_path / "parallel-run"), "algorithm": "PPO", "steps": 4,
+        "hidden_layers": [2], "rl_num_envs": 2, "rl_episode_steps": 2,
+        "hyperparameters": {"n_steps": 2, "batch_size": 4, "n_epochs": 1},
+    }
+    result = train(run)
+    coverage = result["training_coverage"]
+    assert coverage["environment_count"] == 2
+    assert coverage["nominal_episode_decision_steps"] == 2
+    assert coverage["fixed_episode_start_offsets"][0] == 0
+    assert coverage["fixed_episode_start_offsets"][1] > 0
+    assert coverage["upper_bound_unique_train_window_steps"] == coverage[
+        "train_window_decision_steps"
+    ]
+    assert coverage["upper_bound_train_window_coverage_fraction"] == 1.0
+
+
+def test_parallel_rl_checkpoint_restores_each_partition_mid_episode(tmp_path, monkeypatch):
+    from rles_orchestrator.application import train
+    from rles_rl_sb3.provider import RLProvider
+
+    environment = recipe(tmp_path)
+    environment["end_ns"] = 12 * MINUTE_NS
+    environment["market_path"], environment["rules_path"] = (
+        str(environment["market_path"]), str(environment["rules_path"]),
+    )
+    run = {
+        "environment": environment,
+        "evaluation": {"start_ns": 12 * MINUTE_NS, "end_ns": 20 * MINUTE_NS,
+                       "coverage_policy": environment["coverage_policy"]},
+        "output": str(tmp_path / "parallel-resume"), "algorithm": "PPO", "steps": 4,
+        "hidden_layers": [2], "rl_num_envs": 2, "rl_episode_steps": 2,
+        "hyperparameters": {"n_steps": 1, "batch_size": 2, "n_epochs": 1},
+        "checkpoint_interval_steps": 2,
+    }
+    original_train = RLProvider.train
+    calls = 0
+
+    def stop_after_first_boundary(provider, total_timesteps, *, resumed=False, callback=None):
+        nonlocal calls
+        if calls:
+            raise RuntimeError("interrupt parallel learner after durable boundary")
+        calls += 1
+        return original_train(provider, total_timesteps, resumed=resumed, callback=callback)
+
+    monkeypatch.setattr(RLProvider, "train", stop_after_first_boundary)
+    with pytest.raises(RuntimeError, match="interrupt parallel learner"):
+        train(run)
+    checkpoint = Path(run["output"]) / "R1-checkpoints" / "step-000000000002"
+    replays = json.loads((checkpoint / "episode_replays.json").read_text(encoding="utf-8"))
+    assert len(replays) == 2
+    assert all(len(replay["actions"]) == 1 for replay in replays)
+
+    monkeypatch.setattr(RLProvider, "train", original_train)
+    run["resume_checkpoint"] = str(checkpoint)
+    result = train(run)
+    assert result["training_coverage"]["environment_count"] == 2
+    assert (Path(run["output"]) / "COMPLETED.json").is_file()
 
 
 @pytest.mark.parametrize("route", ("A1", "A4"))

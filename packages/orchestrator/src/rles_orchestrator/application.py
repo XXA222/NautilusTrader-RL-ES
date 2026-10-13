@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from decimal import Decimal
 from hashlib import sha256
 import json
@@ -114,13 +114,48 @@ def _json_identity(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
 
 
+@dataclass(frozen=True)
+class _HistoricalRLEnvFactory:
+    """Spawn-safe R1 factory which rebuilds native state from frozen values."""
+    recipe_json: str
+    scaler_json: str
+    transition_hash: str
+    num_envs: int
+    episode_steps: int | None
+    replay_json: tuple[str, ...] = ()
+
+    def __call__(self, rank: int, _env_seed: int, phase: str):
+        from rles_gym_bridge.episode import EpisodeReplay
+
+        if (type(rank) is not int or not 0 <= rank < self.num_envs
+                or phase not in {"train", "eval"}
+                or self.replay_json and len(self.replay_json) != self.num_envs):
+            raise DataError("invalid frozen historical R1 environment request")
+        recipe = json.loads(self.recipe_json)
+        scaler_values = json.loads(self.scaler_json)
+        if not isinstance(recipe, dict) or not isinstance(scaler_values, dict):
+            raise DataError("frozen historical R1 recipe is not a JSON object")
+        scaler_values["mean"] = tuple(scaler_values["mean"])
+        scaler_values["std"] = tuple(scaler_values["std"])
+        factory = HistoricalEnvironmentFactory(**{
+            **recipe, "scaler": Scaler(**scaler_values),
+        })
+        replay = (EpisodeReplay.from_dict(json.loads(self.replay_json[rank]))
+                  if phase == "train" and self.replay_json else None)
+        return factory.make_env(
+            self.transition_hash, replay=replay, episode_rank=rank,
+            episode_count=self.num_envs, episode_steps=self.episode_steps,
+        )
+
+
 def load_config(path: str | Path) -> dict:
     source = Path(path).resolve()
     config = json.loads(source.read_text(encoding="utf-8"))
     allowed = {"environment", "evaluation", "route", "algorithm", "steps", "population", "generations",
                "seed", "hidden_layers", "normalize_observation", "hyperparameters", "output", "distillation",
                "checkpoint_interval_steps", "wfo", "resume_checkpoint", "rl_device", "es_input_scaling",
-               "enforce_worker_memory_limit", "worker_ram_bytes", "reward_scale"}
+               "enforce_worker_memory_limit", "worker_ram_bytes", "reward_scale",
+               "rl_num_envs", "rl_episode_steps"}
     if not isinstance(config, dict) or set(config) - allowed:
         raise DataError("unknown application configuration fields")
     for name in ("market_path", "rules_path"):
@@ -416,31 +451,75 @@ def _training_actor_spec(training: HistoricalEnvironmentFactory, hidden: tuple[i
     return ActorGenomeSpec(training.schema.names, hidden, version=2, input_scale=scales)
 
 
+def _episode_start_offsets(*, train_window_steps: int, episode_steps: int,
+                           num_envs: int) -> tuple[int, ...]:
+    if (type(train_window_steps) is not int or type(episode_steps) is not int
+            or type(num_envs) is not int or train_window_steps < 1
+            or not 1 <= episode_steps <= train_window_steps or num_envs < 1
+            or num_envs > train_window_steps - episode_steps + 1):
+        raise DataError("invalid fixed historical episode partition")
+    maximum_offset = train_window_steps - episode_steps
+    if num_envs == 1:
+        return (0,)
+    return tuple(rank * maximum_offset // (num_envs - 1) for rank in range(num_envs))
+
+
+def _rl_sampling_policy(config: dict) -> tuple[int, int | None]:
+    """Validate bounded R1 parallelism before reading data or allocating output."""
+    num_envs = config.get("rl_num_envs", 1)
+    episode_steps = config.get("rl_episode_steps")
+    if (type(num_envs) is not int or not 1 <= num_envs <= 4
+            or (episode_steps is not None
+                and (type(episode_steps) is not int or episode_steps < 2))):
+        raise DataError("RL sampling requires 1-4 environments and episode steps >= 2")
+    if num_envs > 1 and episode_steps is None:
+        raise DataError("multiple RL environments require explicit fixed episode steps")
+    return num_envs, episode_steps
+
+
 def _training_coverage_report(*, rl_steps: int, num_envs: int,
-                              episode_decision_steps: int) -> dict[str, Any]:
-    """Bound how much of the fixed historical episode the RL budget can visit."""
+                              train_window_decision_steps: int,
+                              episode_decision_steps: int,
+                              episode_start_offsets: tuple[int, ...]) -> dict[str, Any]:
+    """Report fixed-segment interaction and unique Train-window coverage bounds."""
     if (type(rl_steps) is not int or rl_steps < 0 or type(num_envs) is not int or num_envs < 1
-            or type(episode_decision_steps) is not int or episode_decision_steps < 1):
+            or type(train_window_decision_steps) is not int or train_window_decision_steps < 1
+            or type(episode_decision_steps) is not int or episode_decision_steps < 1
+            or type(episode_start_offsets) is not tuple or len(episode_start_offsets) != num_envs
+            or any(type(value) is not int or value < 0
+                   or value + episode_decision_steps > train_window_decision_steps
+                   for value in episode_start_offsets)):
         raise DataError("invalid RL interaction coverage facts")
     quotient, remainder = divmod(rl_steps, num_envs)
     per_env = [quotient + int(rank < remainder) for rank in range(num_envs)]
     unique_steps = [min(count, episode_decision_steps) for count in per_env]
+    intervals = sorted((offset, offset + count)
+                       for offset, count in zip(episode_start_offsets, unique_steps)
+                       if count > 0)
+    union_steps = 0
+    union_end = 0
+    for start, end in intervals:
+        if end > union_end:
+            union_steps += end - max(start, union_end)
+            union_end = end
     return {
         "rl_interaction_steps": rl_steps,
         "environment_count": num_envs,
+        "train_window_decision_steps": train_window_decision_steps,
         "nominal_episode_decision_steps": episode_decision_steps,
+        "fixed_episode_start_offsets": list(episode_start_offsets),
         "interaction_steps_per_environment": per_env,
         "upper_bound_unique_decision_steps_per_environment": unique_steps,
-        "upper_bound_time_coverage_fraction_per_environment": [
-            count / episode_decision_steps for count in unique_steps
-        ],
+        "upper_bound_unique_train_window_steps": union_steps,
+        "upper_bound_train_window_coverage_fraction": union_steps / train_window_decision_steps,
         "nominal_full_episode_passes_per_environment": [
             count // episode_decision_steps for count in per_env
         ],
         "nominal_partial_episode_steps_per_environment": [
             count % episode_decision_steps for count in per_env
         ],
-        "interpretation": "upper bound for the deterministic full-window replay; early termination can reduce coverage",
+        "interpretation": ("upper bound for deterministic rank-partitioned Train episodes; "
+                           "early termination can reduce actual coverage"),
     }
 
 
@@ -464,12 +543,21 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
     torch.set_num_threads(1)
     route = Route(config.get("route", "A0"))
     rl_device = _resolve_rl_device(config.get("rl_device", "cpu"), route)
+    rl_num_envs, requested_episode_steps = _rl_sampling_policy(config)
+    if "R1" not in STAGES[route] and (rl_num_envs != 1 or requested_episode_steps is not None):
+        raise DataError(f"route {route.value} has no R1 learner; RL episode sampling is unsupported")
     enforce_worker_memory_limit, worker_ram_bytes, worker_resources = _worker_memory_policy(config)
     training = prepare(config)
-    evaluation = _evaluation_factory(config, training) if evaluate else None
     algorithm = config.get("algorithm", "PPO")
     steps, population, generations = config.get("steps", 32), config.get("population", 4), config.get("generations", 1)
     seed = config.get("seed", 31)
+    train_window_steps = len(training.rows) - 3
+    rl_episode_steps = train_window_steps if requested_episode_steps is None else requested_episode_steps
+    episode_offsets = _episode_start_offsets(
+        train_window_steps=train_window_steps, episode_steps=rl_episode_steps,
+        num_envs=rl_num_envs,
+    )
+    evaluation = _evaluation_factory(config, training) if evaluate else None
     hidden = tuple(config.get("hidden_layers", (8,)))
     actor_spec = _training_actor_spec(training, hidden, config, route)
     canonical_ppo_output = actor_spec.version == 2 and algorithm == "PPO" and "E1" in STAGES[route]
@@ -495,13 +583,25 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
                         "reward_scale": training.reward_config.reward_scale})),
         normalization=digest({"VecNormalize": config.get("normalize_observation", False)}),
         engine=digest("nautilus_trader-2.0.0rc6"), adapter=digest("rles.perpetual-native-v2"),
-        fold=digest([training.start_ns, training.end_ns]), terminal=digest("force_flatten_with_cost"),
+        fold=(digest([training.start_ns, training.end_ns]) if rl_num_envs == 1
+              and requested_episode_steps is None else digest({
+                  "window": [training.start_ns, training.end_ns],
+                  "rl_episode_sampling": {
+                      "num_envs": rl_num_envs, "episode_steps": rl_episode_steps,
+                      "start_offsets": episode_offsets,
+                  },
+              })),
+        terminal=digest("force_flatten_with_cost"),
     )
     hyperparameters = config.get("hyperparameters", {"n_steps": 8, "batch_size": 8, "n_epochs": 1} if algorithm == "PPO" else
                                 {"learning_starts": 8, "buffer_size": 256, "batch_size": 8, "train_freq": 1, "gradient_steps": 1})
     rl_config = RLConfig(algorithm, PolicySpec(len(training.schema.names), hidden_layers=policy_hidden, value_layers=hidden,
                                              observation_schema_hash=training.schema.hash, action_schema_hash=action_hash),
-                         fingerprint, SeedSpec(seed, (seed + 1,), seed + 2, seed + 3),
+                         fingerprint, SeedSpec(
+                             seed, tuple((seed + rank + 1) % 2**32 for rank in range(rl_num_envs)),
+                             (seed + rl_num_envs + 1) % 2**32,
+                             (seed + rl_num_envs + 2) % 2**32,
+                         ),
                          hyperparameters=hyperparameters, device=rl_device,
                          normalize_observation=config.get("normalize_observation", False))
     budgets = {stage: StageBudget(max_rl_steps=steps) if stage == "R1" else
@@ -646,12 +746,22 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
             raise DataError("research ledger is not open for an in-place training resume")
     selection = SelectionLedger(ledger, run_id)
     state: dict[str, Any] = {}
-    run_quota = ResourceQuota(output / "quota.sqlite", cpu_cores=1,
+    run_quota = ResourceQuota(output / "quota.sqlite", cpu_cores=rl_num_envs,
                                ram_bytes=4 * 1024**3, gpus=int(rl_device == "cuda"))
     frozen_recipe = {
         **config["environment"], "split": "train_inner", "fit_scaler": False,
         "reward_scale": training.reward_config.reward_scale,
     }
+    frozen_recipe_json = json.dumps(
+        frozen_recipe, sort_keys=True, separators=(",", ":"), allow_nan=False,
+    )
+    frozen_scaler_json = json.dumps(
+        asdict(training.scaler), sort_keys=True, separators=(",", ":"), allow_nan=False,
+    )
+    rl_env_factory = _HistoricalRLEnvFactory(
+        frozen_recipe_json, frozen_scaler_json, fingerprint.hash, rl_num_envs,
+        requested_episode_steps,
+    )
 
     def execute_es(context):
         stage = context.stage
@@ -705,21 +815,19 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
         distillation = config.get("distillation", {})
 
         def restore_env_factory(replay_values):
-            from rles_gym_bridge.episode import EpisodeReplay
-
             if len(replay_values) != rl_config.num_envs:
                 raise DataError("R1 checkpoint replay count differs from frozen L4 environments")
-            replays = tuple(EpisodeReplay.from_dict(value) for value in replay_values)
-
-            def make_restored_env(rank, _env_seed, phase):
-                replay = replays[rank] if phase == "train" else None
-                return training.make_env(fingerprint.hash, replay=replay)
-
-            return make_restored_env
+            return _HistoricalRLEnvFactory(
+                frozen_recipe_json, frozen_scaler_json, fingerprint.hash, rl_num_envs,
+                requested_episode_steps, tuple(
+                    json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+                    for value in replay_values
+                ),
+            )
 
         executor = RLStageExecutor(
             artifact_id=f"{run_id}-R1", config=rl_config,
-            env_factory=lambda _rank, _seed, _phase: training.make_env(fingerprint.hash),
+            env_factory=rl_env_factory,
             gate_authorizer=lambda _gates, cfg: cfg.fingerprint.dataset == training.store.snapshot_hash,
             train_steps=steps, inference_dir=output / "r1", fixed_observations=corpus,
             actor_spec=actor_spec if previous else None, source_genome=source,
@@ -734,7 +842,7 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
             resume_env_factory=restore_env_factory if resume_stage in {"R1", "E2"} else None,
         )
         allocation = ComputeAllocation(
-            quota=run_quota, owner=run_id, attempt_id=run_id, cpu_cores=1,
+            quota=run_quota, owner=run_id, attempt_id=run_id, cpu_cores=rl_num_envs,
             ram_bytes=4 * 1024**3, learner_device=rl_device,
             gpu_lock_directory=(output / "GPU-leases") if rl_device == "cuda" else None,
         )
@@ -755,7 +863,9 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
         actual_rl_steps = sum(a.usage.rl_steps for a in lineage if a.stage == "R1")
         training_coverage = _training_coverage_report(
             rl_steps=actual_rl_steps, num_envs=rl_config.num_envs,
-            episode_decision_steps=len(training.rows) - 3,
+            train_window_decision_steps=train_window_steps,
+            episode_decision_steps=rl_episode_steps,
+            episode_start_offsets=episode_offsets,
         )
         bundle = {"schema": "rles.historical-bundle.v1", "actor": actor_metadata, "soft_multipliers": risk_parameters,
                   "reward_scale": training.reward_config.reward_scale,

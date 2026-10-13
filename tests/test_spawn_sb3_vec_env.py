@@ -66,6 +66,7 @@ def test_spawn_vecenv_resets_only_done_workers_and_preserves_terminal_observatio
     vec = make_sync_env(_Factory(), (11, 12), "train", _policy(), timeout_s=10)
     try:
         assert vec.get_attr("rles_transition_hash") == ["a" * 64, "a" * 64]
+        vec.seed(999)  # SB3 algorithm seed must not replace the L1 environment seed tree.
         assert vec.reset().tolist() == [[0], [10]]
         assert vec.get_attr("rles_seed_schedule_state") == [
             {"root_seed": 11, "next_episode": 1},
