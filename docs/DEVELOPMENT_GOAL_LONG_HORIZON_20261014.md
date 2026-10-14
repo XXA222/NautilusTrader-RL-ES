@@ -48,4 +48,10 @@ R1 每次 `learn()` 现在强制采集原生逐 transition 事实，包括未缩
 
 数据审计同时确认，本地官方行情只到 2026-08-11，2026-07-17 至 07-31 还有约 14 天缺口，既有 2026-08 Train/Validation/Test 已消费。后续需先补官方档案并在读取结果前预注册切分；建议把最新约 15 天隔离为一次性 final Holdout、此前约 15 天作为 Validation。长周期档案仍缺 dated instrument rules，因此在补齐历史规则、margin tier 和实际 fee 证据前，经济结论必须标注为“真实市场记录 + 非历史规则情景”，不能升级为严格历史账户收益证明。
 
+## 第四项实现：PPO 初始探索与空仓动作头
+
+PPO hyperparameters 新增严格校验的 `log_std_init`（[-20, 2]）和 `zero_init_action_head`。两个字段只允许用于 PPO，进入 RL config hash、checkpoint 配方和恢复校验；未配置时继续采用 SB3 的 log std=0 和原动作头初始化，保持默认配方身份。空仓初始化会在模型创建后把 policy action head 的 weight/bias 置零，A4 的已证明 E1→R1 参数转移仍会随后覆盖这些初值。
+
+Train-only 机制矩阵固定同一已消费 2026-08 数据、seed=31、4 环境、每环境 1,799 步片段和相同 PPO 优化器。8,192 步时，默认 std≈1 候选训练 SUBMIT 95.58%、确定性回放净收益 -1.385%；`log_std_init=-2` + 空仓初值把相邻训练目标变化从 0.778 降至约 0.150，但 1×/1,000× reward 的确定性策略均落在 deadband 内，回放为空仓、收益 0。1,000× reward 在首 20 updates 的 explained variance 约 0.75，高于未缩放候选约 0.50，但延长到 32,768 步/80 updates 后，std=-2 与 -1.5 候选仍为空仓，最后一段 explained variance 都降至约 -0.43。该结果说明低噪声成功阻止成本爆炸，但仅放大奖励和增加固定片段重复次数没有学出可交易优势；下一步必须让 Episode 确定性轮换覆盖 Train，并加入实际时间戳重复率，再继续长预算比较。
+
 该目标持续有效，完成一个工程阶段不等于目标整体完成。每次续开发先检查最新数据质量、使用台账、代码和硬件占用，再记录当期可验证的进展与下一项工作。

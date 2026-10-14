@@ -186,16 +186,21 @@ class RLProvider:
         activation = torch.nn.Tanh if self.config.policy.activation == "tanh" else torch.nn.ReLU
         policy_kwargs: dict[str, Any]
         algo: Any
+        kwargs = dict(self.config.hyperparameters)
         if self.config.algorithm == "PPO":
+            log_std_init = kwargs.pop("log_std_init", 0.0)
+            zero_init_action_head = kwargs.pop("zero_init_action_head", False)
             policy_kwargs = {
                 "net_arch": {"pi": list(self.config.policy.hidden_layers),
                              "vf": list(self.config.policy.value_layers)},
                 # PPO receives `use_sde` at algorithm level; duplicating it in
                 # policy_kwargs raises TypeError in SB3 2.9.0.
                 "activation_fn": activation, "ortho_init": False,
+                "log_std_init": log_std_init,
             }
             algo = PPO
         else:
+            zero_init_action_head = False
             policy_kwargs = {
                 "net_arch": list(self.config.policy.hidden_layers),
                 "activation_fn": activation,
@@ -205,7 +210,6 @@ class RLProvider:
                 # SB3 DDPG is implemented as a TD3 subclass with a single Q critic.
                 # Only expose DDPG's native API; do not pass TD3 smoothing/delay keys.
                 policy_kwargs["n_critics"] = 1
-        kwargs = dict(self.config.hyperparameters)
         if self.config.algorithm in ("TD3", "DDPG"):
             kwargs["action_noise"] = make_noise(
                 self.config.noise_sigma, self.config.seeds.noise, self.config.num_envs)
@@ -214,6 +218,11 @@ class RLProvider:
             self.model = algo("MlpPolicy", self.vec, policy_kwargs=policy_kwargs,
                               seed=self.config.seeds.algorithm, device=self.config.device,
                               verbose=0, **kwargs)
+            if zero_init_action_head:
+                import torch
+                with torch.no_grad():
+                    self.model.policy.action_net.weight.zero_()
+                    self.model.policy.action_net.bias.zero_()
         except BaseException:
             self.close()
             raise

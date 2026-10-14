@@ -8,6 +8,7 @@ import torch
 
 from rles_rl_sb3.config import PolicySpec, RLConfig, SeedSpec, TransitionFingerprint
 from rles_rl_sb3.checkpoint import Boundary, checkpoint_episode_replays
+from rles_rl_sb3.errors import ContractError
 from rles_rl_sb3.provider import RLProvider
 
 pytestmark = pytest.mark.algorithm_smoke
@@ -26,6 +27,64 @@ def _small_pretraining_provider(*, normalize=False):
     )
     return RLProvider(config, lambda _rank, _seed, _phase: ProviderFixtureEnv(fingerprints.hash),
                       lambda _gates, _config: True)
+
+
+def test_ppo_initial_exploration_and_flat_action_head_are_frozen_controls():
+    fingerprints = TransitionFingerprint(**{
+        name: f"{index + 1:064x}"
+        for index, name in enumerate(TransitionFingerprint.__dataclass_fields__)
+    })
+    config = RLConfig(
+        algorithm="PPO",
+        policy=PolicySpec(2, hidden_layers=(2,), value_layers=(2,),
+                          observation_schema_hash="a" * 64, action_schema_hash="b" * 64),
+        fingerprint=fingerprints,
+        seeds=SeedSpec(algorithm=11, environments=(12,), noise=13, replay=14),
+        hyperparameters={
+            "n_steps": 2, "batch_size": 2, "n_epochs": 1,
+            "log_std_init": -2.0, "zero_init_action_head": True,
+        },
+        device="cpu",
+    )
+    provider = RLProvider(
+        config, lambda _rank, _seed, _phase: ProviderFixtureEnv(fingerprints.hash),
+        lambda _gates, _config: True,
+    )
+    try:
+        provider.create()
+        assert torch.count_nonzero(provider.model.policy.action_net.weight).item() == 0
+        assert torch.count_nonzero(provider.model.policy.action_net.bias).item() == 0
+        assert torch.equal(provider.model.policy.log_std, torch.full_like(provider.model.policy.log_std, -2.0))
+        assert provider.predict(np.zeros((1, 2), dtype=np.float32)).item() == 0.0
+        performance = provider.train(2)
+        assert performance.diagnostics is not None
+        metrics = dict(performance.diagnostics.optimizer_metrics)
+        assert metrics["train/std"] == pytest.approx(np.exp(-2), rel=0.02)
+    finally:
+        provider.close()
+
+
+@pytest.mark.parametrize(
+    "parameters",
+    (
+        {"n_steps": 2, "batch_size": 2, "n_epochs": 1, "log_std_init": -21.0},
+        {"n_steps": 2, "batch_size": 2, "n_epochs": 1, "log_std_init": float("nan")},
+        {"n_steps": 2, "batch_size": 2, "n_epochs": 1, "zero_init_action_head": 1},
+    ),
+)
+def test_ppo_rejects_invalid_exploration_initialization(parameters):
+    fingerprints = TransitionFingerprint(**{
+        name: f"{index + 1:064x}"
+        for index, name in enumerate(TransitionFingerprint.__dataclass_fields__)
+    })
+    with pytest.raises(ContractError, match="log_std_init|zero_init_action_head"):
+        RLConfig(
+            algorithm="PPO",
+            policy=PolicySpec(2, observation_schema_hash="a" * 64, action_schema_hash="b" * 64),
+            fingerprint=fingerprints,
+            seeds=SeedSpec(11, (12,), 13, 14),
+            hyperparameters=parameters,
+        )
 
 
 class ProviderFixtureEnv(gym.Env):

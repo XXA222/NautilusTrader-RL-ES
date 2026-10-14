@@ -14,7 +14,10 @@ AlgoName = Literal["PPO", "SAC", "TD3", "DDPG"]
 Mode = Literal["cpu", "cuda"]
 
 _COMMON = frozenset({"learning_rate", "gamma"})
-_ON = frozenset({"n_steps", "batch_size", "n_epochs", "gae_lambda", "clip_range", "ent_coef", "vf_coef", "max_grad_norm", "target_kl"})
+_ON = frozenset({
+    "n_steps", "batch_size", "n_epochs", "gae_lambda", "clip_range", "ent_coef",
+    "vf_coef", "max_grad_norm", "target_kl", "log_std_init", "zero_init_action_head",
+})
 _OFF = frozenset({"buffer_size", "learning_starts", "batch_size", "tau", "train_freq", "gradient_steps"})
 _SAC = frozenset({"ent_coef", "target_entropy"})
 _TD3 = frozenset({"policy_delay", "target_policy_noise", "target_noise_clip"})
@@ -214,6 +217,11 @@ class RLConfig:
                     raise ContractError("invalid ent_coef")
             if k == "target_entropy" and not (v == "auto" or type(v) in (float, int) and math.isfinite(v)):
                 raise ContractError("invalid target_entropy")
+            if k == "log_std_init" and (type(v) not in (int, float)
+                                         or not math.isfinite(v) or not -20 <= v <= 2):
+                raise ContractError("PPO log_std_init must be finite and in [-20,2]")
+            if k == "zero_init_action_head" and type(v) is not bool:
+                raise ContractError("PPO zero_init_action_head must be Boolean")
         if "learning_rate" in params and not params["learning_rate"] > 0:
             raise ContractError("learning_rate must be > 0")
         if "gamma" in params and not 0 <= params["gamma"] <= 1:
