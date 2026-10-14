@@ -37,6 +37,33 @@ class Evaluation:
 
 
 @dataclass(frozen=True)
+class TrainingDiagnostics:
+    """Deterministic learner and native-transition facts for one learn call."""
+    samples: int
+    episodes_completed: int
+    r_econ_sum: float
+    r_econ_mean: float
+    r_econ_std: float
+    r_shape_sum: float
+    r_train_sum: float
+    r_train_mean: float
+    r_train_std: float
+    requested_action_mean: float
+    requested_action_abs_mean: float
+    requested_action_std: float
+    executed_action_mean: float
+    executed_action_abs_mean: float
+    requested_target_change_abs_mean: float
+    executed_exposure_change_abs_mean: float
+    guard_intervention_mean: float
+    guard_intervention_fraction: float
+    submit_fraction: float
+    noop_fraction: float
+    optimizer_metrics: tuple[tuple[str, float], ...]
+    optimizer_undefined_metrics: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class Performance:
     samples: int
     steps_per_second: float
@@ -45,6 +72,33 @@ class Performance:
     elapsed_seconds: float
     cpu_rss_bytes: int | None
     gpu_max_allocated_bytes: int | None
+    diagnostics: TrainingDiagnostics | None = None
+
+
+class _Moments:
+    """Stable-enough streaming moments for bounded diagnostic values."""
+
+    def __init__(self) -> None:
+        self.count = 0
+        self.total = 0.0
+        self.mean = 0.0
+        self.m2 = 0.0
+
+    def add(self, value: Any, name: str) -> None:
+        if type(value) not in (int, float, np.float32, np.float64):
+            raise ContractError(f"native training diagnostic {name} is not numeric")
+        observed = float(value)
+        if not np.isfinite(observed):
+            raise ContractError(f"native training diagnostic {name} is not finite")
+        self.count += 1
+        self.total += observed
+        delta = observed - self.mean
+        self.mean += delta / self.count
+        self.m2 += delta * (observed - self.mean)
+
+    @property
+    def std(self) -> float:
+        return float(np.sqrt(max(self.m2 / self.count, 0.0))) if self.count else 0.0
 
 
 def _perf_rss() -> int | None:
@@ -190,20 +244,95 @@ class RLProvider:
         from stable_baselines3.common.callbacks import BaseCallback, CallbackList, ConvertCallback
 
         expected = self.config.fingerprint.hash
+        environment_count = self.config.num_envs
+        econ = _Moments()
+        shape = _Moments()
+        train_reward = _Moments()
+        requested = _Moments()
+        requested_abs = _Moments()
+        executed = _Moments()
+        executed_abs = _Moments()
+        requested_change = _Moments()
+        executed_change = _Moments()
+        guard_values = _Moments()
+        previous_requested: list[float | None] = [None] * self.config.num_envs
+        previous_executed: list[float | None] = [None] * self.config.num_envs
+        diagnostic_counts = {
+            "episodes": 0, "guarded": 0, "submit": 0, "noop": 0,
+        }
 
         class TransitionGuard(BaseCallback):
             def _on_step(self) -> bool:
                 assert_transition_proof(self.training_env, expected)
                 return True
 
+        class DiagnosticsCallback(BaseCallback):
+            def _on_step(self) -> bool:
+                infos = self.locals.get("infos")
+                rewards = np.asarray(self.locals.get("rewards"), dtype=np.float64).reshape(-1)
+                dones = np.asarray(self.locals.get("dones"), dtype=bool).reshape(-1)
+                if (not isinstance(infos, list) or len(infos) != environment_count
+                        or rewards.shape != (environment_count,)
+                        or dones.shape != (environment_count,)):
+                    raise ContractError("SB3 training callback lacks per-environment native facts")
+                required = {
+                    "r_econ", "r_shape", "r_train", "requested_action",
+                    "policy_executed_action_pre_terminal", "risk_guard_intervention",
+                    "execution_plan_action",
+                }
+                for rank, info in enumerate(infos):
+                    if not isinstance(info, dict) or not required <= set(info):
+                        raise ContractError("native training info lacks learning diagnostics")
+                    econ.add(info["r_econ"], "r_econ")
+                    shape.add(info["r_shape"], "r_shape")
+                    train_reward.add(info["r_train"], "r_train")
+                    if not np.isclose(float(info["r_train"]), rewards[rank], atol=1e-7, rtol=1e-6):
+                        raise ContractError("SB3 reward differs from native r_train")
+                    requested_value = float(info["requested_action"])
+                    executed_value = float(info["policy_executed_action_pre_terminal"])
+                    requested.add(requested_value, "requested_action")
+                    requested_abs.add(abs(requested_value), "requested_action_abs")
+                    executed.add(executed_value, "executed_action")
+                    executed_abs.add(abs(executed_value), "executed_action_abs")
+                    guard = float(info["risk_guard_intervention"])
+                    guard_values.add(guard, "risk_guard_intervention")
+                    diagnostic_counts["guarded"] += int(guard > 0)
+                    action = info["execution_plan_action"]
+                    if action not in {"SUBMIT", "NOOP", "WAIT", "CANCEL"}:
+                        raise ContractError("native execution-plan action is invalid")
+                    diagnostic_counts["submit"] += int(action == "SUBMIT")
+                    diagnostic_counts["noop"] += int(action == "NOOP")
+                    previous_requested_value = previous_requested[rank]
+                    previous_executed_value = previous_executed[rank]
+                    if (previous_requested_value is None) != (previous_executed_value is None):
+                        raise ContractError("training action diagnostic state is inconsistent")
+                    if previous_requested_value is not None and previous_executed_value is not None:
+                        requested_change.add(
+                            abs(requested_value - previous_requested_value),
+                            "requested_target_change",
+                        )
+                        executed_change.add(
+                            abs(executed_value - previous_executed_value),
+                            "executed_exposure_change",
+                        )
+                    if dones[rank]:
+                        diagnostic_counts["episodes"] += 1
+                        previous_requested[rank] = None
+                        previous_executed[rank] = None
+                    else:
+                        previous_requested[rank] = requested_value
+                        previous_executed[rank] = executed_value
+                return True
+
         guard = TransitionGuard()
+        diagnostics_callback = DiagnosticsCallback()
         callbacks: list[BaseCallback]
         if callback is None:
-            callbacks = [guard]
+            callbacks = [guard, diagnostics_callback]
         elif isinstance(callback, BaseCallback):
-            callbacks = [guard, callback]
+            callbacks = [guard, diagnostics_callback, callback]
         elif callable(callback):
-            callbacks = [guard, ConvertCallback(callback)]
+            callbacks = [guard, diagnostics_callback, ConvertCallback(callback)]
         else:
             raise ContractError("SB3 callback must be BaseCallback or callable")
         assert_transition_proof(self.vec, expected)
@@ -222,10 +351,53 @@ class RLProvider:
             raise ContractError(f"SB3 sampled {n}, expected exactly {total_timesteps}")
         after = getattr(self.model, "_n_updates", None)
         delta = (after - previous) if isinstance(after, int) and isinstance(previous, int) else None
+        if econ.count != n or any(values.count != n for values in (
+            shape, train_reward, requested, requested_abs, executed, executed_abs, guard_values,
+        )):
+            self._tainted = True
+            raise ContractError("native learning diagnostic count differs from sampled transitions")
+        optimizer_metrics: list[tuple[str, float]] = []
+        optimizer_undefined_metrics: list[str] = []
+        for name, value in sorted(self.model.logger.name_to_value.items()):
+            if not name.startswith("train/"):
+                continue
+            scalar = np.asarray(value)
+            if scalar.size != 1 or not np.issubdtype(scalar.dtype, np.number):
+                continue
+            parsed = float(scalar.reshape(()))
+            if not np.isfinite(parsed):
+                if name == "train/explained_variance":
+                    optimizer_undefined_metrics.append(name)
+                    continue
+                self._tainted = True
+                raise ContractError(f"SB3 optimizer diagnostic {name} is not finite")
+            optimizer_metrics.append((name, parsed))
+        diagnostics = TrainingDiagnostics(
+            samples=n,
+            episodes_completed=diagnostic_counts["episodes"],
+            r_econ_sum=econ.total, r_econ_mean=econ.mean, r_econ_std=econ.std,
+            r_shape_sum=shape.total,
+            r_train_sum=train_reward.total, r_train_mean=train_reward.mean,
+            r_train_std=train_reward.std,
+            requested_action_mean=requested.mean,
+            requested_action_abs_mean=requested_abs.mean,
+            requested_action_std=requested.std,
+            executed_action_mean=executed.mean,
+            executed_action_abs_mean=executed_abs.mean,
+            requested_target_change_abs_mean=requested_change.mean,
+            executed_exposure_change_abs_mean=executed_change.mean,
+            guard_intervention_mean=guard_values.mean,
+            guard_intervention_fraction=diagnostic_counts["guarded"] / n,
+            submit_fraction=diagnostic_counts["submit"] / n,
+            noop_fraction=diagnostic_counts["noop"] / n,
+            optimizer_metrics=tuple(optimizer_metrics),
+            optimizer_undefined_metrics=tuple(optimizer_undefined_metrics),
+        )
         self._perf = Performance(samples=n, steps_per_second=n / max(elapsed, 1e-9),
                                  updates=delta, updates_per_second=None if delta is None else delta / max(elapsed, 1e-9),
                                  elapsed_seconds=elapsed, cpu_rss_bytes=_perf_rss(),
-                                 gpu_max_allocated_bytes=torch.cuda.max_memory_allocated() if self.config.device == "cuda" else None)
+                                 gpu_max_allocated_bytes=torch.cuda.max_memory_allocated() if self.config.device == "cuda" else None,
+                                 diagnostics=diagnostics)
         return self._perf
 
     def calibrate_observation_normalization(self, raw_observations: np.ndarray, *,

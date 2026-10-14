@@ -359,6 +359,17 @@ def test_independent_rl_provider_trains_on_actual_native_episode(algorithm: str)
         provider.create()
         performance = provider.train(4)
         assert performance.samples == provider.model.num_timesteps == 4
+        diagnostics = performance.diagnostics
+        assert diagnostics is not None and diagnostics.samples == 4
+        assert np.isfinite([
+            diagnostics.r_econ_sum, diagnostics.r_train_sum,
+            diagnostics.requested_action_abs_mean,
+            diagnostics.executed_action_abs_mean,
+        ]).all()
+        assert 0 <= diagnostics.submit_fraction <= 1
+        assert 0 <= diagnostics.guard_intervention_fraction <= 1
+        assert all(name.startswith("train/") and np.isfinite(value)
+                   for name, value in diagnostics.optimizer_metrics)
         from rles_orchestrator.workflow import StageUsage
         assert StageUsage.from_rl_performances((performance,)) == StageUsage(rl_steps=4)
         assert provider.vec.get_attr("rles_transition_hash") == [fingerprint.hash]
@@ -385,6 +396,9 @@ def test_sb3_vecenv_trains_multiple_isolated_native_engines_with_staggered_reset
         provider.create()
         performance = provider.train(8)
         assert performance.samples == provider.model.num_timesteps == 8
+        assert performance.diagnostics is not None
+        assert performance.diagnostics.samples == 8
+        assert performance.diagnostics.episodes_completed >= 2
         assert provider.vec.num_envs == 2
         assert provider.vec.get_attr("rles_transition_hash") == [fingerprint.hash] * 2
         assert all(provider.vec.get_attr("rles_boundary_token"))

@@ -155,6 +155,71 @@ class RLStageExecutor:
         temporary.replace(path)
         return result
 
+    def _training_diagnostics_record(
+        self, context: StageContext, performances: tuple[object, ...], *, initial_steps: int,
+    ) -> str:
+        """Persist deterministic per-checkpoint learning evidence for a completed R1 stage."""
+        path = self.inference_dir.parent / "R1-learning.json"
+        marker = path.with_suffix(path.suffix + ".sha256")
+        if not performances:
+            if not path.is_file() or not marker.is_file():
+                raise RuntimeError("full-budget R1 resume is missing durable learning diagnostics")
+            payload = path.read_bytes()
+            identity = sha256(payload).hexdigest()
+            if marker.read_text(encoding="ascii") != identity:
+                raise RuntimeError("durable R1 learning diagnostics failed integrity verification")
+            record = json.loads(payload.decode("utf-8"))
+            if (not isinstance(record, dict)
+                    or record.get("schema") != "rles.r1-learning.v1"
+                    or record.get("config_hash") != self.config.hash
+                    or record.get("transition_hash") != self.config.fingerprint.hash
+                    or record.get("attempt_id") != context.spec.attempt_id
+                    or record.get("final_steps") != self.train_steps):
+                raise RuntimeError("durable R1 learning diagnostics differ from the frozen stage")
+            return identity
+        if path.exists() or marker.exists():
+            raise RuntimeError("R1 learning diagnostics already exist for a fresh training result")
+        blocks = []
+        cursor = initial_steps
+        for performance in performances:
+            samples = getattr(performance, "samples", None)
+            diagnostics = getattr(performance, "diagnostics", None)
+            if (type(samples) is not int or samples < 1 or diagnostics is None
+                    or getattr(diagnostics, "samples", None) != samples):
+                raise RuntimeError("L4 training performance lacks native learning diagnostics")
+            block = {
+                "step_start": cursor,
+                "step_end": cursor + samples,
+                "samples": samples,
+                "updates": getattr(performance, "updates", None),
+                "diagnostics": asdict(diagnostics),
+            }
+            blocks.append(block)
+            cursor += samples
+        if cursor != self.train_steps:
+            raise RuntimeError("R1 learning diagnostics do not cover the completed step budget")
+        record = {
+            "schema": "rles.r1-learning.v1",
+            "attempt_id": context.spec.attempt_id,
+            "algorithm": self.config.algorithm,
+            "config_hash": self.config.hash,
+            "transition_hash": self.config.fingerprint.hash,
+            "initial_steps": initial_steps,
+            "final_steps": cursor,
+            "blocks": blocks,
+        }
+        payload = json.dumps(
+            record, sort_keys=True, separators=(",", ":"), allow_nan=False,
+        ).encode("utf-8")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(path.name + ".tmp")
+        with temporary.open("xb") as stream:
+            stream.write(payload)
+        temporary.replace(path)
+        identity = sha256(payload).hexdigest()
+        marker.write_text(identity, encoding="ascii")
+        return identity
+
     def _preflight(self, context: StageContext) -> None:
         if (not isinstance(context, StageContext) or context.stage != "R1"
                 or context.budget != context.spec.stage_budget.get("R1")
@@ -310,6 +375,9 @@ class RLStageExecutor:
                     provider, context, initial_steps=initial_steps,
                     resumed=self.resume_from is not None,
                 )
+            diagnostics_hash = self._training_diagnostics_record(
+                context, performances, initial_steps=initial_steps,
+            )
             if self.inference_dir.exists():
                 if initial_steps != self.train_steps:
                     raise RuntimeError("existing R1 actor can only be reused from a full-budget checkpoint")
@@ -341,8 +409,12 @@ class RLStageExecutor:
             report_hash = transfer_evidence_hash(transfer_result) if transfer_result else None
             payload_hash = sha256(
                 bytes.fromhex(actor_hash) + (bytes.fromhex(report_hash) if report_hash else b"")
+                + bytes.fromhex(diagnostics_hash)
             ).hexdigest()
-            metadata = {"rl_training_complete": "true", "inference_actor_hash": actor_hash}
+            metadata = {
+                "rl_training_complete": "true", "inference_actor_hash": actor_hash,
+                "training_diagnostics_hash": diagnostics_hash,
+            }
             if report_hash is not None:
                 metadata["transfer_report_hash"] = report_hash
             return ProviderStageOutput(

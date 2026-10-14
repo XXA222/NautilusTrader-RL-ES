@@ -75,9 +75,19 @@ class ProviderFixtureEnv(gym.Env):
 
     def step(self, action: np.ndarray):
         self._step += 1
-        self._actions.append(str(float(action[0])))
-        self._observation = np.asarray([self._step, float(action[0])], dtype=np.float32)
-        return self._observation.copy(), -float(action[0] ** 2), False, False, {}
+        requested = float(action[0])
+        reward = -(requested ** 2)
+        self._actions.append(str(requested))
+        self._observation = np.asarray([self._step, requested], dtype=np.float32)
+        return self._observation.copy(), reward, False, False, {
+            "r_econ": reward,
+            "r_shape": 0.0,
+            "r_train": reward,
+            "requested_action": requested,
+            "policy_executed_action_pre_terminal": requested,
+            "risk_guard_intervention": 0.0,
+            "execution_plan_action": "SUBMIT",
+        }
 
 
 @pytest.mark.parametrize("early_stop", [False, True])

@@ -524,6 +524,20 @@ def test_application_rl_train_bundle_load_and_disjoint_native_backtest(tmp_path,
     ]
     assert restored["rule_provenance"] == ["synthetic:factory-test-rule"]
     if algorithm == "PPO":
+        learning = tmp_path / "run" / "R1-learning.json"
+        learning_record = json.loads(learning.read_text(encoding="utf-8"))
+        assert learning_record["schema"] == "rles.r1-learning.v1"
+        assert learning_record["final_steps"] == 4
+        assert sum(block["samples"] for block in learning_record["blocks"]) == 4
+        bundle_record = json.loads((tmp_path / "run" / "bundle.json").read_text(encoding="utf-8"))
+        assert bundle_record["actor"]["training_diagnostics_hash"] == sha256(
+            learning.read_bytes()
+        ).hexdigest()
+        original_learning = learning.read_bytes()
+        learning.write_bytes(original_learning + b"\n")
+        with pytest.raises(DataError, match="integrity mismatch"):
+            backtest(resolved, result["output"])
+        learning.write_bytes(original_learning)
         bundle = tmp_path / "run" / "bundle.json"
         original = bundle.read_bytes()
         bundle.write_bytes(original + b"\n")

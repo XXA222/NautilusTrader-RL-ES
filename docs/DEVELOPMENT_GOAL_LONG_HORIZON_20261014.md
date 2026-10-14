@@ -40,4 +40,12 @@ checkpoint 已实测覆盖两个隔离环境在各执行一步后的中间边界
 
 2026-10-14 工程验收使用已消费的 2026-08 Train 窗口做机制回放：Train 共 7,197 个决策步，4 个隔离环境分别从偏移 0、2,313、4,627、6,941 开始，各执行 256 步，合计 1,024 个互不重叠决策点，覆盖上界 14.23%。运行生成四份 episode replay、环境 seed tree、1,024 步检查点、完整性文件和最终强制平仓。该小预算 PPO 净收益为 -1.074%，费用 91.76、滑点成本 19.11，说明并行机制可运行，但不构成策略改善或参数选择证据。全仓 CPU 回归 **424 passed、4 CUDA-only skipped、45 warnings**，独立 CUDA smoke **4 passed**，Ruff 通过，MyPy **101 个源码文件**通过。
 
+## 第三项实现：原生训练诊断证据
+
+R1 每次 `learn()` 现在强制采集原生逐 transition 事实，包括未缩放 `r_econ`、`r_shape`、送入 learner 的 `r_train`、请求/执行动作、相邻目标变化、guard 干预、SUBMIT/NOOP 和完成 Episode；同时保存 SB3 optimizer 的有限标量，如学习率、更新数、解释方差、value/policy loss、entropy、KL、clip fraction 和 policy std。报告不以 TensorBoard 临时日志为凭据，而是在成功 R1 阶段写入规范化 `R1-learning.json` 及 SHA-256，诊断哈希同时进入 R1 stage payload 和最终 bundle；回测会验证文件、sidecar 与 bundle 三者一致。极短常数回报下数学上未定义的 explained variance 被显式列入 `optimizer_undefined_metrics`，其余非有限 optimizer 值继续 fail closed。
+
+首份 4 环境、1,024 步机制诊断显示：训练期请求动作绝对值均值 0.6475，相邻目标变化绝对值均值 0.7728，97.07% transition 触发 SUBMIT；PPO policy std 仍为 0.9987，只有 2 次 update，解释方差为 -2.57，未缩放 reward 均值仅 -1.62e-5。训练后确定性回放虽有 +0.0344% 费用前毛收益，但费用与滑点合计约 1.109%，净收益 -1.074%。这把下一项优先级收敛为：先比较固定 reward scale 与更小的 PPO 初始探索方差/空仓初始动作，再研究 deadband、调仓频率和动作滞回；不能直接放大当前近满量程随机动作的训练步数。
+
+数据审计同时确认，本地官方行情只到 2026-08-11，2026-07-17 至 07-31 还有约 14 天缺口，既有 2026-08 Train/Validation/Test 已消费。后续需先补官方档案并在读取结果前预注册切分；建议把最新约 15 天隔离为一次性 final Holdout、此前约 15 天作为 Validation。长周期档案仍缺 dated instrument rules，因此在补齐历史规则、margin tier 和实际 fee 证据前，经济结论必须标注为“真实市场记录 + 非历史规则情景”，不能升级为严格历史账户收益证明。
+
 该目标持续有效，完成一个工程阶段不等于目标整体完成。每次续开发先检查最新数据质量、使用台账、代码和硬件占用，再记录当期可验证的进展与下一项工作。

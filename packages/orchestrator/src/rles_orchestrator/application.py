@@ -859,7 +859,16 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
             np.savez(output / "es_actor.npz", genome=genome)
             actor_metadata = {"kind": "es", "spec": asdict(actor_spec), "genome_hash": genome_hash(actor_spec, genome)}
         else:
-            actor_metadata = {"kind": "rl", "path": "r1", "actor_hash": (output / "r1" / "COMPLETED").read_text(encoding="ascii")}
+            r1_artifact = next(artifact for artifact in lineage if artifact.stage == "R1")
+            diagnostics_hash = r1_artifact.metadata.get("training_diagnostics_hash")
+            if diagnostics_hash is None or diagnostics_hash != _verify_file(output / "R1-learning.json"):
+                raise DataError("R1 learning diagnostics are missing or differ from the stage receipt")
+            actor_metadata = {
+                "kind": "rl", "path": "r1",
+                "actor_hash": (output / "r1" / "COMPLETED").read_text(encoding="ascii"),
+                "training_diagnostics_path": "R1-learning.json",
+                "training_diagnostics_hash": diagnostics_hash,
+            }
         actual_rl_steps = sum(a.usage.rl_steps for a in lineage if a.stage == "R1")
         training_coverage = _training_coverage_report(
             rl_steps=actual_rl_steps, num_envs=rl_config.num_envs,
@@ -946,6 +955,13 @@ def backtest(config: dict, bundle_path: str | Path, *, factory: HistoricalEnviro
         inference = InferenceActor(root / actor["path"], verify=True)
         if (root / actor["path"] / "COMPLETED").read_text(encoding="ascii") != actor["actor_hash"]:
             raise DataError("bundle actor identity mismatch")
+        diagnostics_path = actor.get("training_diagnostics_path")
+        diagnostics_hash = actor.get("training_diagnostics_hash")
+        if (diagnostics_path not in (None, "R1-learning.json")
+                or (diagnostics_path is None) != (diagnostics_hash is None)
+                or diagnostics_path is not None
+                and _verify_file(root / diagnostics_path) != diagnostics_hash):
+            raise DataError("bundle R1 learning diagnostics identity mismatch")
         predict = inference.predict
     else:
         values = actor["spec"]
