@@ -66,6 +66,17 @@ def test_l3_exports_json_safe_episode_replay_only_at_matching_boundary() -> None
     }
     assert EpisodeReplay.from_dict(replay).to_dict() == replay
 
+    scheduled = EpisodeReplay("a" * 64, (Decimal("0.5"),), "c" * 64, 7, 19)
+    assert scheduled.to_dict() == {
+        "schema": "rles.episode-replay.v2",
+        "transition_hash": "a" * 64,
+        "actions": ["0.5"],
+        "boundary_token": "c" * 64,
+        "episode_index": 7,
+        "episode_start_offset": 19,
+    }
+    assert EpisodeReplay.from_dict(scheduled.to_dict()) == scheduled
+
     with pytest.raises(ValueError, match="decimal strings"):
         EpisodeReplay.from_dict({**replay, "actions": [0.25]})
 

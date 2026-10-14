@@ -35,17 +35,25 @@ def _spawn_worker(factory: EnvFactory, rank: int, seed: int,
         def reset(self, *, seed=None, options=None):
             if seed is not None and (type(seed) is not int or not 0 <= seed < 2**32):
                 raise ContractError("episode reset seed must be uint32")
+            if options is not None and not isinstance(options, dict):
+                raise ContractError("episode reset options must be a dictionary")
+            episode_options = {} if options is None else dict(options)
+            if "rles_episode_index" in episode_options:
+                raise ContractError("rles_episode_index is reserved by the immutable seed schedule")
             if self._first:
                 seed = self._root_seed
                 self._first = False
+                episode_index = 0
                 self._next_episode = 1
             else:
                 # L1 owns the immutable environment seed tree. SB3 may pass its
                 # algorithm seed through VecEnv.seed(); it must not replace the
                 # independently frozen environment stream.
-                seed = _episode_seed(self._root_seed, self._next_episode)
+                episode_index = self._next_episode
+                seed = _episode_seed(self._root_seed, episode_index)
                 self._next_episode += 1
-            return self.env.reset(seed=seed, options=options)
+            episode_options["rles_episode_index"] = episode_index
+            return self.env.reset(seed=seed, options=episode_options)
 
         @property
         def rles_seed_schedule_state(self):

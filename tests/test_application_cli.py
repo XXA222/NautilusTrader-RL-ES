@@ -42,12 +42,13 @@ def test_training_coverage_report_separates_interaction_budget_from_full_episode
 
     repeated = application._training_coverage_report(
         rl_steps=2_900, num_envs=2, train_window_decision_steps=3_000,
-        episode_decision_steps=1_000, episode_start_offsets=(0, 2_000),
+        episode_decision_steps=1_000, episode_start_offsets=(0, 1_500),
     )
     assert repeated["interaction_steps_per_environment"] == [1_450, 1_450]
-    assert repeated["upper_bound_unique_decision_steps_per_environment"] == [1_000, 1_000]
-    assert repeated["upper_bound_unique_train_window_steps"] == 2_000
-    assert repeated["fixed_episode_start_offsets"] == [0, 2_000]
+    assert repeated["upper_bound_unique_decision_steps_per_environment"] == [1_450, 1_450]
+    assert repeated["upper_bound_unique_train_window_steps"] == 2_900
+    assert repeated["initial_episode_start_offsets"] == [0, 1_500]
+    assert repeated["sampling_policy"] == "rank_exclusive_coprime_rotating_windows_v1"
     assert repeated["nominal_full_episode_passes_per_environment"] == [1, 1]
     assert repeated["nominal_partial_episode_steps_per_environment"] == [450, 450]
 

@@ -58,6 +58,10 @@ def test_ppo_initial_exploration_and_flat_action_head_are_frozen_controls():
         assert provider.predict(np.zeros((1, 2), dtype=np.float32)).item() == 0.0
         performance = provider.train(2)
         assert performance.diagnostics is not None
+        assert performance.diagnostics.decision_start_ns == 1
+        assert performance.diagnostics.decision_end_ns == 2
+        assert performance.diagnostics.unique_decision_timestamps == 2
+        assert performance.diagnostics.decision_timestamp_revisit_fraction == 0.0
         metrics = dict(performance.diagnostics.optimizer_metrics)
         assert metrics["train/std"] == pytest.approx(np.exp(-2), rel=0.02)
     finally:
@@ -146,6 +150,7 @@ class ProviderFixtureEnv(gym.Env):
             "policy_executed_action_pre_terminal": requested,
             "risk_guard_intervention": 0.0,
             "execution_plan_action": "SUBMIT",
+            "decision_ts_ns": self._step,
         }
 
 

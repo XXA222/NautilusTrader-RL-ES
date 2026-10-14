@@ -103,15 +103,24 @@ def _episode_replays(vec, cfg: RLConfig, boundary: Boundary) -> list[dict[str, A
         raise ContractError("L3 Env must expose its replay journal at a checkpoint boundary") from exc
     if not isinstance(values, (list, tuple)) or len(values) != cfg.num_envs:
         raise ContractError("L3 replay journal count differs from the frozen environment count")
-    expected_fields = {"schema", "transition_hash", "actions", "boundary_token"}
+    v1_fields = {"schema", "transition_hash", "actions", "boundary_token"}
+    v2_fields = v1_fields | {"episode_index", "episode_start_offset"}
     checked: list[dict[str, Any]] = []
     for index, value in enumerate(values):
-        if (not isinstance(value, dict) or set(value) != expected_fields
-                or value["schema"] != "rles.episode-replay.v1"
+        if (not isinstance(value, dict)
+                or (value.get("schema") == "rles.episode-replay.v1" and set(value) != v1_fields)
+                or (value.get("schema") == "rles.episode-replay.v2" and set(value) != v2_fields)
+                or value.get("schema") not in {"rles.episode-replay.v1", "rles.episode-replay.v2"}
                 or value["transition_hash"] != cfg.fingerprint.hash
                 or value["boundary_token"] != boundary.env_tokens[index]
                 or not isinstance(value["actions"], list)):
             raise ContractError("L3 replay journal differs from its approved checkpoint boundary")
+        if value["schema"] == "rles.episode-replay.v2" and (
+            type(value["episode_index"]) is not int or value["episode_index"] < 0
+            or type(value["episode_start_offset"]) is not int
+            or value["episode_start_offset"] < 0
+        ):
+            raise ContractError("L3 replay journal has invalid rotating-window identity")
         for action in value["actions"]:
             if not isinstance(action, str):
                 raise ContractError("L3 replay journal actions must be decimal strings")

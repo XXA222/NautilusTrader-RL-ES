@@ -6,6 +6,7 @@ from dataclasses import asdict
 from decimal import Decimal
 from hashlib import sha256
 import json
+from math import gcd
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -147,6 +148,39 @@ def _visible_batches_by_decision(batches: tuple[tuple[int, Any], ...],
             offset += 1
         result.append(tuple(batch for _, batch in batches[first:offset]))
     return tuple(result)
+
+
+def _episode_lane(*, full_steps: int, episode_rank: int,
+                  episode_count: int, episode_steps: int) -> tuple[int, int]:
+    """Return a rank-exclusive decision lane for deterministic episode rotation."""
+    if (type(full_steps) is not int or type(episode_rank) is not int
+            or type(episode_count) is not int or type(episode_steps) is not int
+            or full_steps < 1 or not 0 <= episode_rank < episode_count
+            or episode_steps < 1):
+        raise DataError("invalid rotating historical episode partition")
+    start = episode_rank * full_steps // episode_count
+    end = (episode_rank + 1) * full_steps // episode_count
+    if end - start < episode_steps:
+        raise DataError("historical episode must fit inside every rank-exclusive time lane")
+    return start, end
+
+
+def _episode_start(*, lane_start: int, lane_end: int,
+                   episode_steps: int, episode_index: int) -> int:
+    """Walk every legal lane start exactly once before the sequence repeats."""
+    if type(episode_index) is not int or episode_index < 0:
+        raise DataError("historical episode index must be a non-negative integer")
+    positions = lane_end - lane_start - episode_steps + 1
+    if positions <= 0:
+        raise DataError("historical episode has no legal start position in its lane")
+    if positions == 1:
+        return lane_start
+    stride = max(1, int(positions * 0.6180339887498948))
+    while gcd(stride, positions) != 1:
+        stride += 1
+        if stride >= positions:
+            stride = 1
+    return lane_start + episode_index * stride % positions
 
 
 class HistoricalEnvironmentFactory:
@@ -325,22 +359,41 @@ class HistoricalEnvironmentFactory:
         if (type(episode_rank) is not int or type(episode_count) is not int
                 or type(selected_steps) is not int or not 0 <= episode_rank < episode_count
                 or selected_steps < 1 or selected_steps > full_steps):
-            raise DataError("invalid fixed historical episode partition")
-        maximum_offset = full_steps - selected_steps
-        if episode_count > maximum_offset + 1:
-            raise DataError("historical episode partitions require distinct start positions")
-        start_offset = (0 if episode_count == 1 else
-                        episode_rank * maximum_offset // (episode_count - 1))
-        episode_rows = self.rows[start_offset:start_offset + selected_steps + 3]
-        episode_fold_hash = (digest([self.start_ns, self.end_ns])
-                             if episode_steps is None and episode_count == 1 else digest({
-                                 "window": [episode_rows[0].decision_ts_ns,
-                                            episode_rows[-1].decision_ts_ns],
-                                 "partition": [episode_rank, episode_count, selected_steps],
-                             }))
+            raise DataError("invalid rotating historical episode partition")
+        lane_start, lane_end = _episode_lane(
+            full_steps=full_steps, episode_rank=episode_rank,
+            episode_count=episode_count, episode_steps=selected_steps,
+        )
 
         def episode_factory(*, seed, options):
             nonlocal pending_replay
+            if not isinstance(options, dict):
+                raise DataError("historical episode options must be a dictionary")
+            requested_index = options.get("rles_episode_index", 0)
+            current_replay = pending_replay
+            episode_index = (current_replay.episode_index
+                             if current_replay is not None
+                             and current_replay.episode_index is not None
+                             else requested_index)
+            if type(episode_index) is not int or episode_index < 0:
+                raise DataError("historical episode index must be a non-negative integer")
+            start_offset = _episode_start(
+                lane_start=lane_start, lane_end=lane_end,
+                episode_steps=selected_steps, episode_index=episode_index,
+            )
+            if (current_replay is not None
+                    and current_replay.episode_start_offset is not None
+                    and current_replay.episode_start_offset != start_offset):
+                raise DataError("checkpoint episode window differs from deterministic schedule")
+            episode_rows = self.rows[start_offset:start_offset + selected_steps + 3]
+            episode_fold_hash = (digest([self.start_ns, self.end_ns])
+                                 if episode_steps is None and episode_count == 1 else digest({
+                                     "window": [episode_rows[0].decision_ts_ns,
+                                                episode_rows[-1].decision_ts_ns],
+                                     "partition": [episode_rank, episode_count, selected_steps],
+                                     "episode_index": episode_index,
+                                     "start_offset": start_offset,
+                                 }))
             self.snapshots = []
             self.fill_references = {}
             seen_fills: dict[str, dict] = {}
@@ -475,7 +528,9 @@ class HistoricalEnvironmentFactory:
                 transition_hash=transition, frames=tuple(frames), scoring_frames=len(frames) - 2,
                 plan_action=plan_action, plan_terminal=lambda s: plan(Decimal(0), s, terminal=True),
                 executed_exposure=lambda s: signed_quantity(s) * s.mark / self.budget,
-                reward_config=self.reward_config, replay=pending_replay, observation_state=self.observation_state,
+                reward_config=self.reward_config, replay=current_replay,
+                episode_index=episode_index, episode_start_offset=start_offset,
+                observation_state=self.observation_state,
             )
             pending_replay = None
             return episode

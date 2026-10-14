@@ -456,12 +456,9 @@ def _episode_start_offsets(*, train_window_steps: int, episode_steps: int,
     if (type(train_window_steps) is not int or type(episode_steps) is not int
             or type(num_envs) is not int or train_window_steps < 1
             or not 1 <= episode_steps <= train_window_steps or num_envs < 1
-            or num_envs > train_window_steps - episode_steps + 1):
-        raise DataError("invalid fixed historical episode partition")
-    maximum_offset = train_window_steps - episode_steps
-    if num_envs == 1:
-        return (0,)
-    return tuple(rank * maximum_offset // (num_envs - 1) for rank in range(num_envs))
+            or episode_steps > train_window_steps // num_envs):
+        raise DataError("RL episode must fit inside every rank-exclusive Train time lane")
+    return tuple(rank * train_window_steps // num_envs for rank in range(num_envs))
 
 
 def _rl_sampling_policy(config: dict) -> tuple[int, int | None]:
@@ -481,7 +478,7 @@ def _training_coverage_report(*, rl_steps: int, num_envs: int,
                               train_window_decision_steps: int,
                               episode_decision_steps: int,
                               episode_start_offsets: tuple[int, ...]) -> dict[str, Any]:
-    """Report fixed-segment interaction and unique Train-window coverage bounds."""
+    """Report deterministic rotating-lane interaction and coverage bounds."""
     if (type(rl_steps) is not int or rl_steps < 0 or type(num_envs) is not int or num_envs < 1
             or type(train_window_decision_steps) is not int or train_window_decision_steps < 1
             or type(episode_decision_steps) is not int or episode_decision_steps < 1
@@ -490,24 +487,27 @@ def _training_coverage_report(*, rl_steps: int, num_envs: int,
                    or value + episode_decision_steps > train_window_decision_steps
                    for value in episode_start_offsets)):
         raise DataError("invalid RL interaction coverage facts")
+    expected_offsets = tuple(
+        rank * train_window_decision_steps // num_envs for rank in range(num_envs)
+    )
+    if episode_start_offsets != expected_offsets:
+        raise DataError("RL coverage offsets differ from rank-exclusive time lanes")
     quotient, remainder = divmod(rl_steps, num_envs)
     per_env = [quotient + int(rank < remainder) for rank in range(num_envs)]
-    unique_steps = [min(count, episode_decision_steps) for count in per_env]
-    intervals = sorted((offset, offset + count)
-                       for offset, count in zip(episode_start_offsets, unique_steps)
-                       if count > 0)
-    union_steps = 0
-    union_end = 0
-    for start, end in intervals:
-        if end > union_end:
-            union_steps += end - max(start, union_end)
-            union_end = end
+    lane_sizes = [((rank + 1) * train_window_decision_steps // num_envs
+                   - rank * train_window_decision_steps // num_envs)
+                  for rank in range(num_envs)]
+    unique_steps = [min(count, lane_size)
+                    for count, lane_size in zip(per_env, lane_sizes, strict=True)]
+    union_steps = sum(unique_steps)
     return {
         "rl_interaction_steps": rl_steps,
         "environment_count": num_envs,
         "train_window_decision_steps": train_window_decision_steps,
         "nominal_episode_decision_steps": episode_decision_steps,
-        "fixed_episode_start_offsets": list(episode_start_offsets),
+        "sampling_policy": "rank_exclusive_coprime_rotating_windows_v1",
+        "initial_episode_start_offsets": list(episode_start_offsets),
+        "rank_lane_decision_steps": lane_sizes,
         "interaction_steps_per_environment": per_env,
         "upper_bound_unique_decision_steps_per_environment": unique_steps,
         "upper_bound_unique_train_window_steps": union_steps,
@@ -518,8 +518,8 @@ def _training_coverage_report(*, rl_steps: int, num_envs: int,
         "nominal_partial_episode_steps_per_environment": [
             count % episode_decision_steps for count in per_env
         ],
-        "interpretation": ("upper bound for deterministic rank-partitioned Train episodes; "
-                           "early termination can reduce actual coverage"),
+        "interpretation": ("upper bound for deterministic rank-exclusive rotating Train episodes; "
+                           "the immutable learning diagnostics record actual timestamp coverage"),
     }
 
 
@@ -587,8 +587,9 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
               and requested_episode_steps is None else digest({
                   "window": [training.start_ns, training.end_ns],
                   "rl_episode_sampling": {
+                      "policy": "rank_exclusive_coprime_rotating_windows_v1",
                       "num_envs": rl_num_envs, "episode_steps": rl_episode_steps,
-                      "start_offsets": episode_offsets,
+                      "initial_start_offsets": episode_offsets,
                   },
               })),
         terminal=digest("force_flatten_with_cost"),

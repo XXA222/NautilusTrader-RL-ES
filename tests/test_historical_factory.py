@@ -80,7 +80,7 @@ def test_nondefault_reward_scale_is_bound_to_historical_training_identity(tmp_pa
     assert scaled.make_env()._reward.config.reward_scale == 10_000.0
 
 
-def test_rank_partitioned_training_episodes_cover_distinct_causal_segments(tmp_path):
+def test_rank_partitioned_training_episodes_start_in_distinct_time_lanes(tmp_path):
     factory = HistoricalEnvironmentFactory(**recipe(tmp_path, bar_count=30))
     full_steps = len(factory.rows) - 3
     episode_steps = 4
@@ -96,8 +96,10 @@ def test_rank_partitioned_training_episodes_cover_distinct_causal_segments(tmp_p
         assert last_info["episode_window"]["decision_steps"] == episode_steps
         assert first_info["episode_window"]["start_ns"] < last_info["episode_window"]["start_ns"]
         assert last_info["episode_window"]["start_ns"] == factory.rows[
-            full_steps - episode_steps
+            full_steps // 2
         ].decision_ts_ns
+        assert first_info["episode_window"]["episode_index"] == 0
+        assert last_info["episode_window"]["episode_index"] == 0
     finally:
         last.close()
 
@@ -105,10 +107,29 @@ def test_rank_partitioned_training_episodes_cover_distinct_causal_segments(tmp_p
 def test_rank_partition_rejects_duplicate_or_oversized_segments(tmp_path):
     factory = HistoricalEnvironmentFactory(**recipe(tmp_path, bar_count=12))
     full_steps = len(factory.rows) - 3
-    with pytest.raises(DataError, match="distinct start positions"):
+    with pytest.raises(DataError, match="rank-exclusive time lane"):
         factory.make_env(episode_rank=0, episode_count=2, episode_steps=full_steps)
-    with pytest.raises(DataError, match="invalid fixed historical episode partition"):
+    with pytest.raises(DataError, match="invalid rotating historical episode partition"):
         factory.make_env(episode_steps=full_steps + 1)
+
+
+def test_historical_episode_windows_rotate_reproducibly_within_rank_lane(tmp_path):
+    factory = HistoricalEnvironmentFactory(**recipe(tmp_path, bar_count=30))
+    episode_steps = 4
+    env = factory.make_env(episode_rank=0, episode_count=2, episode_steps=episode_steps)
+    try:
+        _, first = env.reset(seed=11, options={"rles_episode_index": 0})
+        _, second = env.reset(seed=12, options={"rles_episode_index": 1})
+    finally:
+        env.close()
+    duplicate = factory.make_env(episode_rank=0, episode_count=2, episode_steps=episode_steps)
+    try:
+        _, repeated = duplicate.reset(seed=99, options={"rles_episode_index": 1})
+    finally:
+        duplicate.close()
+    assert first["episode_window"]["start_offset"] != second["episode_window"]["start_offset"]
+    assert second["episode_window"] == repeated["episode_window"]
+    assert 0 <= second["episode_window"]["start_offset"] < (len(factory.rows) - 3) // 2
 
 
 def test_historical_factory_accepts_v2_profile_and_binds_its_schema(tmp_path):
@@ -546,15 +567,15 @@ def test_application_rl_train_bundle_load_and_disjoint_native_backtest(tmp_path,
         bundle.write_bytes(original)
 
 
-def test_application_parallel_rl_uses_distinct_fixed_train_segments(tmp_path):
+def test_application_parallel_rl_uses_rotating_rank_exclusive_train_lanes(tmp_path):
     from rles_orchestrator.application import train
 
     config = recipe(tmp_path)
-    config["end_ns"] = 12 * MINUTE_NS
+    config["end_ns"] = 13 * MINUTE_NS
     config["market_path"], config["rules_path"] = str(config["market_path"]), str(config["rules_path"])
     run = {
         "environment": config,
-        "evaluation": {"start_ns": 12 * MINUTE_NS, "end_ns": 20 * MINUTE_NS,
+        "evaluation": {"start_ns": 13 * MINUTE_NS, "end_ns": 20 * MINUTE_NS,
                        "coverage_policy": config["coverage_policy"]},
         "output": str(tmp_path / "parallel-run"), "algorithm": "PPO", "steps": 4,
         "hidden_layers": [2], "rl_num_envs": 2, "rl_episode_steps": 2,
@@ -564,8 +585,9 @@ def test_application_parallel_rl_uses_distinct_fixed_train_segments(tmp_path):
     coverage = result["training_coverage"]
     assert coverage["environment_count"] == 2
     assert coverage["nominal_episode_decision_steps"] == 2
-    assert coverage["fixed_episode_start_offsets"][0] == 0
-    assert coverage["fixed_episode_start_offsets"][1] > 0
+    assert coverage["sampling_policy"] == "rank_exclusive_coprime_rotating_windows_v1"
+    assert coverage["initial_episode_start_offsets"][0] == 0
+    assert coverage["initial_episode_start_offsets"][1] > 0
     assert coverage["upper_bound_unique_train_window_steps"] == coverage[
         "train_window_decision_steps"
     ]
@@ -577,13 +599,13 @@ def test_parallel_rl_checkpoint_restores_each_partition_mid_episode(tmp_path, mo
     from rles_rl_sb3.provider import RLProvider
 
     environment = recipe(tmp_path)
-    environment["end_ns"] = 12 * MINUTE_NS
+    environment["end_ns"] = 13 * MINUTE_NS
     environment["market_path"], environment["rules_path"] = (
         str(environment["market_path"]), str(environment["rules_path"]),
     )
     run = {
         "environment": environment,
-        "evaluation": {"start_ns": 12 * MINUTE_NS, "end_ns": 20 * MINUTE_NS,
+        "evaluation": {"start_ns": 13 * MINUTE_NS, "end_ns": 20 * MINUTE_NS,
                        "coverage_policy": environment["coverage_policy"]},
         "output": str(tmp_path / "parallel-resume"), "algorithm": "PPO", "steps": 4,
         "hidden_layers": [2], "rl_num_envs": 2, "rl_episode_steps": 2,
@@ -607,6 +629,8 @@ def test_parallel_rl_checkpoint_restores_each_partition_mid_episode(tmp_path, mo
     replays = json.loads((checkpoint / "episode_replays.json").read_text(encoding="utf-8"))
     assert len(replays) == 2
     assert all(len(replay["actions"]) == 1 for replay in replays)
+    assert all(replay["schema"] == "rles.episode-replay.v2" for replay in replays)
+    assert [replay["episode_index"] for replay in replays] == [0, 0]
 
     monkeypatch.setattr(RLProvider, "train", original_train)
     run["resume_checkpoint"] = str(checkpoint)

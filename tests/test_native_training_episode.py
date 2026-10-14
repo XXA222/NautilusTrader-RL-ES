@@ -287,7 +287,9 @@ def test_native_gym_pipeline_uses_risk_capped_fills_and_terminal_costs() -> None
         assert info["native_equity"] == "99999.90"  # Both actual native commissions.
         assert observation[-1] == 0  # Forced terminal flatten.
         assert reward == pytest.approx(np.log(99999.9 / 100000) - 0.2 * 0.5 - 0.5 * 1e-6)
-        assert info["decision_ts_ns"] == 180_000_000_000
+        # The terminal drain advances the account to minute 3; only the minute
+        # 2 policy barrier counts as an RL decision sample.
+        assert info["decision_ts_ns"] == 120_000_000_000
     finally:
         env.close()
 

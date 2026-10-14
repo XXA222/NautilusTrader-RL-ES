@@ -45,26 +45,44 @@ class EpisodeReplay:
     transition_hash: str
     actions: tuple[Decimal, ...]
     boundary_token: str
+    episode_index: int | None = None
+    episode_start_offset: int | None = None
 
     def __post_init__(self) -> None:
         if (re.fullmatch(r"[0-9a-f]{64}", self.transition_hash) is None
                 or re.fullmatch(r"[0-9a-f]{64}", self.boundary_token) is None
                 or type(self.actions) is not tuple
                 or any(type(action) is not Decimal or not action.is_finite()
-                       or not -1 <= action <= 1 for action in self.actions)):
+                       or not -1 <= action <= 1 for action in self.actions)
+                or (self.episode_index is None) != (self.episode_start_offset is None)
+                or (self.episode_index is not None and (
+                    type(self.episode_index) is not int or self.episode_index < 0
+                    or type(self.episode_start_offset) is not int
+                    or self.episode_start_offset < 0))):
             raise ValueError("invalid immutable episode replay")
 
     def to_dict(self) -> dict[str, Any]:
-        return {"schema": "rles.episode-replay.v1", "transition_hash": self.transition_hash,
-                "actions": [str(action) for action in self.actions],
-                "boundary_token": self.boundary_token}
+        value: dict[str, Any] = {
+            "schema": "rles.episode-replay.v1", "transition_hash": self.transition_hash,
+            "actions": [str(action) for action in self.actions],
+            "boundary_token": self.boundary_token,
+        }
+        if self.episode_index is not None:
+            value.update({"schema": "rles.episode-replay.v2",
+                          "episode_index": self.episode_index,
+                          "episode_start_offset": self.episode_start_offset})
+        return value
 
     @classmethod
     def from_dict(cls, value: Any) -> EpisodeReplay:
-        if (not isinstance(value, dict)
-                or set(value) != {"schema", "transition_hash", "actions", "boundary_token"}
-                or value["schema"] != "rles.episode-replay.v1"
-                or not isinstance(value["actions"], list)):
+        if not isinstance(value, dict) or not isinstance(value.get("actions"), list):
+            raise ValueError("episode replay snapshot schema mismatch")
+        schema = value.get("schema")
+        v1 = {"schema", "transition_hash", "actions", "boundary_token"}
+        v2 = v1 | {"episode_index", "episode_start_offset"}
+        if (schema == "rles.episode-replay.v1" and set(value) != v1) or (
+            schema == "rles.episode-replay.v2" and set(value) != v2
+        ) or schema not in {"rles.episode-replay.v1", "rles.episode-replay.v2"}:
             raise ValueError("episode replay snapshot schema mismatch")
         try:
             actions = tuple(Decimal(item) for item in value["actions"]
@@ -73,7 +91,8 @@ class EpisodeReplay:
             raise ValueError("invalid serialized replay action") from exc
         if len(actions) != len(value["actions"]):
             raise ValueError("serialized replay actions must be decimal strings")
-        return cls(value["transition_hash"], actions, value["boundary_token"])
+        return cls(value["transition_hash"], actions, value["boundary_token"],
+                   value.get("episode_index"), value.get("episode_start_offset"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +137,7 @@ class BarrierEpisode:
                  plan_terminal: Callable[[Any], ExecutionPlan],
                  executed_exposure: Callable[[Any], Decimal], reward_config: RewardConfig,
                  replay: EpisodeReplay | None = None,
+                 episode_index: int = 0, episode_start_offset: int = 0,
                  observation_state: Callable[[Any], Mapping[str, Mapping[str, float]]] | None = None) -> None:
         if re.fullmatch(r"[0-9a-f]{64}", transition_hash) is None:
             raise ValueError("complete transition fingerprint required")
@@ -135,6 +155,12 @@ class BarrierEpisode:
                 len(replay.actions) >= scoring_frames - 1 or
                 any(type(a) is not Decimal or not a.is_finite() or not -1 <= a <= 1 for a in replay.actions)):
             raise ValueError("replay must describe a live boundary of the same transition recipe")
+        if (type(episode_index) is not int or episode_index < 0
+                or type(episode_start_offset) is not int or episode_start_offset < 0
+                or replay is not None and replay.episode_index is not None
+                and (replay.episode_index != episode_index
+                     or replay.episode_start_offset != episode_start_offset)):
+            raise ValueError("episode scheduling identity does not match replay")
         self._session = native_session
         self._identity = dict(native_identity)
         self._transition = transition_hash
@@ -142,6 +168,8 @@ class BarrierEpisode:
         self._plan, self._terminal_plan, self._exposure = plan_action, plan_terminal, executed_exposure
         self._reward = RewardCalculator(reward_config)
         self._replay = replay
+        self._episode_index = episode_index
+        self._episode_start_offset = episode_start_offset
         self._observation_state = observation_state
         self._snapshot: Any = None
         self._index = 0
@@ -168,6 +196,8 @@ class BarrierEpisode:
             "start_ns": self._frames[0].timestamp_ns,
             "end_ns": self._frames[self._scoring_frames - 1].timestamp_ns,
             "decision_steps": self._scoring_frames - 1,
+            "episode_index": self._episode_index,
+            "start_offset": self._episode_start_offset,
         }
 
     def transition_fingerprint_hash(self) -> str:
@@ -201,7 +231,8 @@ class BarrierEpisode:
         })
 
     def export_replay(self) -> EpisodeReplay:
-        return EpisodeReplay(self._transition, tuple(self._actions), self.checkpoint_boundary_token())
+        return EpisodeReplay(self._transition, tuple(self._actions), self.checkpoint_boundary_token(),
+                             self._episode_index, self._episode_start_offset)
 
     def restored_env_state(self) -> EpisodeResumeState | None:
         if self._replay is None:

@@ -41,6 +41,10 @@ class TrainingDiagnostics:
     """Deterministic learner and native-transition facts for one learn call."""
     samples: int
     episodes_completed: int
+    decision_start_ns: int
+    decision_end_ns: int
+    unique_decision_timestamps: int
+    decision_timestamp_revisit_fraction: float
     r_econ_sum: float
     r_econ_mean: float
     r_econ_std: float
@@ -264,6 +268,9 @@ class RLProvider:
         requested_change = _Moments()
         executed_change = _Moments()
         guard_values = _Moments()
+        decision_timestamps: set[int] = set()
+        decision_start_ns: int | None = None
+        decision_end_ns: int | None = None
         previous_requested: list[float | None] = [None] * self.config.num_envs
         previous_executed: list[float | None] = [None] * self.config.num_envs
         diagnostic_counts = {
@@ -277,6 +284,7 @@ class RLProvider:
 
         class DiagnosticsCallback(BaseCallback):
             def _on_step(self) -> bool:
+                nonlocal decision_start_ns, decision_end_ns
                 infos = self.locals.get("infos")
                 rewards = np.asarray(self.locals.get("rewards"), dtype=np.float64).reshape(-1)
                 dones = np.asarray(self.locals.get("dones"), dtype=bool).reshape(-1)
@@ -287,11 +295,19 @@ class RLProvider:
                 required = {
                     "r_econ", "r_shape", "r_train", "requested_action",
                     "policy_executed_action_pre_terminal", "risk_guard_intervention",
-                    "execution_plan_action",
+                    "execution_plan_action", "decision_ts_ns",
                 }
                 for rank, info in enumerate(infos):
                     if not isinstance(info, dict) or not required <= set(info):
                         raise ContractError("native training info lacks learning diagnostics")
+                    decision_ts_ns = info["decision_ts_ns"]
+                    if type(decision_ts_ns) is not int or decision_ts_ns <= 0:
+                        raise ContractError("native training decision timestamp is invalid")
+                    decision_timestamps.add(decision_ts_ns)
+                    decision_start_ns = (decision_ts_ns if decision_start_ns is None
+                                         else min(decision_start_ns, decision_ts_ns))
+                    decision_end_ns = (decision_ts_ns if decision_end_ns is None
+                                       else max(decision_end_ns, decision_ts_ns))
                     econ.add(info["r_econ"], "r_econ")
                     shape.add(info["r_shape"], "r_shape")
                     train_reward.add(info["r_train"], "r_train")
@@ -384,6 +400,10 @@ class RLProvider:
         diagnostics = TrainingDiagnostics(
             samples=n,
             episodes_completed=diagnostic_counts["episodes"],
+            decision_start_ns=decision_start_ns or 0,
+            decision_end_ns=decision_end_ns or 0,
+            unique_decision_timestamps=len(decision_timestamps),
+            decision_timestamp_revisit_fraction=1.0 - len(decision_timestamps) / n,
             r_econ_sum=econ.total, r_econ_mean=econ.mean, r_econ_std=econ.std,
             r_shape_sum=shape.total,
             r_train_sum=train_reward.total, r_train_mean=train_reward.mean,

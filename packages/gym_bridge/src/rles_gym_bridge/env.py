@@ -219,7 +219,10 @@ class NautilusBarrierEnv(gym.Env):
                 "execution_plan_action": plan.action,
                 "execution_plan_reason": plan.reason,
                 "executed_action": result.executed_action, "evidence_hash": evidence_hash,
-                "decision_ts_ns": snapshot.decision_ts_ns,
+                # This is the policy barrier time. Terminal settlement may
+                # advance the native account clock through additional drain
+                # frames; those are not extra RL decision samples.
+                "decision_ts_ns": result.decision_ts_ns,
                 "terminal_settled": bool(terminated or truncated),
                 "policy_executed_action_pre_terminal": result.executed_action,
             }
