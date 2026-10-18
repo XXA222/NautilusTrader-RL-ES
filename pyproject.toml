@@ -32,6 +32,7 @@ rles-es-evotorch = { workspace = true }
 rles-compute-runtime = { workspace = true }
 rles-research = { workspace = true }
 rles-rl-sb3 = { workspace = true }
+rles-world-model = { workspace = true }
 
 [tool.ruff]
 target-version = "py314"
@@ -60,5 +61,6 @@ markers = [
 exclude = "(?x)(^|[\\\\/])build[\\\\/]"
 
 [[tool.mypy.overrides]]
-module = ["nautilus_trader.*", "evotorch.*", "psutil", "pyarrow.*", "cloudpickle"]
+module = ["nautilus_trader.*", "evotorch.*", "psutil", "pyarrow.*", "cloudpickle",
+          "jax", "jax.*", "elements", "ninjax", "dreamerv3.*"]
 ignore_missing_imports = true

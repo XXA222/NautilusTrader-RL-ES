@@ -4,7 +4,8 @@ from .checkpoint import ESCheckpointEnvelope, ESCheckpointStore
 from .evaluation import (CandidateAggregate, CandidateRequest, CandidateResult, EvaluationBudget,
                          GenerationLaneEvaluator, WorkerLaneDispatcher,
                          dispatch_generation, reconcile, scenario_seed)
-from .fitness import FitnessSpec
+from .fitness import (ConstraintPriorityFitnessSpec, FeasibilityFirstFitnessSpec,
+                      FitnessDecision, FitnessSpec)
 from .provider import EvoTorchProvider, EvolutionConfig, EvolutionResult, provider
 from .soft_risk import SoftRiskDimension, SoftRiskSpace
 
@@ -14,6 +15,8 @@ __all__ = [
     "CandidateAggregate", "CandidateRequest", "CandidateResult", "EvaluationBudget",
     "GenerationLaneEvaluator", "WorkerLaneDispatcher",
     "dispatch_generation", "reconcile", "scenario_seed",
-    "FitnessSpec", "EvoTorchProvider", "EvolutionConfig", "EvolutionResult", "provider",
+    "FitnessSpec", "ConstraintPriorityFitnessSpec", "FeasibilityFirstFitnessSpec",
+    "FitnessDecision",
+    "EvoTorchProvider", "EvolutionConfig", "EvolutionResult", "provider",
     "SoftRiskDimension", "SoftRiskSpace",
 ]

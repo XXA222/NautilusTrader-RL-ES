@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 import importlib.metadata
 import re
@@ -56,7 +56,11 @@ class VisibleBatch:
 
 @dataclass(frozen=True, slots=True)
 class NativeAccountFacts:
-    """Detached facts read from authoritative Nautilus ledger/cache."""
+    """Detached facts read from authoritative Nautilus ledger/cache.
+
+    Compact readers expose fills and funding adjustments as newly observed facts;
+    non-compact funding remains a full cache-derived snapshot.
+    """
     equity: Decimal
     currency: str
     positions: tuple[dict, ...]
@@ -90,6 +94,9 @@ class NativeFactsReader:
         self.liquidation_capability = liquidation_capability
         self.compact_history = compact_history
         self._latest_account_event: dict | None = None
+        self._funding_initialized = False
+        self._position_last_updates: dict[tuple[str, int], int] = {}
+        self._funding_facts: dict[str, dict] = {}
 
     def read(self, engine: Any, timestamp_ns: int) -> NativeAccountFacts:
         native = engine.portfolio.build_snapshot(self.account_id)
@@ -111,20 +118,15 @@ class NativeFactsReader:
         cache = engine.cache
         scope = {"instrument_id": self.instrument_id, "account_id": self.account_id}
         positions_all = tuple(cache.positions(**scope))
-        positions = tuple(p.to_dict() for p in cache.positions_open(**scope))
         if self.compact_history:
-            # Position.to_dict() includes its complete fill, adjustment,
-            # commission, and trade-ID history. Historical snapshots need the
-            # current position state only; fills and funding are detached below
-            # into their own incremental ledgers. Retaining these nested lists
-            # in every minute snapshot makes an episode grow quadratically.
-            historical_fields = {
-                "events", "adjustments", "commissions", "venue_order_ids", "trade_ids",
-            }
-            positions = tuple(
-                {key: value for key, value in row.items() if key not in historical_fields}
-                for row in positions
-            )
+            # Do not call Position.to_dict() here: it materializes every fill,
+            # adjustment, commission, venue order ID, and trade ID before the
+            # caller can discard them. Long episodes would repeatedly allocate
+            # the entire open-position history at every decision timestamp.
+            positions = tuple(_compact_position_record(p)
+                              for p in cache.positions_open(**scope))
+        else:
+            positions = tuple(p.to_dict() for p in cache.positions_open(**scope))
         # Pending commands may be in-flight even when not yet classified open.
         # Union is by native client_order_id, never by array position.
         pending_by_id: dict[str, dict] = {}
@@ -133,6 +135,20 @@ class NativeFactsReader:
             client_id = str(record.get("client_order_id", ""))
             if not client_id:
                 raise EngineBoundaryError("native pending order missing client identity")
+            try:
+                quantity = Decimal(str(record.get("quantity")))
+                filled_qty = Decimal(str(record.get("filled_qty")))
+            except (InvalidOperation, TypeError, ValueError) as exc:
+                raise EngineBoundaryError("native pending order quantity facts are invalid") from exc
+            if (not quantity.is_finite() or not filled_qty.is_finite()
+                    or quantity <= 0 or filled_qty < 0 or filled_qty > quantity):
+                raise EngineBoundaryError("native pending order filled quantity is outside order size")
+            if record.get("side") not in {"BUY", "SELL"}:
+                raise EngineBoundaryError("native pending order side is invalid")
+            # Nautilus Order.to_dict() exposes cumulative quantity fields but
+            # not leaves_qty. Derive the pending amount from those native facts
+            # so the planner sees partial fills without inventing an order size.
+            record["leaves_qty"] = str(quantity - filled_qty)
             existing = pending_by_id.get(client_id)
             if existing is not None and existing != record:
                 raise EngineBoundaryError("inconsistent native open/inflight order state")
@@ -162,12 +178,17 @@ class NativeFactsReader:
                 if tagged:
                     identified.append(row)
             liquidation_orders = tuple(identified)
-        archived = tuple(p for p in cache.position_snapshots(account_id=self.account_id)
-                         if p.instrument_id == self.instrument_id)
-        # Snapshots can overlap the current position; deduplicate by native event
-        # identity, rejecting contradictory records rather than counting twice.
-        funding = self._unique_events(adj for p in (*positions_all, *archived) for adj in p.adjustments()
-                                      if adj.adjustment_type == PositionAdjustmentType.FUNDING)
+        if self.compact_history:
+            funding = self._compact_funding_updates(positions_all, cache,
+                                                    PositionAdjustmentType.FUNDING)
+        else:
+            archived = tuple(p for p in cache.position_snapshots(account_id=self.account_id)
+                             if p.instrument_id == self.instrument_id)
+            # Snapshots can overlap the current position; deduplicate by native event
+            # identity, rejecting contradictory records rather than counting twice.
+            funding = self._unique_events(adj for p in (*positions_all, *archived)
+                                          for adj in p.adjustments()
+                                          if adj.adjustment_type == PositionAdjustmentType.FUNDING)
         events = tuple(ev.to_dict() for ev in account.events)
         if self.compact_history:
             if events:
@@ -201,6 +222,40 @@ class NativeFactsReader:
             cache.purge_account_events(ts_now=timestamp_ns, lookback_secs=0)
         return facts
 
+    def _compact_funding_updates(self, positions: tuple[Any, ...], cache: Any,
+                                 funding_type: Any) -> tuple[dict, ...]:
+        """Read funding only when a Position timestamp changes; return new facts."""
+        candidates = list(positions)
+        if not self._funding_initialized:
+            candidates.extend(
+                position for position in cache.position_snapshots(account_id=self.account_id)
+                if position.instrument_id == self.instrument_id
+            )
+            self._funding_initialized = True
+        updates: dict[str, dict] = {}
+        for position in candidates:
+            position_key = (str(position.id), int(position.ts_opened))
+            last_update = int(position.ts_last)
+            if self._position_last_updates.get(position_key) == last_update:
+                continue
+            self._position_last_updates[position_key] = last_update
+            for adjustment in position.adjustments():
+                if adjustment.adjustment_type != funding_type:
+                    continue
+                record = adjustment.to_dict()
+                identity = str(record.get("event_id", ""))
+                if not identity:
+                    raise EngineBoundaryError("native funding event identity missing")
+                previous = self._funding_facts.get(identity)
+                if previous is not None:
+                    if previous != record:
+                        raise EngineBoundaryError("native funding identity has conflicting facts")
+                    continue
+                self._funding_facts[identity] = record
+                updates[identity] = record
+        return tuple(sorted(updates.values(),
+                            key=lambda row: (row["ts_init"], row["ts_event"], row["event_id"])))
+
     @staticmethod
     def _unique_events(events: Iterable[Any]) -> tuple[dict, ...]:
         by_id: dict[str, dict] = {}
@@ -214,6 +269,46 @@ class NativeFactsReader:
             by_id[key] = record
         return tuple(sorted(by_id.values(), key=lambda r: (r["ts_init"], r["ts_event"], r["event_id"])))
 
+
+def _compact_position_record(position: Any) -> dict:
+    """Serialize only the stable scalar Position fields used by observations."""
+    base_currency = position.base_currency
+    quote_currency = position.quote_currency
+    settlement_currency = position.settlement_currency
+    realized_pnl = position.realized_pnl
+    return {
+        "type": "Position",
+        "trader_id": str(position.trader_id),
+        "strategy_id": str(position.strategy_id),
+        "instrument_id": str(position.instrument_id),
+        "position_id": str(position.id),
+        "account_id": str(position.account_id),
+        "opening_order_id": str(position.opening_order_id),
+        "closing_order_id": (str(position.closing_order_id)
+                              if position.closing_order_id is not None else None),
+        "entry": str(position.entry),
+        "side": str(position.side),
+        "signed_qty": position.signed_qty,
+        "quantity": str(position.quantity),
+        "peak_qty": str(position.peak_qty),
+        "price_precision": position.price_precision,
+        "size_precision": position.size_precision,
+        "multiplier": str(position.multiplier),
+        "is_inverse": position.is_inverse,
+        "base_currency": base_currency.code if base_currency is not None else None,
+        "quote_currency": quote_currency.code if quote_currency is not None else None,
+        "settlement_currency": (settlement_currency.code
+                                if settlement_currency is not None else None),
+        "ts_init": position.ts_init,
+        "ts_opened": position.ts_opened,
+        "ts_last": position.ts_last,
+        "ts_closed": position.ts_closed,
+        "duration_ns": position.duration_ns,
+        "avg_px_open": position.avg_px_open,
+        "avg_px_close": position.avg_px_close,
+        "realized_return": position.realized_return,
+        "realized_pnl": str(realized_pnl) if realized_pnl is not None else None,
+    }
 
 class EngineSession:
     """One immutable fold -> one native engine. No reset across folds/candidates."""

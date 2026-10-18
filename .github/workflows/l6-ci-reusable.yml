@@ -26,15 +26,19 @@ jobs:
         run: uv sync --locked --all-packages --all-extras --group dev
       - name: Build all workspace distributions
         run: uv build --all-packages --out-dir artifacts/wheels
-      - name: Install the eleven built wheels into the locked environment
+      - name: Install all built workspace wheels into the locked environment
         shell: python
         run: |
           import os
           from pathlib import Path
           import subprocess
           wheels = sorted(Path('artifacts/wheels').glob('*.whl'))
-          if len(wheels) != 11:
-              raise SystemExit(f'Expected eleven workspace wheels, got {len(wheels)}')
+          workspace_packages = sorted(Path('packages').glob('*/pyproject.toml'))
+          if len(wheels) != len(workspace_packages):
+              raise SystemExit(
+                  f'Expected one wheel for each of {len(workspace_packages)} workspace '
+                  f'packages, got {len(wheels)}'
+              )
           python = Path('.venv') / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
           subprocess.run(['uv', 'pip', 'install', '--python', str(python),
                           '--no-deps', '--reinstall', *map(str, wheels)], check=True)

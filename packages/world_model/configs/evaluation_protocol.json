@@ -1,0 +1,9 @@
+{
+  "schema_version": "rles.world_model.evaluation.v0",
+  "primary_score": "one_step_log_return_crps",
+  "baselines": ["S0_ZERO_DRIFT", "S1_CONDITIONAL_VOL", "S2_BLOCK_BOOTSTRAP"],
+  "train_only_scaler": true,
+  "teacher_forcing": false,
+  "actor_training": false,
+  "economic_claims": false
+}

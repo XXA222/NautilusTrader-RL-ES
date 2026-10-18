@@ -1,0 +1,76 @@
+{
+  "schema": "rles.persistent-artifacts.v1",
+  "archive": "D:\\Program Files\\NautilusTrader_RL_ES\\.artifacts\\audit-development-20261016",
+  "files": [
+    {
+      "path": "data/market.parquet",
+      "bytes": 113994772,
+      "sha256": "06323e909997909dee35b4abf1543444ae230f30cbc1f672ded033b3bc41fe70"
+    },
+    {
+      "path": "data/market.parquet.COMPLETED.json",
+      "bytes": 207,
+      "sha256": "44a76ea72f06ca050a2faf0adff7b7c99a05fab935dc82c28ec24c25dcf8a768"
+    },
+    {
+      "path": "data/scenario-rules.json",
+      "bytes": 1230,
+      "sha256": "690292b508ce722d6ba2f5b9fb745671f56fc396d2026943fd36668e9028c93b"
+    },
+    {
+      "path": "models/candidate-seed-102/bundle.json",
+      "bytes": 104728,
+      "sha256": "ea2ea516780f25756c7dae35636ee59eca7e3443a24259c6b58526b2536fec68"
+    },
+    {
+      "path": "models/candidate-seed-102/bundle.json.sha256",
+      "bytes": 64,
+      "sha256": "43fa02ae0598a11ecadbea4ede5cbfa3f72f15b344b4b75daf54890915fe6fc3"
+    },
+    {
+      "path": "models/candidate-seed-102/COMPLETED.json",
+      "bytes": 241,
+      "sha256": "04de8c4821a8a7f04d1c762b00e6277a6c8d337bf3d41fb50346a4c9981f5334"
+    },
+    {
+      "path": "models/candidate-seed-102/r1/actor.json",
+      "bytes": 3590,
+      "sha256": "c99657e6555d8f5d56467a26b865de7be063c77d01cf913d8218d8f364a7eda0"
+    },
+    {
+      "path": "models/candidate-seed-102/r1/COMPLETED",
+      "bytes": 64,
+      "sha256": "e25a18332b916b74f90ac6daa5aab5df59f07043901ff7b66a6e22f9c33251c3"
+    },
+    {
+      "path": "models/candidate-seed-102/r1/integrity.json",
+      "bytes": 162,
+      "sha256": "27849a0d315446c1079f0e896148e4c2a2ff1c59b9b4fc005cb3ec3fcf06cef5"
+    },
+    {
+      "path": "models/candidate-seed-102/r1/weights.npz",
+      "bytes": 22550,
+      "sha256": "f2d0c1a7cc05e78092de939368a29ba8f2a81a1f81cb278b3a74ca3125eebfa5"
+    },
+    {
+      "path": "models/candidate-seed-102/R1-learning.json",
+      "bytes": 9998,
+      "sha256": "647e4ab05bf64e68a90ff631c9c3e50d8e207c0225c34cc0eb5b103451d4ae28"
+    },
+    {
+      "path": "models/candidate-seed-102/R1-learning.json.sha256",
+      "bytes": 64,
+      "sha256": "889b22a6388878593b154a21dd68114b26a4374898b50c2a9bc15e8191d36cb6"
+    },
+    {
+      "path": "models/candidate-seed-102/run.json",
+      "bytes": 1496,
+      "sha256": "ed213a0371155b759a39b66e09cb1ca85b3c53c7dc509b6dd0036d6d8c554ead"
+    }
+  ],
+  "model_source": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-stage62-rotating-full-train-episodes-20261016\\seed-102\\run",
+  "market_source": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-expanded-market-stage-20261014\\expanded-market-v2\\market.parquet",
+  "rules_source": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-expanded-market-stage-20261014\\scenario-rules-2024-onwards.json",
+  "model_bundle_sha256": "ea2ea516780f25756c7dae35636ee59eca7e3443a24259c6b58526b2536fec68",
+  "availability": "local archive; not a public release or clean-checkout reproduction"
+}

@@ -1,0 +1,121 @@
+{
+  "environment": {
+    "market_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-expanded-market-stage-20261014\\expanded-market-v2\\market.parquet",
+    "rules_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-expanded-market-stage-20261014\\scenario-rules-2024-onwards.json",
+    "instrument": "ETHUSDT-PERP.SIM",
+    "start_ns": 1746057660001000000,
+    "end_ns": 1746549660001000000,
+    "coverage_policy": {
+      "maximum_age_ns": {
+        "mark": 62000000000,
+        "index": 62000000000,
+        "funding_update": 28862000000000
+      },
+      "settlement_times_ns": {
+        "ETHUSDT-PERP.SIM": [
+          1746086400000000000,
+          1746115200000000000,
+          1746144000000000000,
+          1746172800000000000,
+          1746201600000000000,
+          1746230400000000000,
+          1746259200000000000,
+          1746288000000000000,
+          1746316800000000000,
+          1746345600000000000,
+          1746374400000000000,
+          1746403200000000000,
+          1746432000000000000,
+          1746460800000000000,
+          1746489600000000000,
+          1746518400000000000,
+          1746547200000000000
+        ]
+      },
+      "provenance": "2024-01..2026-10 Binance source events show 480-minute settled Funding; 1ms archive availability",
+      "settlement_max_delay_ns": 1000000,
+      "settlement_timestamp_tolerance_ns": 1000000000
+    },
+    "execution": {
+      "schema_version": "0.4.0",
+      "deadband": "0.05",
+      "pending_order_policy": "cancel_replace",
+      "order_type": "MARKET",
+      "tif": "GTC",
+      "terminal_policy": "force_flatten_with_cost",
+      "base_latency": {
+        "model_id": "binance-research-base",
+        "decision_ns": 1000000,
+        "submit_ns": 1000000,
+        "venue_ns": 5000000
+      },
+      "stress_latency": {
+        "model_id": "binance-research-stress",
+        "decision_ns": 5000000,
+        "submit_ns": 5000000,
+        "venue_ns": 20000000
+      },
+      "base_fill": {
+        "model_id": "bar-conservative-1bp",
+        "slippage_bps": "1",
+        "data_granularity": "bar"
+      },
+      "stress_fill": {
+        "model_id": "bar-conservative-5bp",
+        "slippage_bps": "5",
+        "data_granularity": "bar",
+        "fee_multiplier": "2"
+      }
+    },
+    "starting_balance": "10000",
+    "risk_budget_notional": "1000",
+    "hard_risk": {
+      "max_notional": "1000",
+      "max_leverage": "1",
+      "margin_buffer_fraction": "0.10",
+      "min_equity": "1000",
+      "incomplete_data_max_leverage": "1",
+      "require_mark": true,
+      "require_funding": true
+    },
+    "soft_risk": {
+      "target_scale": "1",
+      "max_turnover_fraction": "0.25",
+      "drawdown_throttle": "1",
+      "funding_sensitivity": "1"
+    },
+    "feature_profile": "legacy"
+  },
+  "route": "A0",
+  "algorithm": "PPO",
+  "steps": 8192,
+  "seed": 102,
+  "hidden_layers": [
+    64,
+    64
+  ],
+  "normalize_observation": true,
+  "hyperparameters": {
+    "n_steps": 2048,
+    "batch_size": 512,
+    "n_epochs": 5,
+    "learning_rate": 0.0001,
+    "gamma": 0.99,
+    "gae_lambda": 0.9,
+    "clip_range": 0.2,
+    "ent_coef": 0.0,
+    "vf_coef": 1.0,
+    "max_grad_norm": 0.5,
+    "log_std_init": -2.0,
+    "zero_init_action_head": true
+  },
+  "output": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-stage60-fixed-regimes-train-only-20261017\\window-03-2025-05-01\\run",
+  "reward_scale": 1000.0,
+  "rl_device": "cpu",
+  "rl_num_envs": 1,
+  "rl_episode_steps": 8192,
+  "checkpoint_interval_steps": 8192,
+  "rl_corpus_episodes": 1,
+  "rl_corpus_episode_steps": 256,
+  "evaluation": null
+}

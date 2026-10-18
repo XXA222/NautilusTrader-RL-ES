@@ -1,0 +1,9 @@
+{
+  "schema": "rles.low-capacity-forecast-plan-errata.v1",
+  "plan": "configs/low_capacity_predictor_20261016.json",
+  "plan_sha256": "972ba3efdf14c2417eca5934ae873b571cf9569b2d0f46ca450502bfcde1004b",
+  "field": "label",
+  "original_wording": "log(close at first available sample >= decision+H)/log(current visible close), in bps",
+  "correct_wording": "log(future_close/current_visible_close)*10_000, where future_close is first available at or after decision+H",
+  "implementation": "The executed code used log(future_close/current_visible_close) * 10,000 basis points. This erratum clarifies the formula text only; data, folds, model, metrics, and decision protocol are unchanged."
+}

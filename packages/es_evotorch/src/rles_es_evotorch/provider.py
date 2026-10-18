@@ -170,6 +170,7 @@ class EvolutionResult:
     best_fitness: float
     best_search_vector: tuple[float, ...]
     risk_parameters: tuple[tuple[str, float], ...] | None
+    selected_candidate_kind: str = "optimizer"
 
 
 class EvoTorchProvider:

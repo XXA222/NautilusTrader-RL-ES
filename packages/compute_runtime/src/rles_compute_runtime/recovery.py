@@ -1,4 +1,4 @@
-"""Explicit operator CLI for inspecting and recovering owned CPU worker quotas."""
+"""Explicit operator CLI for inspecting and recovering supervised resource leases."""
 from __future__ import annotations
 
 import argparse
@@ -28,8 +28,10 @@ def inspect_quota(path: str | Path) -> dict:
         enrollments = ({row[0]: row[1] for row in connection.execute('SELECT token,state FROM lease_recovery')}
                        if 'lease_recovery' in tables else {})
         for lease in leases:
-            lease['recovery_state'] = ('unsupported_gpu' if lease['gpu_count'] else
-                                       enrollments.get(lease['token'], 'unmanaged_or_legacy'))
+            enrolled = enrollments.get(lease['token'])
+            lease['recovery_state'] = (enrolled if enrolled in {'application_preparing', 'application_ready'}
+                                       else 'unsupported_gpu' if lease['gpu_count']
+                                       else enrolled or 'unmanaged_or_legacy')
         recovered = ([json.loads(row[0]) for row in
                       connection.execute('SELECT receipt_json FROM lease_recovery_log ORDER BY recovered')]
                      if 'lease_recovery_log' in tables else [])
@@ -53,6 +55,15 @@ def main(argv: list[str] | None = None) -> int:
     recover.add_argument('--cpu-cores', type=int, required=True)
     recover.add_argument('--ram-bytes', type=int, required=True)
     recover.add_argument('--reason', required=True)
+    recover_gpu = commands.add_parser(
+        'recover-supervised-gpu', help='reclaim one exact supervised application GPU lease',
+    )
+    recover_gpu.add_argument('--database', required=True)
+    recover_gpu.add_argument('--token', required=True)
+    recover_gpu.add_argument('--owner', required=True)
+    recover_gpu.add_argument('--cpu-cores', type=int, required=True)
+    recover_gpu.add_argument('--ram-bytes', type=int, required=True)
+    recover_gpu.add_argument('--reason', required=True)
     args = parser.parse_args(argv)
     try:
         state = inspect_quota(args.database)
@@ -60,13 +71,16 @@ def main(argv: list[str] | None = None) -> int:
             result = state
         else:
             # Exact immutable descriptor must match the reviewed inspection.
-            lease = Lease(args.token, args.cpu_cores, args.ram_bytes, 0, args.owner)
+            gpu_count = 1 if args.command == 'recover-supervised-gpu' else 0
+            lease = Lease(args.token, args.cpu_cores, args.ram_bytes, gpu_count, args.owner)
             expected = {'token': lease.token, 'owner': lease.owner, 'cpu_cores': lease.cpu_cores,
                         'ram_bytes': lease.ram_bytes, 'gpu_count': lease.gpu_count}
             if not any(all(row[key] == value for key, value in expected.items()) for row in state['leases']):
-                raise ComputeError('exact CPU lease descriptor does not match inspection')
+                raise ComputeError('exact lease descriptor does not match inspection')
             quota = ResourceQuota(args.database, **state['limits'])
-            result = quota.recover_cpu_lease(lease, reason=args.reason)
+            result = (quota.recover_supervised_gpu_lease(lease, reason=args.reason)
+                      if args.command == 'recover-supervised-gpu'
+                      else quota.recover_cpu_lease(lease, reason=args.reason))
         print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
         return 0
     except Exception as exc:

@@ -1,0 +1,31 @@
+{
+  "config_sha256": "962c5e2742692ee90005de175cc0ef9df2a90d5c5c31faef56c60f26b4c3d7fe",
+  "data_quality_grade": "DQ-B",
+  "days": 360,
+  "feature_matrix_sha256": "089195561b677bcbd73fc4bc068c9ba3e8ff95df2b738ad22396a5a5338d34c0",
+  "feature_rows": 518400,
+  "feature_schema_hash": "0f89c305539945f893018ba175f78435425e0adb71769934348f67ada36bef98",
+  "formal_evaluation_queries": 0,
+  "instrument_rule_provenance": "scenario-only; see hashed assumption file",
+  "merged_events_with_rules": 1907767,
+  "minimum_available_stop_line_bytes": 2147483648,
+  "prepare_and_feature_build_wall_seconds": 70.3013907999848,
+  "preregistration_sha256": "16096b658802ebdaef68334f2ed0cc058fc55c419ad9ac0d2f48b50ba5601ee0",
+  "process_peak_rss_bytes": 3540725760,
+  "process_working_set_after_bytes": 3362967552,
+  "schema": "rles.stage69.train-feature-profile-result.v1",
+  "snapshot_hash": "6101711145c1de45737062cc5cc7da8932de09ff8c062234c09b5b79eae85cf1",
+  "source_access_labels": [
+    "train-stage69-360d-segment-a-v2",
+    "train-stage69-360d-segment-b-v2"
+  ],
+  "source_events_loaded": 1907766,
+  "status": "PASS",
+  "system_available_memory_initial_bytes": 17628430336,
+  "system_available_memory_min_bytes": 14309883904,
+  "window": {
+    "days": 360,
+    "end_ns": 1764115200000000000,
+    "start_ns": 1733011200000000000
+  }
+}

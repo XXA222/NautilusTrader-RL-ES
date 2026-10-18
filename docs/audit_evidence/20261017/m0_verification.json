@@ -1,0 +1,28 @@
+{
+  "schema": "rles.audit-m0-verification.v1",
+  "date": "2026-10-17",
+  "platform": "Windows",
+  "python": "3.14.7",
+  "source_mode": "PYTHONPATH=all workspace packages/*/src; preexisting uncommitted changes preserved",
+  "junit_path": ".artifacts/audit-development-20261017/m0-cpu.xml",
+  "junit_counts": {
+    "tests": 521,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "elapsed_seconds": 281.269,
+  "gpu_tests_deselected": 4,
+  "warnings": 46,
+  "command": ".venv/Scripts/python.exe -m pytest -q tests -m \"not gpu\" -p no:cacheprovider --basetemp .tmp/pytest-goal-m0-cpu-20261017 --tb=short --junitxml .artifacts/audit-development-20261017/m0-cpu.xml",
+  "ruff": "packages tests qa ci: passed",
+  "mypy": "--platform linux packages qa: 121 files passed",
+  "reconciliation_scope": "flat barriers only, quote-settled unit-linear account without external cashflows",
+  "remaining": [
+    "open-position valuation reconciliation",
+    "long-window and linear-liquidation economic certification",
+    "remote Linux/Windows CI",
+    "E2 exact neutral evaluated/selected/resumed candidate",
+    "constraint-first ES objective and remaining A01-A14 goals"
+  ]
+}

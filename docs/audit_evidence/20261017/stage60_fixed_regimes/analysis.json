@@ -1,0 +1,753 @@
+{
+  "schema": "rles.stage60-fixed-regime-analysis.v1",
+  "status": "passed_train_only_fixed_regime_diagnostics",
+  "preregistration_sha256": "afc8c1d5f1c87791c56e487a7fc77ab9e9b9b4e8ab6733cbf950a2c5c3fd2220",
+  "evaluation_queries": {
+    "validation": 0,
+    "test": 0,
+    "holdout": 0,
+    "outer_2026": 0
+  },
+  "fixed_volatility_policy": {
+    "scheme": "fixed_absolute_volatility_upper_closed_v1",
+    "feature": "volatility_5m",
+    "ratio_upper_closed_cuts": [
+      0.00025,
+      0.0005,
+      0.001
+    ],
+    "fitted_from_evaluation_data": false,
+    "used_by_policy": false
+  },
+  "totals": {
+    "environment_interaction_steps": 32768,
+    "unique_decision_timestamps": 32768,
+    "episode_window_overlap_pairs": 0,
+    "core_training_metrics_match_stage58": true,
+    "fixed_boundaries_identical_across_windows": true
+  },
+  "windows": [
+    {
+      "window_id": 1,
+      "start_date_utc": "2024-01-01",
+      "learning_sha256": "ce9797d3a0f40eecf5ce1215537beb79c193b11ef867fd1de2a40dca7f52076c",
+      "samples": 8192,
+      "unique_decision_timestamps": 8192,
+      "episode_window_overlap_pairs": 0,
+      "position_state_counts": [
+        [
+          "flat",
+          3548
+        ],
+        [
+          "long",
+          2179
+        ],
+        [
+          "short",
+          2465
+        ]
+      ],
+      "market_feature_summaries": [
+        [
+          "basis",
+          8192,
+          0.0004793586940850293,
+          0.00042420034728624643,
+          -0.0055821628901358,
+          0.0019718351874271622
+        ],
+        [
+          "last_settled_funding",
+          8192,
+          0.00024257112548828244,
+          0.0001782261068946167,
+          0.0001,
+          0.00063801
+        ],
+        [
+          "return_1m",
+          8192,
+          -1.6819285367482364e-06,
+          0.0010944668712535481,
+          -0.049780407327341014,
+          0.01635638234181247
+        ],
+        [
+          "volatility_5m",
+          8192,
+          0.0005626887362098017,
+          0.0008038038478662559,
+          2.1595945424914448e-05,
+          0.028082342452228442
+        ],
+        [
+          "volume_5m",
+          8192,
+          1964.680747021494,
+          3329.498050889277,
+          137.2546,
+          88820.2616
+        ]
+      ],
+      "market_regime_economic_bins": [
+        [
+          "volatility",
+          "volatility_5m",
+          "fixed_absolute_volatility_upper_closed_v1",
+          "le_0.00025",
+          null,
+          0.00025,
+          1609,
+          -0.009557105236709162,
+          -5.93977951318158e-06
+        ],
+        [
+          "volatility",
+          "volatility_5m",
+          "fixed_absolute_volatility_upper_closed_v1",
+          "0.00025_to_0.0005",
+          0.00025,
+          0.0005,
+          3119,
+          -0.018556935668760488,
+          -5.949642728041195e-06
+        ],
+        [
+          "volatility",
+          "volatility_5m",
+          "fixed_absolute_volatility_upper_closed_v1",
+          "0.0005_to_0.001",
+          0.0005,
+          0.001,
+          2743,
+          -0.015980370723937654,
+          -5.825873395529586e-06
+        ],
+        [
+          "volatility",
+          "volatility_5m",
+          "fixed_absolute_volatility_upper_closed_v1",
+          "gt_0.001",
+          0.001,
+          null,
+          721,
+          -0.0046706507412785925,
+          -6.478017671676273e-06
+        ],
+        [
+          "trend",
+          "return_1m",
+          "signed_feature_v1",
+          "negative",
+          null,
+          0.0,
+          4055,
+          -0.02151455967715954,
+          -5.305686726796434e-06
+        ],
+        [
+          "trend",
+          "return_1m",
+          "signed_feature_v1",
+          "zero",
+          0.0,
+          0.0,
+          41,
+          -0.00020946963168100297,
+          -5.109015406853731e-06
+        ],
+        [
+          "trend",
+          "return_1m",
+          "signed_feature_v1",
+          "positive",
+          0.0,
+          null,
+          4096,
+          -0.027041033061845354,
+          -6.6018147123645884e-06
+        ],
+        [
+          "funding",
+          "last_settled_funding",
+          "signed_feature_v1",
+          "negative",
+          null,
+          0.0,
+          0,
+          0.0,
+          0.0
+        ],
+        [
+          "funding",
+          "last_settled_funding",
+          "signed_feature_v1",
+          "zero",
+          0.0,
+          0.0,
+          0,
+          0.0,
+          0.0
+        ],
+        [
+          "funding",
+          "last_settled_funding",
+          "signed_feature_v1",
+          "positive",
+          0.0,
+          null,
+          8192,
+          -0.0487650623706859,
+          -5.952766402671618e-06
+        ]
+      ],
+      "fixed_volatility_bins_match_policy": true,
+      "core_training_metrics_match_stage58": true,
+      "non_regime_diagnostics_match_stage59": true
+    },
+    {
+      "window_id": 2,
+      "start_date_utc": "2024-09-01",
+      "learning_sha256": "f2cf10c0769d950ee460b3721bf2d3e3148286e1d839e2d8ea27d08fbe40ab08",
+      "samples": 8192,
+      "unique_decision_timestamps": 8192,
+      "episode_window_overlap_pairs": 0,
+      "position_state_counts": [
+        [
+          "flat",
+          3582
+        ],
+        [
+          "long",
+          2273
+        ],
+        [
+          "short",
+          2337
+        ]
+      ],
+      "market_feature_summaries": [
+        [
+          "basis",
+          8192,
+          -0.0004176294233761582,
+          9.734658480129685e-05,
+          -0.0011219655268733808,
+          0.0002469243144853639
+        ],
+        [
+          "last_settled_funding",
+          8192,
+          4.0998969726562406e-05,
+          2.509718689323884e-05,
+          -2.406e-05,
+          8.054e-05
+        ],
+        [
+          "return_1m",
+          8192,
+          -1.1527603101890546e-05,
+          0.0009003904333616432,
+          -0.014033012759638641,
+          0.00816572949533767
+        ],
+        [
+          "volatility_5m",
+          8192,
+          0.0006177436703363611,
+          0.00047895131708955706,
+          2.436245959789741e-05,
+          0.009008097619101308
+        ],
+        [
+          "volume_5m",
+          8192,
+          1932.8538112304727,
+          3131.273106617516,
+          106.3842,
+          74966.6512
+        ]
+      ],
+      "market_regime_economic_bins": [
+        [
+          "volatility",
+          "volatility_5m",
+          "fixed_absolute_volatility_upper_closed_v1",
+          "le_0.00025",
+          null,
+          0.00025,
+          1027,
+          -0.005952669230451235,
+          -5.796172571033335e-06
+        ],
+        [
+          "volatility",
+          "volatility_5m",
+          "fixed_absolute_volatility_upper_closed_v1",
+          "0.00025_to_0.0005",
+          0.00025,
+          0.0005,
+          2988,
+          -0.018449808067900975,
+          -6.174634560877167e-06
+        ],
+        [
+          "volatility",
+          "volatility_5m",
+          "fixed_absolute_volatility_upper_closed_v1",
+          "0.0005_to_0.001",
+          0.0005,
+          0.001,
+          3128,
+          -0.01975813015621064,
+          -6.316537773724629e-06
+        ],
+        [
+          "volatility",
+          "volatility_5m",
+          "fixed_absolute_volatility_upper_closed_v1",
+          "gt_0.001",
+          0.001,
+          null,
+          1049,
+          -0.004800870841046745,
+          -4.576616626355333e-06
+        ],
+        [
+          "trend",
+          "return_1m",
+          "signed_feature_v1",
+          "negative",
+          null,
+          0.0,
+          4123,
+          -0.02429917016238292,
+          -5.893565404410119e-06
+        ],
+        [
+          "trend",
+          "return_1m",
+          "signed_feature_v1",
+          "zero",
+          0.0,
+          0.0,
+          31,
+          -0.00021645023476857261,
+          -6.982265637695891e-06
+        ],
+        [
+          "trend",
+          "return_1m",
+          "signed_feature_v1",
+          "positive",
+          0.0,
+          null,
+          4038,
+          -0.0244458578984581,
+          -6.053951931267484e-06
+        ],
+        [
+          "funding",
+          "last_settled_funding",
+          "signed_feature_v1",
+          "negative",
+          null,
+          0.0,
+          960,
+          -0.0054823218587412015,
+          -5.710751936188752e-06
+        ],
+        [
+          "funding",
+          "last_settled_funding",
+          "signed_feature_v1",
+          "zero",
+          0.0,
+          0.0,
+          0,
+          0.0,
+          0.0
+        ],
+        [
+          "funding",
+          "last_settled_funding",
+          "signed_feature_v1",
+          "positive",
+          0.0,
+          null,
+          7232,
+          -0.043479156436868394,
+          -6.012051498460785e-06
+        ]
+      ],
+      "fixed_volatility_bins_match_policy": true,
+      "core_training_metrics_match_stage58": true,
+      "non_regime_diagnostics_match_stage59": true
+    },
+    {
+      "window_id": 3,
+      "start_date_utc": "2025-05-01",
+      "learning_sha256": "f937fb360cfd384d07cd9679896f190cb13bfce6e42e4dc20b3a54abec164682",
+      "samples": 8192,
+      "unique_decision_timestamps": 8192,
+      "episode_window_overlap_pairs": 0,
+      "position_state_counts": [
+        [
+          "flat",
+          3529
+        ],
+        [
+          "long",
+          2146
+        ],
+        [
+          "short",
+          2517
+        ]
+      ],
+      "market_feature_summaries": [
+        [
+          "basis",
+          8192,
+          -0.0004467310214392103,
+          0.00010675637269993579,
+          -0.0011927841120406013,
+          0.00020693021659812239
+        ],
+        [
+          "last_settled_funding",
+          8192,
+          1.624059936523441e-05,
+          3.34194663756272e-05,
+          -5.797e-05,
+          6.899e-05
+        ],
+        [
+          "return_1m",
+          8192,
+          -1.4043697574539668e-06,
+          0.0006320006760358787,
+          -0.005945451296574089,
+          0.009808159956768536
+        ],
+        [
+          "volatility_5m",
+          8192,
+          0.0004586383306802853,
+          0.00030398780871437084,
+          1.179734611967645e-05,
+          0.0053226530500486025
+        ],
+        [
+          "volume_5m",
+          8192,
+          2888.7273461425716,
+          3580.0464246869815,
+          271.6774,
+          51363.4994
+        ]
+      ],
+      "market_regime_economic_bins": [
+        [
+          "volatility",
+          "volatility_5m",
+          "fixed_absolute_volatility_upper_closed_v1",
+          "le_0.00025",
+          null,
+          0.00025,
+          1845,
+          -0.011112166996261053,
+          -6.022854740520896e-06
+        ],
+        [
+          "volatility",
+          "volatility_5m",
+          "fixed_absolute_volatility_upper_closed_v1",
+          "0.00025_to_0.0005",
+          0.00025,
+          0.0005,
+          3548,
+          -0.021034356374149965,
+          -5.928510815713068e-06
+        ],
+        [
+          "volatility",
+          "volatility_5m",
+          "fixed_absolute_volatility_upper_closed_v1",
+          "0.0005_to_0.001",
+          0.0005,
+          0.001,
+          2415,
+          -0.014686748965164753,
+          -6.081469550792858e-06
+        ],
+        [
+          "volatility",
+          "volatility_5m",
+          "fixed_absolute_volatility_upper_closed_v1",
+          "gt_0.001",
+          0.001,
+          null,
+          384,
+          -0.002691981386892195,
+          -7.0103681950317576e-06
+        ],
+        [
+          "trend",
+          "return_1m",
+          "signed_feature_v1",
+          "negative",
+          null,
+          0.0,
+          4027,
+          -0.02338149175259474,
+          -5.806181214947788e-06
+        ],
+        [
+          "trend",
+          "return_1m",
+          "signed_feature_v1",
+          "zero",
+          0.0,
+          0.0,
+          67,
+          -0.00045518938220645566,
+          -6.793871376215756e-06
+        ],
+        [
+          "trend",
+          "return_1m",
+          "signed_feature_v1",
+          "positive",
+          0.0,
+          null,
+          4098,
+          -0.02568857258766677,
+          -6.268563344965049e-06
+        ],
+        [
+          "funding",
+          "last_settled_funding",
+          "signed_feature_v1",
+          "negative",
+          null,
+          0.0,
+          2433,
+          -0.015359500310434981,
+          -6.312988208152479e-06
+        ],
+        [
+          "funding",
+          "last_settled_funding",
+          "signed_feature_v1",
+          "zero",
+          0.0,
+          0.0,
+          0,
+          0.0,
+          0.0
+        ],
+        [
+          "funding",
+          "last_settled_funding",
+          "signed_feature_v1",
+          "positive",
+          0.0,
+          null,
+          5759,
+          -0.034165753412032984,
+          -5.9325843743762775e-06
+        ]
+      ],
+      "fixed_volatility_bins_match_policy": true,
+      "core_training_metrics_match_stage58": true,
+      "non_regime_diagnostics_match_stage59": true
+    },
+    {
+      "window_id": 4,
+      "start_date_utc": "2026-01-01",
+      "learning_sha256": "8d3bf2b77253660a62892eb9c724ae0b5bb8e64c5a29ca1efdc04cfa423b5258",
+      "samples": 8192,
+      "unique_decision_timestamps": 8192,
+      "episode_window_overlap_pairs": 0,
+      "position_state_counts": [
+        [
+          "flat",
+          3557
+        ],
+        [
+          "long",
+          2181
+        ],
+        [
+          "short",
+          2454
+        ]
+      ],
+      "market_feature_summaries": [
+        [
+          "basis",
+          8192,
+          -0.0004226664830959152,
+          0.00010676482334345877,
+          -0.0009310953009828982,
+          0.0003811801840358786
+        ],
+        [
+          "last_settled_funding",
+          8192,
+          5.414124023437496e-05,
+          3.192564100092932e-05,
+          -5.6e-06,
+          0.0001
+        ],
+        [
+          "return_1m",
+          8192,
+          1.1151552691556118e-05,
+          0.0005881599377433676,
+          -0.005457386778226381,
+          0.005518534267366482
+        ],
+        [
+          "volatility_5m",
+          8192,
+          0.00039548242875576755,
+          0.0003306911273904155,
+          1.4523097988028198e-06,
+          0.0031080107509386667
+        ],
+        [
+          "volume_5m",
+          8192,
+          2023.2277035888758,
+          3293.7575500594617,
+          86.9512,
+          53150.7736
+        ]
+      ],
+      "market_regime_economic_bins": [
+        [
+          "volatility",
+          "volatility_5m",
+          "fixed_absolute_volatility_upper_closed_v1",
+          "le_0.00025",
+          null,
+          0.00025,
+          3152,
+          -0.018295786383127677,
+          -5.804500756068426e-06
+        ],
+        [
+          "volatility",
+          "volatility_5m",
+          "fixed_absolute_volatility_upper_closed_v1",
+          "0.00025_to_0.0005",
+          0.00025,
+          0.0005,
+          3104,
+          -0.018428782439389835,
+          -5.937107744648787e-06
+        ],
+        [
+          "volatility",
+          "volatility_5m",
+          "fixed_absolute_volatility_upper_closed_v1",
+          "0.0005_to_0.001",
+          0.0005,
+          0.001,
+          1492,
+          -0.009161446858438893,
+          -6.140379931929553e-06
+        ],
+        [
+          "volatility",
+          "volatility_5m",
+          "fixed_absolute_volatility_upper_closed_v1",
+          "gt_0.001",
+          0.001,
+          null,
+          444,
+          -0.0024958905834271405,
+          -5.621375187898965e-06
+        ],
+        [
+          "trend",
+          "return_1m",
+          "signed_feature_v1",
+          "negative",
+          null,
+          0.0,
+          4013,
+          -0.02323995055642314,
+          -5.791166348473247e-06
+        ],
+        [
+          "trend",
+          "return_1m",
+          "signed_feature_v1",
+          "zero",
+          0.0,
+          0.0,
+          120,
+          -0.0006650200041899978,
+          -5.541833368249982e-06
+        ],
+        [
+          "trend",
+          "return_1m",
+          "signed_feature_v1",
+          "positive",
+          0.0,
+          null,
+          4059,
+          -0.02447693570377041,
+          -6.030287189891699e-06
+        ],
+        [
+          "funding",
+          "last_settled_funding",
+          "signed_feature_v1",
+          "negative",
+          null,
+          0.0,
+          480,
+          -0.0027779253746107457,
+          -5.787344530439054e-06
+        ],
+        [
+          "funding",
+          "last_settled_funding",
+          "signed_feature_v1",
+          "zero",
+          0.0,
+          0.0,
+          0,
+          0.0,
+          0.0
+        ],
+        [
+          "funding",
+          "last_settled_funding",
+          "signed_feature_v1",
+          "positive",
+          0.0,
+          null,
+          7712,
+          -0.0456039808897728,
+          -5.913379264752697e-06
+        ]
+      ],
+      "fixed_volatility_bins_match_policy": true,
+      "core_training_metrics_match_stage58": true,
+      "non_regime_diagnostics_match_stage59": true
+    }
+  ],
+  "limitations": [
+    "all windows are previously reused Train data and are not independent evidence",
+    "fixed round ratio boundaries are descriptive engineering scales, not calibrated or predictive regimes",
+    "costs and trading rules remain scenario-only",
+    "no Validation, Test, Holdout, or outer-2026 query was made"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "schema_version": "rles.dreamerv3.patch_manifest.v0",
+  "repository": "https://github.com/danijar/dreamerv3.git",
+  "commit": "e01491fad6434b2245a3b8ca201dd7faedcc458c",
+  "license": "MIT",
+  "patches": [],
+  "adapter_version": "rles-market-rssm-v0",
+  "market_action": "constant_zero",
+  "notes": "No upstream source edits are permitted. The RLES adapter supplies a zero action to RSSM.obs_step for every market transition."
+}

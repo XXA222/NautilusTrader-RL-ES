@@ -87,6 +87,22 @@ def test_aborted_protocol_is_audited_and_cannot_continue(tmp_path) -> None:
     assert ledger.verify_audit_chain()
 
 
+def test_evidence_summary_reports_observed_trial_inventory_without_estimating_history(tmp_path) -> None:
+    ledger = ResearchLedger(tmp_path / "research.sqlite")
+    ledger.create("protocol-trials", "run-trials", validation_budget=4,
+                  hpo_budget=0, es_evaluation_budget=0)
+    ledger.record_query("protocol-trials", "v-a-0", "validation", "candidate-a", "fold-0")
+    ledger.record_query("protocol-trials", "v-b-0", "validation", "candidate-b", "fold-0")
+    summary = ledger.evidence_summary("protocol-trials")
+    inventory = summary["trial_count_inventory"]
+    assert inventory["scope"] == "current_protocol_only"
+    assert inventory["observed_candidate_ids"] == ["candidate-a", "candidate-b"]
+    assert inventory["observed_fold_ids"] == ["fold-0"]
+    assert inventory["raw_query_counts"]["validation"] == 2
+    assert inventory["project_historical_effective_trials"] == "not_estimated"
+    assert "manual selections" in " ".join(inventory["limitations"])
+
+
 def test_research_ledger_audit_chain_detects_database_tampering(tmp_path) -> None:
     path = tmp_path / "research.sqlite"
     ledger = ResearchLedger(path)

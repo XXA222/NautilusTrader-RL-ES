@@ -119,6 +119,7 @@ class TargetQuantityPlanner:
                                 or target_notional < instrument.min_notional):
             target_qty = Decimal(0)
         delta = target_qty - current
+        policy_flat = self.config.zero_target_policy == "close" and target_exposure == 0
         if force_reduce and (target_qty * current < 0 or abs(target_qty) >= abs(current)):
             raise PlanningBlocked("forced hard-risk action must strictly reduce the existing position")
         key = "action-" + sha256(
@@ -136,9 +137,9 @@ class TargetQuantityPlanner:
             )
 
         if pending:
-            if self.config.pending_order_policy == "fail" and not (terminal or force_reduce):
+            if self.config.pending_order_policy == "fail" and not (terminal or force_reduce or policy_flat):
                 raise PlanningBlocked("open native orders present")
-            if self.config.pending_order_policy == "wait" and not (terminal or force_reduce):
+            if self.config.pending_order_policy == "wait" and not (terminal or force_reduce or policy_flat):
                 return outcome("WAIT", "open orders must resolve before new target")
             if any(p.status == "PENDING_CANCEL" for p in pending):
                 return outcome("WAIT", "await cancel acknowledgments before resnapshot")
@@ -147,7 +148,7 @@ class TargetQuantityPlanner:
 
         if terminal and current == 0:
             return outcome("NOOP", "native account already flat")
-        if not (terminal or force_reduce):
+        if not (terminal or force_reduce or policy_flat):
             exposure_now = current * mark * instrument.contract_multiplier / budget
             if abs(target_exposure - exposure_now) < self.config.deadband:
                 return outcome("NOOP", "deadband")
@@ -160,16 +161,19 @@ class TargetQuantityPlanner:
         notional = abs(delta * mark * instrument.contract_multiplier)
         below_min_qty = abs(delta) < instrument.min_qty
         below_min_notional = notional < instrument.min_notional
-        reduce_only_close = (terminal or force_reduce) and instrument.reduce_only_min_notional_exempt
+        reduce_only_close = (terminal or force_reduce or policy_flat) and instrument.reduce_only_min_notional_exempt
         if below_min_qty or (below_min_notional and not reduce_only_close):
             if terminal:
                 raise PlanningBlocked("terminal close violates historical min quantity/notional")
             if force_reduce:
                 raise PlanningBlocked("hard-risk reduction violates historical min quantity/notional")
+            if policy_flat:
+                return outcome("NOOP", "policy flat blocked by historical minimum quantity/notional")
             return outcome("NOOP", "below minimum executable quantity/notional")
         if delta % instrument.qty_step:
             raise PlanningBlocked("computed quantity violates instrument precision")
-        reason = "terminal_close" if terminal else "hard_risk_reduce" if force_reduce else "rebalance"
+        reason = ("terminal_close" if terminal else "hard_risk_reduce" if force_reduce else
+                  "policy_flat" if policy_flat else "rebalance")
         return outcome("SUBMIT", reason, quantity=delta)
 
 

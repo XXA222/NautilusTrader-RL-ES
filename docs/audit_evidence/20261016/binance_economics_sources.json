@@ -1,0 +1,73 @@
+{
+  "schema": "rles.binance-economics-source-review.v1",
+  "accessed_on": "2026-10-16",
+  "instrument": "ETHUSDT USDⓈ-M perpetual",
+  "market_period_under_review": "2023-12-30 through 2026-10-13 (source market archive bounds; not full event-type coverage)",
+  "sources": [
+    {
+      "url": "https://www.binance.com/en/support/announcement/detail/e4384cba297a4bd2a154be644d5d76f9",
+      "kind": "official_announcement",
+      "published_at": "2023-10-27T12:40:00Z",
+      "effective_by": "2023-11-02T10:00:00Z",
+      "supports": [
+        "ETHUSDT perpetual minimum notional value changed from 5 USDT to 20 USDT by the stated effective deadline.",
+        "The dated adjustment predates the local archive start of 2023-12-30 and supports the 20 USDT value as a documented pre-sample rule event."
+      ],
+      "does_not_support": [
+        "Continuous validity of the 20 USDT minimum notional value over the full 2023-12-30 through 2026-10-13 archive period.",
+        "Other ETHUSDT filters, fees, margin tiers, or account-specific execution economics."
+      ]
+    },
+    {
+      "url": "https://developers.binance.info/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data",
+      "kind": "official_api_documentation",
+      "endpoints": [
+        "GET /fapi/v1/exchangeInfo",
+        "GET /fapi/v1/fundingRate",
+        "GET /fapi/v1/fundingInfo"
+      ],
+      "supports": [
+        "exchangeInfo describes trading rules and symbol filters, including tickSize, stepSize, minQty and related constraints.",
+        "exchangeInfo request has no historical timestamp selector and is a current-rule endpoint.",
+        "fundingRate supports startTime/endTime queries for historical rate records."
+      ],
+      "does_not_support": [
+        "A dated archive of all historical instrument filters or historical margin tiers.",
+        "Historical maker/taker fee schedules."
+      ]
+    },
+    {
+      "url": "https://www.binance.com/en-BH/support/announcement/detail/08f043a4f20d4f0290817ece13b3d7f4",
+      "kind": "official_announcement",
+      "published_at": "2024-07-24T07:00:00Z",
+      "effective_at": "2024-07-25T06:30:00Z",
+      "supports": [
+        "A specific effective-dated USDⓈ-M tick-size adjustment and before/after precision for the listed contracts.",
+        "ETHUSDT is not among the contracts listed in this specific adjustment."
+      ],
+      "does_not_support": [
+        "ETHUSDT full-history tick-size continuity or quantity/notional filters across 2023-2026."
+      ]
+    },
+    {
+      "url": "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/account",
+      "kind": "official_api_documentation",
+      "endpoint": "GET /fapi/v1/commissionRate",
+      "supports": [
+        "Signed USER_DATA endpoint requires an API key and returns the user’s current symbol maker/taker commission rates.",
+        "Endpoint documentation has no historical effective-date query parameter."
+      ],
+      "does_not_support": [
+        "This project’s account-specific historical fees or past fee-tier schedule."
+      ]
+    }
+  ],
+  "access_boundary": "No Binance account credentials or API requests were used; current values were not fetched or backfilled.",
+  "decision": "The 20 USDT ETHUSDT minimum-notional value has one official dated pre-sample event supporting its introduction, but its continuity through the archive period remains unverified. Keep the scenario rule and all undated/non-account assumptions scenario-only; do not promote scenario performance to historical economic validation.",
+  "remaining_evidence": [
+    "Full effective-dated ETHUSDT contract filter history covering the sample period.",
+    "Account commission statements/rate-tier history covering evaluation dates.",
+    "Dated leverage/maintenance-margin/liquidation parameters and scenario validation.",
+    "Empirical latency/fill-model evidence tied to the same venue and period."
+  ]
+}

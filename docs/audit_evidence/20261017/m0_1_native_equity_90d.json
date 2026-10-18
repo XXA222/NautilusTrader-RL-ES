@@ -1,0 +1,54 @@
+{
+  "schema": "rles.audit-m0-1-native-equity-reconciliation.v1",
+  "task": "M0.1 / A08",
+  "split": "train_inner",
+  "purpose": "native linear ledger verification only; no model selection",
+  "window": {
+    "start_ns": 1705276800000000000,
+    "end_ns": 1713052800000000000
+  },
+  "seed": 102,
+  "market_sha256": "06323e909997909dee35b4abf1543444ae230f30cbc1f672ded033b3bc41fe70",
+  "rules_sha256": "690292b508ce722d6ba2f5b9fb745671f56fc396d2026943fd36668e9028c93b",
+  "bundle_sha256": "ea2ea516780f25756c7dae35636ee59eca7e3443a24259c6b58526b2536fec68",
+  "source_snapshot_hash": "258834aba27e77b0c97fbb4a5ca9fc6c18699f2f8d0d56c77812d1946bbc1adb",
+  "historical_rule_provenance": "scenario-only: engineering assumption, not historical exchange-rule evidence",
+  "metrics": {
+    "decision_steps": 129597,
+    "snapshot_count": 129600,
+    "terminal_flat": true,
+    "net_return_descriptive_only": 0.0052488626719948694,
+    "final_equity": "10052.48862672",
+    "fee": 0.28397867,
+    "funding": -14.65498461,
+    "slippage_cost_attribution_only": 0.057760000000000006
+  },
+  "equity_reconciliation": {
+    "scope": "flat_and_marked_open_barriers_quote_settled_unit_linear_no_external_cashflows",
+    "checked_flat_barriers": 2,
+    "open_barriers": 129598,
+    "unchecked_open_barriers": 0,
+    "checked_open_barriers": 129598,
+    "terminal_checked": true,
+    "max_abs_residual": "0",
+    "rounding_per_event": "1E-8",
+    "unique_fills": 3,
+    "unique_funding": 269
+  },
+  "reconciliation_tolerance": {
+    "rounding_per_event": "1E-8",
+    "max_abs_residual": "0",
+    "verified_within_per_event_bound": true,
+    "slippage_double_counted": false
+  },
+  "data_access": {
+    "validation_test_holdout_access": false,
+    "market_data_read": true,
+    "research_registry_recorded": true
+  },
+  "limits": [
+    "Uses previously frozen Train-inner archive and scenario-only execution rules.",
+    "Certifies one quote-settled unit-multiplier linear instrument without external cashflows.",
+    "Does not certify inverse/multi-asset accounts, deposits/withdrawals, or historical rule accuracy."
+  ]
+}

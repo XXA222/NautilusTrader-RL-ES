@@ -1,0 +1,16 @@
+{
+  "schema_version": "rles.world_model.v0",
+  "route": "B",
+  "instrument": "ETHUSDT-PERP.SIM",
+  "base_tf": "1m",
+  "market_action": "constant_zero",
+  "fold_protocol": "60/15/15",
+  "baseline_models": ["S0_ZERO_DRIFT", "S1_CONDITIONAL_VOL", "S2_BLOCK_BOOTSTRAP"],
+  "validation": {
+    "seed": 31,
+    "ensemble_size": 128,
+    "volatility_lookback": 60,
+    "bootstrap_block": 16
+  },
+  "data_policy": "registered_train_only"
+}

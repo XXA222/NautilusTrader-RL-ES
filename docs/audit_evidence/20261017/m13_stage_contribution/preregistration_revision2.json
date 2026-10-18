@@ -1,0 +1,149 @@
+{
+  "actor_sha256": "216a7d5017f802873b67c557bb77dc5d05ebdb073c6edbd4b2feb00bc1bb6b69",
+  "bundle_root": "D:\\Program Files\\NautilusTrader_RL_ES\\.artifacts\\audit-development-20261017\\m12-three-objective\\constraint_priority",
+  "bundle_sha256": "d08f5586cf391bba106a116a2734d9e7bba2132a295a291543c81e024549446d",
+  "execution": {
+    "base_fill": {
+      "data_granularity": "bar",
+      "model_id": "bar-conservative-1bp",
+      "slippage_bps": "1"
+    },
+    "base_latency": {
+      "decision_ns": 1000000,
+      "model_id": "binance-research-base",
+      "submit_ns": 1000000,
+      "venue_ns": 5000000
+    },
+    "deadband": "0.01",
+    "order_type": "MARKET",
+    "pending_order_policy": "cancel_replace",
+    "schema_version": "0.4.0",
+    "stress_fill": {
+      "data_granularity": "bar",
+      "fee_multiplier": "2",
+      "model_id": "bar-conservative-5bp",
+      "slippage_bps": "5"
+    },
+    "stress_latency": {
+      "decision_ns": 5000000,
+      "model_id": "binance-research-stress",
+      "submit_ns": 5000000,
+      "venue_ns": 20000000
+    },
+    "terminal_policy": "force_flatten_with_cost",
+    "tif": "GTC"
+  },
+  "fixture_manifest_path": "D:\\Program Files\\NautilusTrader_RL_ES\\tests\\fixtures\\real_ethusdt_20240104\\import.json",
+  "fixture_manifest_sha256": "a1deb513967d44b8554ade55bbc71e6958e7baa4647bf93622108604954a48d0",
+  "formal_evaluation_queries": {
+    "holdout": 0,
+    "test": 0,
+    "validation": 0
+  },
+  "hard_risk": {
+    "incomplete_data_max_leverage": "1",
+    "margin_buffer_fraction": "0.10",
+    "max_leverage": "1",
+    "max_notional": "1000",
+    "min_equity": "1000",
+    "require_funding": true,
+    "require_mark": true
+  },
+  "interpretation_limit": "single reused Train-inner window with scenario-only execution rules; descriptive stage diagnostic, not an independent strategy result",
+  "lineage": [
+    {
+      "actor_hash": "216a7d5017f802873b67c557bb77dc5d05ebdb073c6edbd4b2feb00bc1bb6b69",
+      "metadata": {
+        "inference_actor_hash": "216a7d5017f802873b67c557bb77dc5d05ebdb073c6edbd4b2feb00bc1bb6b69",
+        "rl_training_complete": "true",
+        "training_diagnostics_hash": "22b08964784b3cb807d87851544e0c91b73cfbe13a8ef0551a3609a764af9928"
+      },
+      "soft_risk_hash": "9d8a5402d7d36952053719169a40ed7a81b52137e9abdf4196457735a226362f",
+      "stage": "R1",
+      "usage": {
+        "evaluations": 0,
+        "generations": 0,
+        "lane_requests": 0,
+        "population": 0,
+        "rl_steps": 64,
+        "validation_queries": 0
+      }
+    },
+    {
+      "actor_hash": "216a7d5017f802873b67c557bb77dc5d05ebdb073c6edbd4b2feb00bc1bb6b69",
+      "metadata": {
+        "constraint_evidence_json": "[{\"candidates\":[{\"candidate_id\":\"g00000000-c00000000\",\"episodes\":1,\"evidence_hash\":\"11ef50a5fcfda794291a31940b9bcf0bd3d431825c8ae7b80dbc5b459a27c0ec\",\"infeasible_episodes\":0,\"mean_fitness\":-0.0031528258725017936,\"rejection_reasons\":[]},{\"candidate_id\":\"g00000000-c00000001\",\"episodes\":1,\"evidence_hash\":\"01391912be78f137cf9d76d9caedaa587c160fe7d2b5402c83406e619a3cd75b\",\"infeasible_episodes\":0,\"mean_fitness\":-0.0031397942843947525,\"rejection_reasons\":[]},{\"candidate_id\":\"g00000000-c00000002\",\"episodes\":1,\"evidence_hash\":\"b2cf01ad39a8ee6431431f593ee5a841ed4a7722d6650d93c493d7192b96da48\",\"infeasible_episodes\":0,\"mean_fitness\":-0.003405136440328275,\"rejection_reasons\":[]},{\"candidate_id\":\"g00000000-c00000003\",\"episodes\":1,\"evidence_hash\":\"119222a8b401cfaef8d6debc40f9f63c7ce9220776c199138c7ac525b23ebf68\",\"infeasible_episodes\":0,\"mean_fitness\":-0.003422966152670829,\"rejection_reasons\":[]},{\"candidate_id\":\"neutral-r1\",\"episodes\":1,\"evidence_hash\":\"0ea766b73f56eb206b0d1c4908c31f9c50198bb5e9c8e0c6158c782b2fe0950e\",\"infeasible_episodes\":0,\"mean_fitness\":-0.005345096800554809,\"rejection_reasons\":[]}],\"generation\":0},{\"candidates\":[{\"candidate_id\":\"g00000001-c00000000\",\"episodes\":1,\"evidence_hash\":\"04df8eabfc323397e8305d41549d6c0161cccc40b0cc42b6398c42c139f081ed\",\"infeasible_episodes\":0,\"mean_fitness\":-0.003153437985613731,\"rejection_reasons\":[]},{\"candidate_id\":\"g00000001-c00000001\",\"episodes\":1,\"evidence_hash\":\"0bd0d68d158ab1574991df98714922a424697c4e67f42f52f3c1190a198e7981\",\"infeasible_episodes\":0,\"mean_fitness\":-0.003423485717752497,\"rejection_reasons\":[]},{\"candidate_id\":\"g00000001-c00000002\",\"episodes\":1,\"evidence_hash\":\"da8370b07f68c2db857bc7301568d81fb012500f3c8a3fceb1829ce5af769e8c\",\"infeasible_episodes\":0,\"mean_fitness\":-0.003301915284513071,\"rejection_reasons\":[]},{\"candidate_id\":\"g00000001-c00000003\",\"episodes\":1,\"evidence_hash\":\"363b3ab52c2941301943059770b7f04bb04b6cde392e25974829a2d68638d0df\",\"infeasible_episodes\":0,\"mean_fitness\":-0.003031331323322719,\"rejection_reasons\":[]},{\"candidate_id\":\"neutral-r1\",\"episodes\":1,\"evidence_hash\":\"0cc0dd06725c125e8ea0ab5ca07cd92bc43c5e36b2db90978d9e4915de68f356\",\"infeasible_episodes\":0,\"mean_fitness\":-0.005345096800554809,\"rejection_reasons\":[]}],\"generation\":1}]",
+        "fitness_protocol": "constraint_priority_train_inner_v1",
+        "fitness_spec_json": "{\"drawdown_weight\":1.0,\"protocol\":\"constraint_priority_train_inner_v1\",\"return_weight\":1.0,\"tail_weight\":1.0}",
+        "lane_evidence_hash": "d5696fc91888a33f1973e7726443214806fa1ab8a8f503fd27a870be37c0864b",
+        "neutral_baseline_protocol": "paired_generation_neutral_r1_v1",
+        "scenario_fold_id": "a02-three-fitness-crn-20261017",
+        "selected_candidate_kind": "optimizer",
+        "selected_fitness": "-0.0030313313473016024",
+        "soft_risk_bounds_gate": "PASS",
+        "soft_risk_schema_hash": "de0abca5aecb563a07685da0b3e1665fb05daaed3b0cae50a780e6de9c2f61c6"
+      },
+      "soft_risk_hash": "d1311ad1aeb3a592d39587e48a7144592c6bf39df49d3fb2b8d713cf1f0422f7",
+      "stage": "E2",
+      "usage": {
+        "evaluations": 10,
+        "generations": 2,
+        "lane_requests": 10,
+        "population": 4,
+        "rl_steps": 0,
+        "validation_queries": 0
+      }
+    }
+  ],
+  "market_path": "D:\\Program Files\\NautilusTrader_RL_ES\\tests\\fixtures\\real_ethusdt_20240104\\market.parquet",
+  "market_sha256": "5edf5d6522d59f8bf368850cfae03314421507ab2a9c14deee03f81c9d85a8c9",
+  "modes": [
+    "base",
+    "stress"
+  ],
+  "no_retraining_or_selection": true,
+  "output_root": "D:\\Program Files\\NautilusTrader_RL_ES\\.artifacts\\audit-development-20261017\\m13-stage-contribution-v1",
+  "primary_outcome": "native final equity difference from same initial capital, reported with fill/fee/funding/drawdown/turnover deltas",
+  "question": "What native economic change is associated with applying the frozen E2 SoftRisk multipliers to the exact frozen R1 actor?",
+  "r1_neutral_multipliers": {
+    "drawdown_throttle": 1.0,
+    "exposure_multiplier": 1.0
+  },
+  "resource_stop_free_bytes": 2147483648,
+  "risk_budget_notional": "1000",
+  "rules_path": "D:\\Program Files\\NautilusTrader_RL_ES\\tests\\fixtures\\real_ethusdt_20240101\\scenario_rules.json",
+  "rules_sha256": "fb67f6d14b7a6140f941096601c88ead8bc665e589cde463157e29a5ad85092f",
+  "run_id": "historical-6b59bd2403d14139aea4fad8e39c35ca",
+  "runner_sha256": "fe196f2d062b1994e0f8a664671c7e92ff908dc58483a39647135548aab30aa1",
+  "schema": "rles.m13-stage-contribution-preregistration.v1",
+  "seed": 31,
+  "selected_e2_multipliers": {
+    "drawdown_throttle": 0.517038340871133,
+    "exposure_multiplier": 0.47419330025202333
+  },
+  "soft_risk": {
+    "drawdown_throttle": "1",
+    "funding_sensitivity": "1",
+    "max_turnover_fraction": "0.25",
+    "target_scale": "1"
+  },
+  "source_sha256": {
+    "packages/gym_bridge/src/rles_gym_bridge/env.py": "72d8aeccf1e82ec3fcb4d0ea883323cc9f3c7efd9f36050a1ba728626b94e8db",
+    "packages/gym_bridge/src/rles_gym_bridge/historical.py": "a70eb0faaa9aa7ecc7522729b44b1a57d4cf349d3cf09e0d1a9675050539dd3e",
+    "packages/nautilus_adapter/src/rles_nautilus_adapter/perpetual.py": "915d7ef14f939970749cc965c87e044fa0ec9cc2bce3600b218e7ee62cafdeee",
+    "packages/nautilus_adapter/src/rles_nautilus_adapter/session.py": "2bc7debdcc42aa770e6d76208e5791d4b6bcc82617ff79527a7d59b5c4527a9c",
+    "packages/orchestrator/src/rles_orchestrator/application.py": "b494c70104cd2561524653db9ef6e5e9f21329f27f721022dfcbb533a3075369",
+    "packages/research/src/rles_research/native_metrics.py": "ef5b9f827c24c94211fcdd7766004076da1287656155af093030cab4161e31bd",
+    "packages/risk/src/rles_risk/guards.py": "c84e0cddc2beaabf915b53a2969f81caf6407c2a30196fb63852a8ffe33dd061",
+    "packages/rl_sb3/src/rles_rl_sb3/actor.py": "8b17486a0963ecd75947a663cd7428c42eead19a8e342163f53571b4db5df021"
+  },
+  "split": "train_inner",
+  "stage_pair": "A2 R1 neutral SoftRisk -> selected E2 SoftRisk",
+  "starting_balance": "10000",
+  "status": "frozen_before_native_replay",
+  "training_end_ns": 1704355500000000000,
+  "window": {
+    "end_ns": 1704355500000000000,
+    "start_ns": 1704326700000000000
+  }
+}

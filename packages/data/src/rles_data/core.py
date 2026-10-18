@@ -5,6 +5,7 @@ This package deliberately contains no NautilusTrader imports and no L1 DTO clone
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, is_dataclass
+from functools import cached_property
 from datetime import datetime, timezone
 from enum import StrEnum
 from bisect import bisect_left, bisect_right
@@ -21,7 +22,7 @@ MINUTE_NS = 60_000_000_000
 DAY_NS = 1_440 * MINUTE_NS
 MAX_NS = 2**63 - 1
 CORE_KINDS = frozenset({"ohlcv_1m", "mark", "index", "funding_update", "funding_settlement", "instrument_rule"})
-KINDS = CORE_KINDS | {"best_quote"}
+KINDS = CORE_KINDS | {"best_quote", "trade_flow_1s"}
 HASH_RE = re.compile(r"[0-9a-f]{64}\Z")
 
 
@@ -195,7 +196,7 @@ class Event:
     def visible(self, decision_ns: int) -> bool:
         return self.available_at_ns is not None and self.available_at_ns <= require_ns(decision_ns)
 
-    @property
+    @cached_property
     def hash(self) -> str:
         return digest(self)
 
@@ -341,7 +342,7 @@ class FeatureSpec:
                 len({f.name for f in self.fields}) != len(self.fields)):
             raise DataError("duplicate/empty feature schema")
 
-    @property
+    @cached_property
     def hash(self) -> str:
         return digest(self)
 
@@ -425,7 +426,22 @@ def _snapshot_digest(events: Iterable[Event]) -> str:
     for event in events:
         if not first:
             value.update(b",")
-        value.update(canonical_bytes(event))
+        # Event is a validated frozen DTO. Encode its known fields directly so
+        # hashing millions of rows does not recursively dataclasses.asdict/
+        # deepcopy every immutable payload before JSON encoding.
+        encoded = json.dumps({
+            "event_id": event.event_id,
+            "kind": event.kind,
+            "ts_event_ns": event.ts_event_ns,
+            "ts_init_ns": event.ts_init_ns,
+            "available_at_ns": event.available_at_ns,
+            "availability_source": event.availability_source.value,
+            "source_hash": event.source_hash,
+            "payload": event.payload,
+            "provenance": event.provenance,
+        }, sort_keys=True, separators=(",", ":"), allow_nan=False,
+            ensure_ascii=False).encode("utf-8")
+        value.update(encoded)
         first = False
     value.update(b"]")
     return value.hexdigest()
@@ -475,6 +491,44 @@ class CuratedStore:
             kind: tuple(event.ts_event_ns for event in events)
             for kind, events in self._visible_by_event_time.items()
         }
+        # Derived feature indexes are lazy and excluded from snapshot identity.
+        self._feature_cache: dict[tuple[Any, ...], Any] = {}
+        rules_by_instrument: dict[str, list[Event]] = {}
+        for event in self._visible_by_kind.get("instrument_rule", ()):
+            rules_by_instrument.setdefault(str(event.payload["instrument"]), []).append(event)
+        self._rule_indexes: dict[str, tuple[tuple[int, ...], tuple[Event, ...], tuple[bool, ...]]] = {}
+        for instrument, rules in rules_by_instrument.items():
+            # A rule becomes queryable only when both source availability and
+            # exchange-effective time have arrived. Prefix maxima preserve the
+            # old visible/filter/sort selection for as-of queries.
+            ordered = sorted(rules, key=lambda event: (
+                max(cast(int, event.available_at_ns), int(event.payload.get("effective_ns", event.ts_event_ns))),
+                int(event.payload.get("effective_ns", event.ts_event_ns)),
+                cast(int, event.available_at_ns), event.event_id,
+            ))
+            eligible_times: list[int] = []
+            latest_events: list[Event] = []
+            latest_conflicts: list[bool] = []
+            payload_digests_by_effective: dict[int, set[str]] = {}
+            latest: Event | None = None
+            for event in ordered:
+                effective = int(event.payload.get("effective_ns", event.ts_event_ns))
+                available = cast(int, event.available_at_ns)
+                payload_digests_by_effective.setdefault(effective, set()).add(digest(event.payload))
+                if latest is None or (
+                    effective, available, event.event_id
+                ) > (
+                    int(latest.payload.get("effective_ns", latest.ts_event_ns)),
+                    cast(int, latest.available_at_ns), latest.event_id,
+                ):
+                    latest = event
+                latest_effective = int(latest.payload.get("effective_ns", latest.ts_event_ns))
+                eligible_times.append(max(effective, available))
+                latest_events.append(latest)
+                latest_conflicts.append(len(payload_digests_by_effective[latest_effective]) > 1)
+            self._rule_indexes[instrument] = (
+                tuple(eligible_times), tuple(latest_events), tuple(latest_conflicts),
+            )
         self.duplicate_count = duplicates
         self.snapshot_hash = _snapshot_digest(self.events)
         self._conflicts = self._detect_conflicts()
@@ -540,19 +594,37 @@ class CuratedStore:
                      if event.available_at_ns is not None
                      and event.available_at_ns <= decision_ns)
 
+    def available_event_window(self, start_available_ns: int, end_available_ns: int,
+                               *, kind: str | None = None) -> tuple[Event, ...]:
+        """Return source-visible facts in an inclusive availability-time window."""
+        require_ns(start_available_ns)
+        require_ns(end_available_ns)
+        if start_available_ns > end_available_ns:
+            raise DataError("invalid availability-time window")
+        if kind is None:
+            events, times = self._visible_events, self._visible_times
+        else:
+            if type(kind) is not str or kind not in KINDS:
+                raise DataError("unknown availability-time event kind")
+            events = self._visible_by_kind.get(kind, ())
+            times = self._visible_times_by_kind.get(kind, ())
+        first = bisect_left(times, start_available_ns)
+        last = bisect_right(times, end_available_ns)
+        return events[first:last]
+
     def latest_rule(self, decision_ns: int, instrument: str) -> Event:
         require_ns(decision_ns)
-        matches = [e for e in self.visible(decision_ns, "instrument_rule")
-                   if e.payload.get("instrument") == instrument
-                   and e.payload.get("effective_ns", e.ts_event_ns) <= decision_ns]
-        if not matches:
+        index = self._rule_indexes.get(instrument)
+        if index is None:
             raise DataError("instrument rule unavailable at this decision time")
-        matches.sort(key=lambda e: (e.payload.get("effective_ns", e.ts_event_ns), e.available_at_ns, e.event_id))
-        latest = matches[-1]
+        eligible_times, latest_events, latest_conflicts = index
+        position = bisect_right(eligible_times, decision_ns) - 1
+        if position < 0:
+            raise DataError("instrument rule unavailable at this decision time")
+        latest = latest_events[position]
         if latest.payload.get("valid_until_ns") is not None and decision_ns >= latest.payload["valid_until_ns"]:
             raise DataError("latest known rule has expired; fallback to older version forbidden")
-        same = [e for e in matches if e.payload.get("effective_ns", e.ts_event_ns) == latest.payload.get("effective_ns", latest.ts_event_ns)]
-        if len({digest(e.payload) for e in same}) > 1:
+        if latest_conflicts[position]:
             raise DataError("conflicting instrument rules at decision time")
         return latest
 

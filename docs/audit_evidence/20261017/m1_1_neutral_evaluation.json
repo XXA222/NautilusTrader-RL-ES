@@ -1,0 +1,71 @@
+{
+  "schema": "rles.audit-development-evidence.v1",
+  "task": "M1.1 / A01 exact-neutral E2 evaluation integration",
+  "date": "2026-10-17",
+  "status": "PASS",
+  "implementation": {
+    "protocol": "paired_generation_neutral_r1_v1",
+    "neutral_candidate": "physical multiplier 1.0 for every SoftRisk dimension",
+    "scenario_policy": "same generation and episode seed as optimizer candidates",
+    "account_policy": "independent account isolation id per candidate and episode",
+    "budget": "one additional candidate evaluation per E2 generation, multiplied by episode count for lane requests",
+    "selection": "compare best neutral score with optimizer result; ties select exact neutral",
+    "checkpoint": "new protocol stores neutral score and evidence in schema 4; disabled legacy schema 3 signature remains unchanged",
+    "legacy_resume": "runs without e2_neutral_protocol retain their prior E2 budget and evaluator identity"
+  },
+  "verification": [
+    {
+      "scope": "ES, compute lane, native training, workflow, application CLI and recovery modules",
+      "result": "99 passed, 29 warnings",
+      "duration_seconds": 198.40,
+      "note": "overlapping module regression; do not add focused results below"
+    },
+    {
+      "scope": "ES checkpoint, real application recovery, direct neutral evaluator and selection tests",
+      "result": "17 passed, 17 warnings",
+      "duration_seconds": 151.62,
+      "note": "post-fix recovery run confirming legacy evaluator signature compatibility"
+    },
+    {
+      "scope": "E2 dimension/selection, A4 native engine workflow and neutral checkpoint tests",
+      "result": "8 passed, 14 warnings",
+      "duration_seconds": 14.30
+    },
+    {
+      "scope": "same-seed synthetic native spot episode with baseline SoftRisk versus exact (1,1) multipliers",
+      "result": "1 passed",
+      "duration_seconds": 1.26,
+      "compared": "requested and adjusted targets, plan actions/reasons, executed exposure, per-step equity/returns/drawdown, normalized fill facts and final equity",
+      "limit": "canonical fixture actor and spot data; this fixture has no Funding stream and is not the exported frozen L4 actor"
+    },
+    {
+      "scope": "same-seed synthetic Train-inner perpetual episode using a newly trained and exported frozen L4 PPO actor",
+      "result": "1 passed",
+      "compared": "per-decision requested/soft/hard target, plan action/reason, executed exposure, native equity, economic return and drawdown; normalized fills; two Funding settlements; complete account rows and final metrics",
+      "limit": "synthetic fixture only; proves implementation parity, not strategy performance or market generalization"
+    },
+    {
+      "scope": "post-parity E2 budget, A4 end-to-end workflow and durable recovery regression",
+      "result": "8 passed, 15 warnings",
+      "duration_seconds": 26.01,
+      "note": "includes corrected A4 lane-request expectation for one additional exact-neutral E2 candidate"
+    },
+    {
+      "scope": "Ruff packages/es_evotorch packages/orchestrator and changed tests",
+      "result": "passed"
+    },
+    {
+      "scope": "MyPy ES evaluation/provider and Orchestrator ES/application files with workspace source paths",
+      "result": "passed, 4 source files"
+    }
+  ],
+  "data_access": {
+    "market_data_read": false,
+    "validation_test_holdout_access": false,
+    "purpose": "synthetic native-engine integration and deterministic checkpoint tests"
+  },
+  "remaining_acceptance": [
+    "Real-market performance and independent Validation acceptance remain outside this implementation parity test and must follow the frozen research protocol."
+  ],
+  "typecheck_environment": "Workspace packages/*/src were added to PYTHONPATH and MYPYPATH so MyPy analyzed the current checkout."
+}

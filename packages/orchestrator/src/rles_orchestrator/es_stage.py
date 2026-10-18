@@ -10,6 +10,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import random
+from dataclasses import replace
 
 import numpy as np
 
@@ -21,8 +22,9 @@ from rles_es_evotorch.checkpoint import ESCheckpointStore
 from rles_es_evotorch.evaluation import (
     CandidateRequest, EvaluationBudget, GenerationLaneEvaluator, WorkerLaneDispatcher,
 )
-from rles_es_evotorch.fitness import FitnessSpec
-from rles_es_evotorch.provider import EvoTorchProvider, EvolutionConfig
+from rles_es_evotorch.fitness import (ConstraintPriorityFitnessSpec,
+                                      FeasibilityFirstFitnessSpec, FitnessSpec)
+from rles_es_evotorch.provider import EvoTorchProvider, EvolutionConfig, EvolutionResult
 from rles_es_evotorch.soft_risk import SoftRiskSpace
 from rles_research.ledger import SelectionLedger
 
@@ -32,6 +34,23 @@ from .workflow import ProviderStageOutput, StageContext
 def _digest(value: object) -> str:
     return sha256(json.dumps(value, sort_keys=True, separators=(",", ":"),
                              allow_nan=False).encode()).hexdigest()
+
+
+def _select_e2_candidate(
+    result: EvolutionResult, candidate_spec: SoftRiskSpace,
+    baseline: tuple[float, int, str],
+) -> EvolutionResult:
+    """Compare the exact-neutral incumbent under the same generation protocol."""
+    baseline_score, _generation, _evidence = baseline
+    evaluations = result.evaluations + result.generations
+    if baseline_score >= result.best_fitness:
+        neutral = candidate_spec.decode(np.ones(len(candidate_spec.dimensions), dtype=np.float32))
+        return replace(
+            result, evaluations=evaluations, best_fitness=baseline_score,
+            risk_parameters=tuple(sorted(neutral.items())),
+            selected_candidate_kind="neutral_r1",
+        )
+    return replace(result, evaluations=evaluations)
 
 
 class ESStageExecutor:
@@ -47,7 +66,8 @@ class ESStageExecutor:
         evolution: EvolutionConfig, selection: SelectionLedger,
         quota: ResourceQuota, factory_ref: str, factory_config: Mapping[str, object],
         payload_builder: Callable[[CandidateRequest], Mapping[str, object]],
-        payload_builder_id: str, fitness_spec: FitnessSpec, tail_fraction: float,
+        payload_builder_id: str,
+        fitness_spec: FitnessSpec | ConstraintPriorityFitnessSpec, tail_fraction: float,
         fold_id: str, episode_ids: tuple[str, ...], checkpoint_dir: str | Path,
         workers: int, lease_owner: str, ram_bytes_per_worker: int,
         cpu_cores_per_worker: int = 1, startup_timeout_s: float = 30,
@@ -55,6 +75,8 @@ class ESStageExecutor:
         initial_bounds: tuple[float, float] = (-0.1, 0.1),
         center: np.ndarray | None = None, resume: bool = False,
         enforce_memory_limit: bool = False,
+        include_neutral_baseline: bool = False,
+        include_constraint_evidence: bool = False,
     ) -> None:
         if (stage not in {"E1", "E2"} or not isinstance(artifact_id, str) or not artifact_id
                 or not isinstance(candidate_spec, (ActorGenomeSpec, SoftRiskSpace))
@@ -62,12 +84,15 @@ class ESStageExecutor:
                 or not isinstance(selection, SelectionLedger)
                 or not isinstance(quota, ResourceQuota)
                 or not isinstance(factory_ref, str) or not factory_ref
-                or not callable(payload_builder) or not isinstance(fitness_spec, FitnessSpec)
+                or not callable(payload_builder)
+                or not isinstance(fitness_spec, (FitnessSpec, ConstraintPriorityFitnessSpec))
                 or not isinstance(fold_id, str) or not fold_id
                 or not isinstance(episode_ids, tuple) or not episode_ids
                 or any(not isinstance(item, str) or not item for item in episode_ids)
                 or len(set(episode_ids)) != len(episode_ids)
-                or type(resume) is not bool or type(enforce_memory_limit) is not bool):
+                or type(resume) is not bool or type(enforce_memory_limit) is not bool
+                or type(include_neutral_baseline) is not bool
+                or type(include_constraint_evidence) is not bool):
             raise ValueError("frozen E1/E2 stage plan and installed dependencies required")
         if evolution.device != "cpu":
             raise RuntimeError("native ES stage checkpoint currently requires CPU EvoTorch")
@@ -93,6 +118,10 @@ class ESStageExecutor:
         self.center = None if center is None else np.asarray(center).copy()
         self.resume = resume
         self.enforce_memory_limit = enforce_memory_limit
+        self.include_neutral_baseline = include_neutral_baseline
+        self.include_constraint_evidence = (
+            include_constraint_evidence or isinstance(fitness_spec, ConstraintPriorityFitnessSpec)
+        )
         self.worker_resource_evidence: list[dict] = []
         self._used = False
 
@@ -126,12 +155,15 @@ class ESStageExecutor:
         spec, cap = context.spec, context.budget
         expected_algorithm = "pgpe" if self.stage == "E1" else "cmaes"
         expected_kind = "actor" if self.stage == "E1" else "soft_risk"
+        auxiliary_candidates = int(self.stage == "E2" and self.include_neutral_baseline)
+        expected_evaluations = (self.evolution.population_size + auxiliary_candidates) * self.evolution.generations
+        expected_lane_requests = expected_evaluations * len(self.episode_ids)
         if (self.evolution.algorithm != expected_algorithm or self.evolution.seed != spec.seed
                 or self.evolution.population_size > cap.max_population
                 or self.evolution.generations > cap.max_generations
                 or self.evolution.max_evaluations > cap.max_evaluations
-                or self.evolution.population_size * self.evolution.generations
-                * len(self.episode_ids) > cap.max_lane_requests
+                or expected_evaluations > cap.max_evaluations
+                or expected_lane_requests > cap.max_lane_requests
                 or self.factory_config.get("candidate_kind") != expected_kind
                 or self.factory_config.get("actor_signature") != spec.actor_signature):
             raise ValueError("ES stage optimizer, worker recipe, or lane use exceeds frozen RunSpec")
@@ -144,6 +176,8 @@ class ESStageExecutor:
                     or context.previous is None or context.previous.stage != "R1"
                     or self.factory_config.get("frozen_actor_hash") != context.previous.actor_hash):
                 raise ValueError("E2 must preserve the attested R1 actor and SoftRisk search space")
+            if self.include_neutral_baseline:
+                self.candidate_spec.decode(np.ones(len(self.candidate_spec.dimensions), dtype=np.float32))
             if (self.factory_ref == "rles_orchestrator.native_es_worker:make_native_es_session"
                     and self.factory_config.get("actor_inference") != "l4_inference"):
                 raise ValueError("E2 must evaluate the exported L4 inference actor")
@@ -175,7 +209,8 @@ class ESStageExecutor:
             # retrying those requests would violate the one-charge policy.
             checkpoint_root = self._latest_checkpoint_root(spec.attempt_id)
             checkpoint = ESCheckpointStore(checkpoint_root).load(spec.attempt_id)
-            checkpoint_requests = checkpoint.evaluations * len(self.episode_ids)
+            checkpoint_requests = (checkpoint.evaluations +
+                                   (checkpoint.generation if auxiliary_candidates else 0)) * len(self.episode_ids)
             reserved_requests = self.selection.ledger.es_lane_request_count(
                 self.selection.protocol_id, spec.run_id, spec.attempt_id, self.stage,
             )
@@ -222,6 +257,9 @@ class ESStageExecutor:
             root_seed=spec.seed, episode_ids=self.episode_ids,
             candidate_spec=self.candidate_spec, actor_signature=spec.actor_signature,
             dispatch=dispatcher, dispatch_id=dispatcher.signature, budget=lane_budget,
+            include_neutral_baseline=self.include_neutral_baseline,
+            include_constraint_evidence=self.include_constraint_evidence,
+            feasibility_first=isinstance(self.fitness_spec, FeasibilityFirstFitnessSpec),
         )
         provider = EvoTorchProvider(
             self.evolution,
@@ -264,6 +302,13 @@ class ESStageExecutor:
                             config_hash=spec.config_hash,
                         )
             result = provider.result()
+            if self.stage == "E2" and self.include_neutral_baseline:
+                if not isinstance(self.candidate_spec, SoftRiskSpace):
+                    raise RuntimeError("E2 neutral candidate lost its SoftRisk schema")
+                baseline = evaluator.best_neutral_baseline
+                if baseline is None:
+                    raise RuntimeError("E2 completed without a scored exact-neutral R1 candidate")
+                result = _select_e2_candidate(result, self.candidate_spec, baseline)
         finally:
             try:
                 pool.close()
@@ -286,7 +331,8 @@ class ESStageExecutor:
             actor_hash = genome_hash(actor_spec, genome)
             soft_risk_hash = spec.initial_soft_risk_hash
             payload_hash = sha256(genome.tobytes(order="C") + bytes.fromhex(evidence)).hexdigest()
-            metadata = {"actor_signature": spec.actor_signature, "lane_evidence_hash": evidence}
+            metadata = {"actor_signature": spec.actor_signature,
+                        "scenario_fold_id": self.fold_id, "lane_evidence_hash": evidence}
         else:
             if result.risk_parameters is None or context.previous is None:
                 raise RuntimeError("E2 completed without bounded soft-risk parameters")
@@ -295,7 +341,24 @@ class ESStageExecutor:
             payload_hash = sha256(bytes.fromhex(soft_risk_hash) + bytes.fromhex(evidence)).hexdigest()
             metadata = {"soft_risk_bounds_gate": "PASS",
                         "soft_risk_schema_hash": spec.soft_risk_schema_hash,
+                        "selected_candidate_kind": result.selected_candidate_kind,
+                        "selected_fitness": repr(result.best_fitness),
+                        "scenario_fold_id": self.fold_id,
+                        "neutral_baseline_protocol": (
+                            "paired_generation_neutral_r1_v1" if self.include_neutral_baseline else "disabled"
+                        ),
                         "lane_evidence_hash": evidence}
+        if self.include_constraint_evidence:
+            metadata["fitness_protocol"] = (
+                self.fitness_spec.protocol if isinstance(self.fitness_spec, ConstraintPriorityFitnessSpec)
+                else "legacy_weighted_v1"
+            )
+            metadata["fitness_spec_json"] = json.dumps(
+                vars(self.fitness_spec), sort_keys=True, separators=(",", ":"), allow_nan=False,
+            )
+            metadata["constraint_evidence_json"] = json.dumps(
+                evaluator.constraint_evidence, sort_keys=True, separators=(",", ":"), allow_nan=False,
+            )
         return ProviderStageOutput(
             artifact_id=self.artifact_id, payload_hash=payload_hash,
             actor_hash=actor_hash, soft_risk_hash=soft_risk_hash, metadata=metadata,

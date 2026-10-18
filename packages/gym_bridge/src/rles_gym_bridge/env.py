@@ -1,6 +1,7 @@
 """Gymnasium single-asset decision-barrier environment; no second account ledger."""
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 from typing import Any, Callable
 
@@ -16,6 +17,69 @@ from .episode import EpisodeReplay, EpisodeResumeState
 
 class ContractNotReady(RuntimeError):
     """Native, L1, or L2 barrier contract cannot be proven; block evaluation."""
+
+
+def _native_constraint_facts(snapshot: Any) -> tuple[bool, bool, bool]:
+    """Return known margin facts, a maintenance breach, and native liquidation."""
+    margins = getattr(snapshot, "margins", None)
+    liquidations = getattr(snapshot, "liquidation_orders", None)
+    if (getattr(snapshot, "liquidation_capability", False) is not True
+            or not isinstance(margins, tuple) or liquidations is None):
+        return False, False, False
+    try:
+        maintenance = Decimal(0)
+        for row in margins:
+            if not isinstance(row, dict) or "maintenance" not in row:
+                return False, False, False
+            value = Decimal(str(row["maintenance"]))
+            if not value.is_finite() or value < 0:
+                raise ContractNotReady("native maintenance margin fact is invalid")
+            maintenance += value
+        equity = Decimal(str(snapshot.equity))
+    except (InvalidOperation, TypeError, ValueError, AttributeError) as exc:
+        raise ContractNotReady("native solvency facts cannot be parsed") from exc
+    if not equity.is_finite():
+        raise ContractNotReady("native equity fact is non-finite")
+    return True, maintenance > 0 and equity <= maintenance, bool(liquidations)
+
+
+def _terminal_settlement_facts(before: Any, after: Any, *, policy_exposure: float) -> dict[str, Any]:
+    """Describe native account facts created by the forced episode settlement."""
+    before_orders = {str(row["client_order_id"]): row for row in before.all_orders}
+    after_orders = {str(row["client_order_id"]): row for row in after.all_orders}
+    if len(before_orders) != len(before.all_orders) or len(after_orders) != len(after.all_orders):
+        raise ContractNotReady("terminal settlement order identities are not unique")
+    changed_orders = [dict(row) for key, row in after_orders.items()
+                      if before_orders.get(key) != row]
+    before_fill_ids = {str(row["event_id"]) for row in before.fills}
+    terminal_fills = [dict(row) for row in after.fills
+                      if str(row["event_id"]) not in before_fill_ids]
+    before_funding_ids = {str(row["event_id"]) for row in before.funding}
+    terminal_funding = [dict(row) for row in after.funding
+                        if str(row["event_id"]) not in before_funding_ids]
+    before_equity, after_equity = Decimal(str(before.equity)), Decimal(str(after.equity))
+    before_currency = getattr(before, "currency", None)
+    after_currency = getattr(after, "currency", None)
+    if (not before_equity.is_finite() or not after_equity.is_finite()
+            or not isinstance(before_currency, str) or not before_currency
+            or after_currency != before_currency
+            or type(before.decision_ts_ns) is not int or type(after.decision_ts_ns) is not int
+            or after.decision_ts_ns < before.decision_ts_ns
+            or not np.isfinite(policy_exposure)):
+        raise ContractNotReady("terminal settlement account facts are invalid")
+    return {
+        "policy_barrier_ts_ns": before.decision_ts_ns,
+        "settlement_barrier_ts_ns": after.decision_ts_ns,
+        "equity_before": str(before_equity),
+        "equity_after": str(after_equity),
+        "equity_delta": str(after_equity - before_equity),
+        "equity_currency": before_currency,
+        "pre_terminal_net_exposure": float(policy_exposure),
+        "post_terminal_open_position_count": len(after.positions),
+        "orders": changed_orders,
+        "fills": terminal_fills,
+        "funding": terminal_funding,
+    }
 
 
 class NautilusBarrierEnv(gym.Env):
@@ -176,6 +240,14 @@ class NautilusBarrierEnv(gym.Env):
             # quantity planner -> official native engine, never action -> fill.
             plan, guard = self._episode.action_to_plan(raw)
             risk_review = self._episode.pending_risk_review
+            pending_snapshot = getattr(self._episode, "_snapshot", None)
+            pending_order_ids = tuple(sorted(
+                row["client_order_id"]
+                for row in getattr(pending_snapshot, "orders", ())
+                if isinstance(row.get("client_order_id"), str)
+            ))
+            related_order_ids = (plan.cancel_order_ids if plan.action == "CANCEL" else
+                                 pending_order_ids if plan.action == "WAIT" else ())
             guard = float(guard)
             if not np.isfinite(guard) or not 0 <= guard <= 2:
                 raise ContractNotReady("guard intervention invalid")
@@ -188,8 +260,25 @@ class NautilusBarrierEnv(gym.Env):
             self._step_count += 1
             truncated = bool(result.truncated or self._step_count >= self._max_steps)
             terminated = bool(result.terminated or float(result.snapshot.equity) <= 0)
+            if pending_snapshot is None:
+                raise ContractNotReady("previous native account snapshot missing")
+            try:
+                policy_equity_before = Decimal(str(pending_snapshot.equity))
+                policy_equity_after = Decimal(str(result.snapshot.equity))
+            except (InvalidOperation, TypeError, ValueError) as exc:
+                raise ContractNotReady("native policy-barrier equity facts are invalid") from exc
+            policy_equity_currency = getattr(pending_snapshot, "currency", None)
+            if (not policy_equity_before.is_finite() or not policy_equity_after.is_finite()
+                    or not isinstance(policy_equity_currency, str) or not policy_equity_currency
+                    or getattr(result.snapshot, "currency", None) != policy_equity_currency):
+                raise ContractNotReady("native policy-barrier equity facts are inconsistent")
+            policy_equity_change = policy_equity_after - policy_equity_before
+            margin_facts_known, maintenance_breach, liquidation_detected = (
+                _native_constraint_facts(result.snapshot)
+            )
             evidence_hash = result.evidence_hash
             snapshot = result.snapshot
+            terminal_settlement = None
             if terminated or truncated:
                 # Even a bankruptcy must not receive a cost-free terminal reward.
                 # If liquidation/flatten cannot be proven, the attempt is invalid.
@@ -199,33 +288,83 @@ class NautilusBarrierEnv(gym.Env):
                 if not isinstance(terminal.evidence_hash, str) or not terminal.evidence_hash:
                     raise ContractNotReady("missing native terminal settlement evidence")
                 snapshot = terminal.snapshot
+                terminal_settlement = _terminal_settlement_facts(
+                    result.snapshot, snapshot, policy_exposure=float(result.executed_action),
+                )
+                terminal_margin_known, terminal_margin_breach, terminal_liquidation = (
+                    _native_constraint_facts(terminal.snapshot)
+                )
+                margin_facts_known = margin_facts_known and terminal_margin_known
+                maintenance_breach = maintenance_breach or terminal_margin_breach
+                liquidation_detected = liquidation_detected or terminal_liquidation
                 if type(snapshot.decision_ts_ns) is not int or snapshot.decision_ts_ns < result.decision_ts_ns:
                     raise ContractNotReady("terminal snapshot clock rewound")
                 evidence_hash = sha256((result.evidence_hash + "|" + terminal.evidence_hash).encode()).hexdigest()
+                # This is a finite, settled trading task, including max_steps.
+                # No account/position continues past this terminal observation.
+                terminated, truncated = True, False
             breakdown = self._reward.calculate(native_equity=float(snapshot.equity), guard_intervention=guard)
             terminated = terminated or breakdown.insolvency
-            obs = self._observation(snapshot, guard_intervention=guard)
+            transition_inputs = self._episode.observation_inputs(
+                snapshot=snapshot, reward_state=self._reward,
+                guard_intervention=guard,
+            )
+            obs = self._observation_builder.build(**transition_inputs)
+            if not self.observation_space.contains(obs):
+                raise ContractNotReady("observation violates immutable Gymnasium space")
             self._last_observation = obs.copy()
             info = {
                 "r_econ": breakdown.r_econ, "r_shape": breakdown.r_shape,
                 "r_train": breakdown.r_total,
                 "native_equity": str(snapshot.equity), "drawdown": breakdown.drawdown,
+                "policy_equity_before": str(policy_equity_before),
+                "policy_equity_after": str(policy_equity_after),
+                "policy_equity_change": str(policy_equity_change),
+                "policy_equity_currency": policy_equity_currency,
                 "requested_action": raw, "risk_guard_intervention": guard,
                 "risk_soft_adjustment": float(risk_review.soft_adjustment),
                 "risk_hard_adjustment": float(risk_review.hard_adjustment),
                 "risk_intervention_components_known": risk_review.components_known,
+                "insolvency": bool(breakdown.insolvency or float(result.snapshot.equity) <= 0),
+                "margin_facts_known": margin_facts_known,
+                "maintenance_margin_breach": maintenance_breach,
+                "native_liquidation_detected": liquidation_detected,
                 "risk_soft_target": None if risk_review.soft_target is None else float(risk_review.soft_target),
                 "risk_adjusted_target": None if risk_review.risk_target is None else float(risk_review.risk_target),
+                "quantity_rounded_target_exposure": (
+                    None if risk_review.rounded_target_exposure is None
+                    else float(risk_review.rounded_target_exposure)),
                 "execution_plan_action": plan.action,
                 "execution_plan_reason": plan.reason,
+                "execution_decision_id": plan.decision_id,
+                "execution_plan_id": plan.plan_id,
+                "execution_idempotency_key": plan.idempotency_key,
+                "execution_delta_qty": str(plan.delta_qty),
+                "execution_cancel_order_ids": plan.cancel_order_ids,
+                "execution_related_order_ids": related_order_ids,
+                "execution_client_order_id": (
+                    "RLES-" + sha256(plan.idempotency_key.encode("utf-8")).hexdigest()
+                    if plan.action == "SUBMIT" else None
+                ),
                 "executed_action": result.executed_action, "evidence_hash": evidence_hash,
                 # This is the policy barrier time. Terminal settlement may
                 # advance the native account clock through additional drain
                 # frames; those are not extra RL decision samples.
                 "decision_ts_ns": result.decision_ts_ns,
                 "terminal_settled": bool(terminated or truncated),
+                "terminal_value_semantics": "finite_settlement_no_bootstrap_v1",
                 "policy_executed_action_pre_terminal": result.executed_action,
+                "episode_window": dict(self._episode.episode_window),
+                "market_features": {
+                    name: float(feature.value)
+                    for name, feature in transition_inputs["market"].items()
+                },
+                "net_exposure": float(
+                    transition_inputs["account"].get("net_exposure", 0.0)
+                ),
             }
+            if terminal_settlement is not None:
+                info["terminal_settlement"] = terminal_settlement
             if terminated or truncated:
                 self._done = True
                 self.close()

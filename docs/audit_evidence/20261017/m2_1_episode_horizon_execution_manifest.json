@@ -1,0 +1,60 @@
+{
+  "bundle_sha256": "ea2ea516780f25756c7dae35636ee59eca7e3443a24259c6b58526b2536fec68",
+  "failed_attempt_logs": [
+    {
+      "cause": "frozen F7 plan has no top-level seed; runner now inherits seed 102 from source plan",
+      "path": ".tmp/m2-1-seed-missing.log"
+    },
+    {
+      "cause": "coverage policy settlement schedule was not cropped to the 90-day audited interval; runner now applies existing coverage_for_window helper",
+      "path": ".tmp/m2-1-t0-t1-run.log"
+    }
+  ],
+  "market_sha256": "06323e909997909dee35b4abf1543444ae230f30cbc1f672ded033b3bc41fe70",
+  "plan_path": ".artifacts/audit-development-20261017/m2-1-t0-t1-daily-r2/plan.json",
+  "plan_sha256": "aa43dadb06d1012cbdd9058d2bccb55ab835df44fbb446c3b28c96043f8c6edd",
+  "research_access": {
+    "matching_interval_rows": 2,
+    "matching_rows": [
+      {
+        "end_ns": 1713052800000000000,
+        "family": "perpetual-market-v1",
+        "market": "ETHUSDT",
+        "owner": "40eaf9c767853a27b5780451f48818f63e24d299d5eb7c7800f1765d69dcdd1a",
+        "purpose": "development",
+        "start_ns": 1705276800000000000,
+        "state": "recorded"
+      },
+      {
+        "end_ns": 1713052800000000000,
+        "family": "perpetual-market-v1",
+        "market": "ETHUSDT",
+        "owner": "6c6fc7c604799112f0756c105c1a60e26867cf2274cfebb05be57a8bd2e6b6ad",
+        "purpose": "development",
+        "start_ns": 1705276800000000000,
+        "state": "recorded"
+      }
+    ],
+    "purpose": "development",
+    "split": "train_inner"
+  },
+  "result": "completed; 90 daily episodes; summary sidecar verified",
+  "rules_sha256": "690292b508ce722d6ba2f5b9fb745671f56fc396d2026943fd36668e9028c93b",
+  "run_log": ".tmp/m2-1-t0-t1-r2-run.log",
+  "schema": "rles.episode-horizon-execution-manifest.v1",
+  "source_files_sha256": {
+    "packages/execution/src/rles_execution/planner.py": "030a255711060b1cf064f9c9fad3cd55878fbe36eb1751442f54216e81d2d28c",
+    "packages/gym_bridge/src/rles_gym_bridge/env.py": "92f11604d19144672225df689c6362fa5a37f2cc50acbc5de20a3f04e12031be",
+    "packages/gym_bridge/src/rles_gym_bridge/historical.py": "ab6b756d5d1103b1fcc59cf251d4e1927169316b90cee7147217aa6020926597",
+    "packages/orchestrator/src/rles_orchestrator/application.py": "af40b41e2f62a923a2fc797dd70fc925d04da825e5d325a2a2046b5919486ce2",
+    "packages/orchestrator/src/rles_orchestrator/research_access.py": "6fcce53f2137e299f407df46694b5911dc543b47d6c179ac4c93d26e9596b412",
+    "packages/research/src/rles_research/access.py": "e1e9f100e0ceea8c5e83f1b3af9a2bd58de4c52363e78a2df99726376d4a0cc4",
+    "packages/risk/src/rles_risk/guards.py": "c84e0cddc2beaabf915b53a2969f81caf6407c2a30196fb63852a8ffe33dd061",
+    "qa/compare_episode_horizon_20261017.py": "1bf7898caa5004918ca8f8c095d14451ba0d8294339fb58f771cb91293a8f2ab",
+    "qa/profile_native_history_growth_20261016.py": "1b86efa24575794f045550307d961ce0f20c220cafa78b4c1393ef67dd73019a",
+    "tests/test_historical_factory.py": "763d7bb81403f8afe7cdcba023df477427703091ad81314d5936e57e9d95f066"
+  },
+  "source_plan_sha256": "82eeb26cf6c8daae72ed7c4d1f26a777d174425de87f3927b2ddb884b0094003",
+  "summary_path": "docs/audit_evidence/20261017/m2_1_episode_horizon_train_inner.json",
+  "summary_sha256": "136922fcaa90aaecdafb0b18cf6cb2bd7f9d992048c4dac8c00e1b904c05a16b"
+}

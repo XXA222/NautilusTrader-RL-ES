@@ -48,8 +48,59 @@ def block_bootstrap(returns: Sequence[float], *, block_length: int, draws: int,
 def deflated_sharpe(returns: Sequence[float], *, effective_trials: int,
                     trial_sharpes: Sequence[float], risk_free_per_period: float=0) -> dict:
     """Bailey/Lopez de Prado DSR approximation; requires complete predeclared trials."""
+    if type(effective_trials) is not int or effective_trials < 1 or len(trial_sharpes) != effective_trials:
+        raise StatisticsError('DSR requires an audited Sharpe for every declared trial')
+    return _deflated_sharpe_from_sample(
+        returns, effective_trials=effective_trials, trial_sharpes=trial_sharpes,
+        risk_free_per_period=risk_free_per_period,
+    )
+
+
+def deflated_sharpe_trial_count_sensitivity(
+        returns: Sequence[float], *, trial_sharpes: Sequence[float],
+        risk_free_per_period: float=0) -> dict:
+    """Bracket current-protocol DSR under perfect-dependence and independence scenarios.
+
+    The endpoints are scenarios, not an estimate of cross-candidate correlation
+    or project-history trial count. The empirical candidate Sharpe spread is
+    held fixed while the expected-maximum trial-count input varies.
+    """
+    count = len(trial_sharpes)
+    if count < 1:
+        raise StatisticsError('DSR sensitivity requires observed candidate Sharpes')
+    cases = []
+    for name, effective_trials in (
+        ('perfect_dependence_lower_bound', 1),
+        ('independent_candidates_upper_bound', count),
+    ):
+        result = _deflated_sharpe_from_sample(
+            returns, effective_trials=effective_trials, trial_sharpes=trial_sharpes,
+            risk_free_per_period=risk_free_per_period,
+        )
+        cases.append({
+            'scenario': name,
+            'effective_trials': effective_trials,
+            'dsr_probability': result['dsr_probability'],
+            'expected_max_sharpe': result['expected_max_sharpe'],
+        })
+    probabilities = [case['dsr_probability'] for case in cases]
+    return {
+        'status': 'scenario_sensitivity_only',
+        'effective_trial_count_range': [1, count],
+        'dsr_probability_range': [min(probabilities), max(probabilities)],
+        'candidate_sharpe_sample_count': count,
+        'scenarios': cases,
+        'correlation_estimated': False,
+        'project_historical_trials': 'not_estimated',
+        'method': 'dsr_effective_trial_count_endpoint_sensitivity_v1',
+    }
+
+
+def _deflated_sharpe_from_sample(returns: Sequence[float], *, effective_trials: int,
+                                 trial_sharpes: Sequence[float],
+                                 risk_free_per_period: float) -> dict:
     vals=list(returns)
-    if len(vals)<4 or type(effective_trials) is not int or effective_trials<1 or len(trial_sharpes)!=effective_trials:
+    if len(vals)<4 or type(effective_trials) is not int or effective_trials<1 or len(trial_sharpes)<1:
         raise StatisticsError('DSR requires >=4 returns and audited trial Sharpe sample')
     if (not _finite_real(risk_free_per_period)
         or any(not _finite_real(x) for x in (*vals,*trial_sharpes))):

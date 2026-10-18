@@ -1,0 +1,7 @@
+{
+  "raw_rows": 7376016,
+  "sampled_quotes": 86394,
+  "sampling": "last_event_time_quote_per_second",
+  "sha256": "8b0ba77526b089682e541fd4d80dcf7d228f50227ec8e5c81ca7431e0e98eb2f",
+  "source_url": "https://data.binance.vision/data/futures/um/daily/bookTicker/ETHUSDT/ETHUSDT-bookTicker-2024-01-01.zip"
+}

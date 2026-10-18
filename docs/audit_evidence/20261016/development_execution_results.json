@@ -1,0 +1,48 @@
+{
+  "schema": "rles.development-execution.v1",
+  "date": "2026-10-16",
+  "plan": "docs/DEVELOPMENT_PLAN_20261016.md",
+  "goal_status": "active",
+  "full_suite": {
+    "passed": 493,
+    "warnings": 46,
+    "seconds": 304.57,
+    "log": "D:\\Program Files\\NautilusTrader_RL_ES\\.artifacts\\audit-development-20261016\\pytest-final.log",
+    "log_sha256": "b28b820298193ff3ac38d30fc00e9ec735f14b08abbb2b3331ecf08f09573670"
+  },
+  "ruff": "PASS: packages tests qa",
+  "mypy": {
+    "status": "PASS",
+    "source_files": 114,
+    "untyped_body_notes_remain": true
+  },
+  "restored_source_verification": {
+    "passed": 69,
+    "shared_dependency_environment": true,
+    "fresh_interpreter": true,
+    "new_source_directory": true,
+    "log_sha256": "de73d720c24847e554e25d91423861f0441e6351e39978a9b9c7b4cd2a952abf"
+  },
+  "isolated_cli_followup": {
+    "passed": 1,
+    "scope": "new interpreter with test-specific project registry"
+  },
+  "train_diagnostics": {
+    "runs": 36,
+    "scaler_refitted": false,
+    "formal_test_holdout_evaluations": 0,
+    "gate": "FAIL_NO_CROSS_WINDOW_BASELINE_ADVANTAGE",
+    "budget_expansion_allowed": false,
+    "summary_sha256": "aabab10514b73cd60b0760b4369d8363a70d375b7623b7f92e90b8bafe63fed9"
+  },
+  "remaining": [
+    "low-capacity signal and feature/decision-cycle diagnostics",
+    "five-layer action attribution and paired retraining",
+    "long-holding history growth and streaming metrics",
+    "historical economic rule evidence",
+    "fresh independent acceptance",
+    "clean dependency installation reproduction"
+  ],
+  "source_manifest": "docs/audit_evidence/20261016/development_source_manifest.json",
+  "preexisting_work_preserved": true
+}

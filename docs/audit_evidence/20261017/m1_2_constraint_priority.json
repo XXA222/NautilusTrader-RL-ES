@@ -1,0 +1,68 @@
+{
+  "schema": "rles.audit-development-evidence.v1",
+  "task": "M1.2 / A02 versioned constraint-priority fitness",
+  "date": "2026-10-17",
+  "status": "PARTIAL",
+  "implementation": {
+    "legacy_protocol": "legacy_weighted_v1 remains the default and retains FitnessSpec behavior",
+    "new_protocol": "constraint_priority_train_inner_v1",
+    "objective_comparison": "legacy weighted FitnessSpec, zero HardRisk-intervention penalty and constraint-priority scoring were each used in matched-budget A2 searches on the same Train-inner archive, frozen R1 actor and common-random-number scenarios, followed by native replay of each selected candidate",
+    "feasibility_rule": "an episode is infeasible if native facts report insolvency at any decision, certified equity at or below aggregated maintenance margin, or a native liquidation order; the new protocol fails closed if certified margin facts are unknown",
+    "infeasible_score": -2.0,
+    "feasible_score": "tanh of configured net return minus configured worst-tail loss and maximum drawdown terms; strictly within (-1,1)",
+    "intervention_policy": "HardRisk intervention frequency is excluded from the new objective",
+    "reason": "FitnessDecision reports episode_insolvency_detected, maintenance_margin_breach_detected and native_liquidation_detected as applicable; reason and feasibility are preserved per candidate and generation, checkpointed, included in stage metadata, and emitted in final bundle lineage",
+    "identity": "new protocol is included in the WorkerLaneDispatcher identity; legacy signature construction remains byte-for-byte unchanged"
+  },
+  "verification": [
+    {
+      "scope": "fitness ordering for profitable, flat, losing, terminal-insolvent and transiently-insolvent episodes; boundedness and intervention neutrality",
+      "result": "passed"
+    },
+    {
+      "scope": "three fitness protocols compared on identical profitable, flat, losing and insolvent episode facts",
+      "result": "passed; deterministic formula-level comparison only"
+    },
+    {
+      "scope": "application protocol config selection and unknown-protocol rejection",
+      "result": "passed"
+    },
+    {
+      "scope": "worker-lane infeasibility mapping and reason aggregation, new-protocol E2 exact-neutral checkpoint restoration, and real A4 recovery with constraint metadata in final bundle lineage",
+      "result": "13 passed, 9 warnings",
+      "duration_seconds": 20.95
+    },
+    {
+      "scope": "matched-budget three-arm A2 searches and same-selected-parameter native Train-inner replay; frozen actor, seed, common scenario fold, population, generations and lane budget shared across arms",
+      "result": "completed; each arm used 8 optimizer evaluations and 10 lane requests; all three arms had zero infeasible candidates. Legacy selected-candidate net return -0.157841%; zero-intervention-penalty and constraint-priority both selected the same parameters and returned -0.150970%.",
+      "evidence": "m1_2_three_objective_train_inner.json",
+      "evidence_sha256": "D4036715857AAF9BD97070E48C28B8FFBE97E5A3DF22BC1A0F7AC821CF0E363F"
+    },
+    {
+      "scope": "native maintenance-margin and liquidation fact classification, unknown-facts refusal, E2 durable recovery and A4 native L6 workflow",
+      "result": "17 passed, 13 warnings; Ruff passed; MyPy passed for 4 source files"
+    },
+    {
+      "scope": "Ruff for ES, Orchestrator, Gym bridge and touched tests",
+      "result": "passed"
+    },
+    {
+      "scope": "MyPy for 6 changed/current-checkout source files",
+      "result": "passed"
+    },
+    {
+      "scope": "git diff --check",
+      "result": "passed; existing CRLF normalization notices only"
+    }
+  ],
+  "limits": [
+    "The three matched searches had no infeasible candidates, so the search itself did not exercise candidate rejection. Unit and integration cases cover insolvency, margin breach, native liquidation and unknown margin-fact refusal.",
+    "The matched native replay uses scenario-only rule assumptions on one Train-inner archive fixture. It is engineering/objective evidence, not historical rule evidence, Validation performance, or profitability certification.",
+    "Settlement and terminal-drain failures remain invalid-run errors rather than candidate scores; unknown native settlement evidence aborts evaluation.",
+    "No Validation, Test or Holdout data was accessed; no promotion or strategy claim follows from this result."
+  ],
+  "data_access": {
+    "market_data_read": false,
+    "validation_test_holdout_access": false
+  }
+}

@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
-from dataclasses import asdict, dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import asdict, dataclass, replace
 from decimal import Decimal
 from hashlib import sha256
 import json
 import os
 from pathlib import Path
+import re
 import sys
 from typing import Any, Callable, Literal, cast
 import uuid
@@ -19,23 +21,26 @@ from rles_compute_runtime.allocation import ComputeAllocation
 from rles_compute_runtime.device import DeviceResolver
 from rles_compute_runtime.errors import DeviceUnavailable
 from rles_compute_runtime.resources import ResourceQuota
-from rles_data.core import DataError, MINUTE_NS, digest
+from rles_data.core import CuratedStore, DataError, MINUTE_NS, digest
 from rles_data.coverage import CoveragePolicy
 from rles_data.features import Scaler
-from rles_data.io import read_curated
 from rles_es_evotorch.actor import ActorGenomeSpec, act, genome_hash
-from rles_es_evotorch.fitness import FitnessSpec
+from rles_es_evotorch.fitness import (ConstraintPriorityFitnessSpec,
+                                      FeasibilityFirstFitnessSpec, FitnessSpec)
 from rles_es_evotorch.provider import EvolutionConfig
 from rles_es_evotorch.soft_risk import SoftRiskDimension, SoftRiskSpace
 from rles_execution import resolve_scenario
-from rles_gym_bridge.historical import HistoricalEnvironmentFactory
+from rles_gym_bridge.historical import HistoricalEnvironmentFactory, load_rules
 from rles_research.ledger import ResearchLedger, SelectionLedger
+from rles_research.access import EvaluationAccess
 from rles_research.native_metrics import native_report
 from rles_rl_sb3.actor import InferenceActor
 from rles_rl_sb3.config import PolicySpec, RLConfig, SeedSpec, TransitionFingerprint
 
 from .es_stage import ESStageExecutor
 from .diagnostics import ExecutionAttribution
+from .research_access import (begin_application_trial, finish_application_trial,
+                              read_registered_train_window, record_development, market_key)
 from .rl_stage import RLStageExecutor
 from .workflow import Orchestrator, ProviderBackedStageRunner, Route, RunSpec, STAGES, StageBudget
 
@@ -69,6 +74,152 @@ def _verify_file(path: Path) -> str:
     if expected != actual:
         raise DataError(f"artifact payload integrity mismatch: {path.name}")
     return actual
+
+
+def _unfilled_order_reason(order: Mapping[str, Any] | None, filled_qty: Decimal) -> str | None:
+    """Describe why the submitted quantity remains unfilled from final native facts."""
+    if order is None:
+        if filled_qty != 0:
+            raise DataError("native fill events have no matching order for execution attribution")
+        return "unknown"
+    try:
+        ordered_qty = Decimal(str(order["quantity"]))
+        native_filled_qty = Decimal(str(order["filled_qty"]))
+    except (KeyError, ArithmeticError, TypeError, ValueError) as exc:
+        raise DataError("native order quantity facts are invalid for execution attribution") from exc
+    if (not ordered_qty.is_finite() or ordered_qty <= 0
+            or not native_filled_qty.is_finite() or not 0 <= native_filled_qty <= ordered_qty
+            or not filled_qty.is_finite() or filled_qty < 0):
+        raise DataError("native order quantity is invalid for execution attribution")
+    if native_filled_qty != filled_qty:
+        raise DataError("native fill events disagree with cumulative order filled quantity")
+    status = str(order.get("status", "unknown")).upper()
+    if status == "FILLED" and filled_qty != ordered_qty:
+        raise DataError("native FILLED status conflicts with cumulative fill quantity")
+    if status == "PARTIALLY_FILLED" and not 0 < filled_qty < ordered_qty:
+        raise DataError("native PARTIALLY_FILLED status conflicts with cumulative fill quantity")
+    if filled_qty >= ordered_qty:
+        return None
+    if status in {"REJECTED", "DENIED"}:
+        for key in ("reject_reason", "reason"):
+            reason = order.get(key)
+            if isinstance(reason, str) and reason.strip():
+                return reason
+        return status
+    if status in {"CANCELED", "CANCELLED", "EXPIRED"}:
+        state = "after_partial_fill" if filled_qty > 0 else "unfilled"
+        return f"{status.lower()}_{state}"
+    if status == "PARTIALLY_FILLED":
+        return "partial_fill_open"
+    if status == "PENDING_CANCEL":
+        return "cancel_pending"
+    if status == "PENDING_UPDATE":
+        return "update_pending"
+    if status in {"ACCEPTED", "SUBMITTED", "WORKING"}:
+        return "awaiting_fill"
+    if status in {"INITIALIZED", "EMULATED", "RELEASED", "TRIGGERED", "VOIDED"}:
+        return f"{status.lower()}_unfilled"
+    return "unknown"
+
+
+def _fee_summary(fills: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Aggregate native commissions without adding unlike currency units."""
+    by_currency: dict[str, Decimal] = {}
+    for fill in fills:
+        commission = fill.get("commission")
+        if not isinstance(commission, str):
+            raise DataError("native fill commission is invalid for execution attribution")
+        parts = commission.split()
+        if len(parts) != 2 or not parts[1]:
+            raise DataError("native fill commission must include amount and currency")
+        try:
+            amount = Decimal(parts[0])
+        except (ArithmeticError, TypeError, ValueError) as exc:
+            raise DataError("native fill commission amount is invalid") from exc
+        if not amount.is_finite():
+            raise DataError("native fill commission amount must be finite")
+        currency = parts[1]
+        by_currency[currency] = by_currency.get(currency, Decimal(0)) + amount
+    ordered = dict(sorted(by_currency.items()))
+    total = sum(ordered.values(), Decimal(0))
+    single_currency = next(iter(ordered), None) if len(ordered) <= 1 else None
+    return {
+        "fee": str(total) if len(ordered) <= 1 else None,
+        "fee_currency": single_currency,
+        "fees_by_currency": {currency: str(amount) for currency, amount in ordered.items()},
+    }
+
+
+def _related_native_order_trace(client_order_id: str, order: Mapping[str, Any] | None,
+                                fills: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Expose final native outcome for an order referenced by a non-submit decision."""
+    filled_qty = sum((Decimal(str(fill["last_qty"])) for fill in fills), Decimal(0))
+    status = str(order.get("status", "unknown")).upper() if order is not None else "unknown"
+    return {
+        "client_order_id": client_order_id,
+        "status": status,
+        "order_quantity": str(order["quantity"]) if order is not None else None,
+        "cumulative_filled_qty": str(filled_qty),
+        "fill_event_ids": [fill["event_id"] for fill in fills],
+        "fees": _fee_summary(fills),
+        "unfilled_reason": _unfilled_order_reason(order, filled_qty),
+    }
+
+
+def _index_native_orders(orders: Sequence[Any]) -> dict[str, dict[str, Any]]:
+    """Index final native order facts without coercing or overwriting identities."""
+    if (not isinstance(orders, Sequence)
+            or isinstance(orders, (str, bytes, bytearray))):
+        raise DataError("native order history must be a sequence")
+    indexed: dict[str, dict[str, Any]] = {}
+    for raw_order in orders:
+        if not isinstance(raw_order, Mapping):
+            raise DataError("native order history fact must be a mapping")
+        identity = raw_order.get("client_order_id")
+        if not isinstance(identity, str) or not identity or identity != identity.strip():
+            raise DataError("native order history lacks valid client identity")
+        order = dict(raw_order)
+        previous = indexed.get(identity)
+        if previous is not None and previous != order:
+            raise DataError("native order identity has conflicting final facts")
+        indexed[identity] = order
+    return indexed
+
+
+def _persist_e1_stage_actor(path: Path, spec: ActorGenomeSpec, genome: np.ndarray,
+                            lane_evidence_hash: str) -> dict[str, str]:
+    vector = np.asarray(genome, dtype=np.float32)
+    actor_hash = genome_hash(spec, vector)
+    if (not isinstance(lane_evidence_hash, str) or len(lane_evidence_hash) != 64
+            or any(char not in "0123456789abcdef" for char in lane_evidence_hash)):
+        raise DataError("E1 stage actor requires a valid lane evidence identity")
+    payload = {
+        "schema": "rles.selected-stage-actor.v1",
+        "stage": "E1",
+        "actor_spec": asdict(spec),
+        "actor_hash": actor_hash,
+        "lane_evidence_hash": lane_evidence_hash,
+        "genome": vector.tolist(),
+    }
+    payload = json.loads(json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False))
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise DataError("existing E1 stage actor artifact is unreadable") from exc
+        if not isinstance(existing, dict) or existing != payload:
+            changed = (", ".join(sorted(key for key in payload if not isinstance(existing, dict)
+                                        or existing.get(key) != payload[key]))
+                       if isinstance(existing, dict) else "payload_shape")
+            raise DataError(f"existing E1 stage actor artifact differs from the completed stage: {changed}")
+        marker = path.with_suffix(path.suffix + ".sha256")
+        if not marker.is_file():
+            marker.write_text(_file_hash(path), encoding="ascii")
+        identity = _verify_file(path)
+    else:
+        identity = _write_verified(path, payload)
+    return {"path": path.name, "sha256": identity, "actor_hash": actor_hash,
+            "lane_evidence_hash": lane_evidence_hash}
 
 
 def _persist_backtest_report(config: dict, bundle_path: str | Path, report: dict, *,
@@ -116,13 +267,15 @@ def _json_identity(value: Any) -> str:
 
 @dataclass(frozen=True)
 class _HistoricalRLEnvFactory:
-    """Spawn-safe R1 factory which rebuilds native state from frozen values."""
+    """Create R1 environments by reusing one local factory or rebuilding frozen worker state."""
     recipe_json: str
     scaler_json: str
     transition_hash: str
     num_envs: int
     episode_steps: int | None
     replay_json: tuple[str, ...] = ()
+    shared_factory: HistoricalEnvironmentFactory | None = None
+    train_access_json: str | None = None
 
     def __call__(self, rank: int, _env_seed: int, phase: str):
         from rles_gym_bridge.episode import EpisodeReplay
@@ -131,17 +284,29 @@ class _HistoricalRLEnvFactory:
                 or phase not in {"train", "eval"}
                 or self.replay_json and len(self.replay_json) != self.num_envs):
             raise DataError("invalid frozen historical R1 environment request")
+        replay = (EpisodeReplay.from_dict(json.loads(self.replay_json[rank]))
+                  if phase == "train" and self.replay_json else None)
+        if (phase == "train" and self.shared_factory is not None and self.num_envs == 1
+                and replay is None):
+            return self.shared_factory.make_env(
+                self.transition_hash, episode_rank=rank, episode_count=self.num_envs,
+                episode_steps=self.episode_steps,
+            )
         recipe = json.loads(self.recipe_json)
         scaler_values = json.loads(self.scaler_json)
         if not isinstance(recipe, dict) or not isinstance(scaler_values, dict):
             raise DataError("frozen historical R1 recipe is not a JSON object")
         scaler_values["mean"] = tuple(scaler_values["mean"])
         scaler_values["std"] = tuple(scaler_values["std"])
+        prepared_store = None
+        if self.train_access_json is not None:
+            access_config = json.loads(self.train_access_json)
+            if not isinstance(access_config, dict):
+                raise DataError("frozen R1 Train access is not a JSON object")
+            prepared_store = _read_registered_train_store(access_config)
         factory = HistoricalEnvironmentFactory(**{
-            **recipe, "scaler": Scaler(**scaler_values),
+            **recipe, "scaler": Scaler(**scaler_values), "prepared_store": prepared_store,
         })
-        replay = (EpisodeReplay.from_dict(json.loads(self.replay_json[rank]))
-                  if phase == "train" and self.replay_json else None)
         return factory.make_env(
             self.transition_hash, replay=replay, episode_rank=rank,
             episode_count=self.num_envs, episode_steps=self.episode_steps,
@@ -153,11 +318,35 @@ def load_config(path: str | Path) -> dict:
     config = json.loads(source.read_text(encoding="utf-8"))
     allowed = {"environment", "evaluation", "route", "algorithm", "steps", "population", "generations",
                "seed", "hidden_layers", "normalize_observation", "hyperparameters", "output", "distillation",
-               "checkpoint_interval_steps", "wfo", "resume_checkpoint", "rl_device", "es_input_scaling",
+               "checkpoint_interval_steps", "wfo", "resume_checkpoint", "rl_device", "rl_gpu_memory_fraction", "es_input_scaling",
                "enforce_worker_memory_limit", "worker_ram_bytes", "reward_scale",
-               "rl_num_envs", "rl_episode_steps"}
+               "rl_num_envs", "rl_episode_steps", "rl_corpus_episodes", "rl_corpus_episode_steps",
+               "es_fitness", "es_scenario_fold_id", "es_candidate_evidence", "train_data_access"}
     if not isinstance(config, dict) or set(config) - allowed:
         raise DataError("unknown application configuration fields")
+    access = config.get("train_data_access")
+    if "train_data_access" in config:
+        if (not isinstance(access, dict)
+                or set(access) not in ({"start_ns", "end_ns", "marker_sha256", "label"},
+                                       {"start_ns", "end_ns", "marker_sha256", "label", "source_mode"})
+                or type(access.get("start_ns")) is not int
+                or type(access.get("end_ns")) is not int
+                or access["start_ns"] >= access["end_ns"]
+                or not isinstance(access.get("marker_sha256"), str)
+                or not isinstance(access.get("label"), str)
+                or not access["label"].startswith("train-")
+                or not isinstance(access.get("source_mode", "row_group_scoped_v1"), str)
+                or access.get("source_mode", "row_group_scoped_v1") not in {
+                    "row_group_scoped_v1", "whole_snapshot_isolated_v1",
+                }):
+            raise DataError("invalid scoped Train data access configuration")
+    _es_fitness_spec(config)
+    fold_id = config.get("es_scenario_fold_id")
+    if (fold_id is not None and (not isinstance(fold_id, str)
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", fold_id) is None)):
+        raise DataError("es_scenario_fold_id must be a 1-128 character stable identifier")
+    if type(config.get("es_candidate_evidence", False)) is not bool:
+        raise DataError("es_candidate_evidence must be Boolean")
     for name in ("market_path", "rules_path"):
         p = Path(config["environment"][name])
         config["environment"][name] = str((p if p.is_absolute() else source.parent / p).resolve())
@@ -172,31 +361,125 @@ def load_config(path: str | Path) -> dict:
     return config
 
 
-def prepare(config: dict) -> HistoricalEnvironmentFactory:
-    return HistoricalEnvironmentFactory(**{**config["environment"], "split": "train_inner", "fit_scaler": True,
-                                           "reward_scale": config.get("reward_scale", 1.0)})
+def _es_fitness_spec(config: dict) -> FitnessSpec | ConstraintPriorityFitnessSpec:
+    raw = config.get("es_fitness", {})
+    if not isinstance(raw, dict):
+        raise DataError("es_fitness must be a JSON object")
+    try:
+        protocol = raw.get("protocol", "legacy_weighted_v1")
+        if protocol == "constraint_priority_train_inner_v1":
+            weights = {key: value for key, value in raw.items() if key != "protocol"}
+            if set(weights) - (set(ConstraintPriorityFitnessSpec.__dataclass_fields__) - {"protocol"}):
+                raise DataError("constraint-priority es_fitness has unknown fields")
+            return ConstraintPriorityFitnessSpec(**weights)
+        if protocol == "constraint_priority_train_inner_v2":
+            weights = {key: value for key, value in raw.items() if key != "protocol"}
+            if set(weights) - (set(FeasibilityFirstFitnessSpec.__dataclass_fields__) - {"protocol"}):
+                raise DataError("feasibility-first es_fitness has unknown fields")
+            return FeasibilityFirstFitnessSpec(**weights)
+        if protocol != "legacy_weighted_v1" or set(raw) - set(FitnessSpec.__dataclass_fields__) - {"protocol"}:
+            raise DataError("es_fitness must declare legacy_weighted_v1, constraint_priority_train_inner_v1, or constraint_priority_train_inner_v2")
+        weights = {key: value for key, value in raw.items() if key != "protocol"}
+        return FitnessSpec(**weights)
+    except (TypeError, ValueError) as exc:
+        raise DataError(f"invalid es_fitness: {exc}") from exc
+
+
+def _training_factory_recipe_hash(config: dict) -> str:
+    recipe = {**config["environment"], "split": "train_inner", "fit_scaler": True,
+              "reward_scale": config.get("reward_scale", 1.0)}
+    return digest(recipe)
+
+
+def _read_registered_train_store(config: dict) -> CuratedStore:
+    access = config.get("train_data_access")
+    if (not isinstance(access, dict)
+            or set(access) not in ({"start_ns", "end_ns", "marker_sha256", "label"},
+                                   {"start_ns", "end_ns", "marker_sha256", "label", "source_mode"})
+            or type(access.get("start_ns")) is not int
+            or type(access.get("end_ns")) is not int
+            or not isinstance(access.get("marker_sha256"), str)
+            or not isinstance(access.get("label"), str)
+            or not isinstance(access.get("source_mode", "row_group_scoped_v1"), str)
+            or access.get("source_mode", "row_group_scoped_v1") not in {
+                "row_group_scoped_v1", "whole_snapshot_isolated_v1",
+            }):
+        raise DataError("invalid scoped Train data access configuration")
+    market_store = read_registered_train_window(
+        config, {"start_ns": access["start_ns"], "end_ns": access["end_ns"]},
+        marker_sha256=access["marker_sha256"], label=access["label"],
+        allow_legacy_isolated_snapshot=(
+            access.get("source_mode", "row_group_scoped_v1") == "whole_snapshot_isolated_v1"
+        ),
+    )
+    rules = load_rules(config["environment"]["rules_path"])
+    return CuratedStore((*market_store.events, *rules))
+
+
+def prepare(config: dict, *, fit_scaler: bool = True, scaler: Scaler | None = None,
+            compact_report_snapshots: bool = False,
+            require_scoped_train_access: bool = False) -> HistoricalEnvironmentFactory:
+    access = config.get("train_data_access")
+    if require_scoped_train_access and access is None:
+        raise DataError("this Train-only operation requires registered scoped Train data access")
+    if "train_data_access" in config and access is None:
+        raise DataError("scoped Train data access must be an explicit object")
+    prepared_store = None
+    if access is None:
+        record_development(config, config["environment"], label="train")
+    else:
+        prepared_store = _read_registered_train_store(config)
+    factory = HistoricalEnvironmentFactory(**{
+        **config["environment"], "split": "train_inner", "fit_scaler": fit_scaler,
+        "scaler": scaler, "compact_report_snapshots": compact_report_snapshots,
+        "reward_scale": config.get("reward_scale", 1.0), "prepared_store": prepared_store,
+    })
+    factory.application_training_recipe_hash = _training_factory_recipe_hash(config)
+    if access is not None:
+        setattr(factory, "application_registered_train_access", digest([config["environment"], access]))
+    return factory
 
 
 def audit_market(config: dict) -> dict:
-    """Audit immutable market facts even when separately sourced rules are absent."""
-    environment = config["environment"]
-    evaluation = config.get("evaluation")
-    if not isinstance(evaluation, dict):
-        raise DataError("market audit requires explicit training and evaluation windows")
-    store = read_curated(environment["market_path"])
+    """Audit immutable Train-inner market facts through the registered scoped reader."""
+    if not isinstance(config, dict) or "evaluation" in config:
+        raise DataError("market audit is Train-only and rejects evaluation configuration")
+    access = config.get("train_data_access")
+    if (not isinstance(access, dict)
+            or set(access) not in ({"start_ns", "end_ns", "marker_sha256", "label"},
+                                   {"start_ns", "end_ns", "marker_sha256", "label", "source_mode"})
+            or type(access.get("start_ns")) is not int
+            or type(access.get("end_ns")) is not int
+            or not isinstance(access.get("marker_sha256"), str)
+            or not isinstance(access.get("label"), str)
+            or not isinstance(access.get("source_mode", "row_group_scoped_v1"), str)
+            or access.get("source_mode", "row_group_scoped_v1") not in {
+                "row_group_scoped_v1", "whole_snapshot_isolated_v1",
+            }):
+        raise DataError("market audit requires explicit registered Train data access")
+    environment = config.get("environment")
+    if (not isinstance(environment, dict)
+            or not {"instrument", "start_ns", "end_ns", "coverage_policy"} <= set(environment)
+            or environment.get("split", "train_inner") != "train_inner"):
+        raise DataError("market audit requires a complete Train-inner market window")
+    store = read_registered_train_window(
+        config, {"start_ns": access["start_ns"], "end_ns": access["end_ns"]},
+        marker_sha256=access["marker_sha256"], label=access["label"],
+        allow_legacy_isolated_snapshot=(
+            access.get("source_mode", "row_group_scoped_v1") == "whole_snapshot_isolated_v1"
+        ),
+    )
     instrument = environment["instrument"]
-    splits = {}
-    for name, values in (("train", environment), ("evaluation", evaluation)):
-        if not {"start_ns", "end_ns", "coverage_policy"} <= set(values):
-            raise DataError(f"{name} market audit window is incomplete")
-        report = store.quality(
-            start_ns=values["start_ns"], end_ns=values["end_ns"],
-            expected_instruments=(instrument,),
-            coverage_policy=CoveragePolicy(**values["coverage_policy"]),
-        )
-        splits[name] = asdict(report)
-    return {"schema": "rles.market-audit.v1", "instrument": instrument,
-            "snapshot_hash": store.snapshot_hash, "splits": splits}
+    report = store.quality(
+        start_ns=environment["start_ns"], end_ns=environment["end_ns"],
+        expected_instruments=(instrument,),
+        coverage_policy=CoveragePolicy(**environment["coverage_policy"]),
+    )
+    return {"schema": "rles.market-audit.v2", "instrument": instrument,
+            "snapshot_hash": store.snapshot_hash,
+            "access_scope": {"split": "train_inner", "start_ns": environment["start_ns"],
+                             "end_ns": environment["end_ns"]},
+            "splits": {"train": asdict(report)}}
 
 
 def _action_dynamics(values: np.ndarray) -> dict[str, float | int]:
@@ -254,15 +537,30 @@ class _ActionFeatureResponse:
 
 def rollout(factory: HistoricalEnvironmentFactory, predict, *, seed: int,
             soft_parameters: dict | None = None,
-            collect_observations: bool = True) -> tuple[dict, np.ndarray]:
-    env = factory.make_env(soft_multipliers=soft_parameters)
+            collect_observations: bool = True, episode_rank: int = 0,
+            episode_count: int = 1, episode_steps: int | None = None,
+            reset_options: dict | None = None,
+            include_account_rows: bool = True,
+            include_execution_trace: bool = False) -> tuple[dict, np.ndarray]:
+    if type(include_execution_trace) is not bool:
+        raise DataError("include_execution_trace must be Boolean")
+    env_options: dict[str, Any] = {"soft_multipliers": soft_parameters}
+    if episode_rank != 0 or episode_count != 1 or episode_steps is not None:
+        env_options.update(episode_rank=episode_rank, episode_count=episode_count,
+                           episode_steps=episode_steps)
+    env = factory.make_env(**env_options)
     observations = []
     requested_actions = []
     soft_targets = []
     risk_targets = []
+    rounded_targets: list[float | None] = []
     executed_actions = []
     plan_actions: Counter[str] = Counter()
     plan_reasons: Counter[str] = Counter()
+    decision_trace: list[dict[str, Any]] = []
+    terminal_settlement_trace: list[dict[str, Any]] = []
+    submitted_client_order_ids: set[str] = set()
+    decision_identity_errors = 0
     missing_plans = 0
     interventions = hard_interventions = soft_adjustment_steps = 0
     soft_adjustment_total = hard_adjustment_total = total_adjustment = 0.0
@@ -272,7 +570,9 @@ def rollout(factory: HistoricalEnvironmentFactory, predict, *, seed: int,
     market_indices = tuple(i for i, name in enumerate(schema_names) if name.startswith("market."))
     action_feature_response = _ActionFeatureResponse(tuple(schema_names[i] for i in market_indices))
     try:
-        observation, _ = env.reset(seed=seed)
+        reset_result = (env.reset(seed=seed) if reset_options is None
+                        else env.reset(seed=seed, options=reset_options))
+        observation, reset_info = reset_result
         if collect_observations:
             observations.append(observation.copy())
         while True:
@@ -281,6 +581,14 @@ def rollout(factory: HistoricalEnvironmentFactory, predict, *, seed: int,
             observation, _, terminated, truncated, info = env.step(action)
             if collect_observations:
                 observations.append(observation.copy())
+            terminal_settlement = info.get("terminal_settlement")
+            if terminal_settlement is not None:
+                if not isinstance(terminal_settlement, dict):
+                    raise DataError("native terminal settlement trace is malformed")
+                terminal_settlement_trace.append({
+                    "decision_id": info.get("execution_decision_id"),
+                    **terminal_settlement,
+                })
             requested_action = float(info["requested_action"])
             executed_action = float(info["policy_executed_action_pre_terminal"])
             if not np.isfinite(requested_action) or not np.isfinite(executed_action):
@@ -296,6 +604,10 @@ def rollout(factory: HistoricalEnvironmentFactory, predict, *, seed: int,
                     raise DataError("native risk targets are not finite")
                 soft_targets.append(float(soft_target))
                 risk_targets.append(float(risk_target))
+            rounded_target = info.get("quantity_rounded_target_exposure")
+            if rounded_target is not None and not np.isfinite(rounded_target):
+                raise DataError("quantity-rounded target exposure is not finite")
+            rounded_targets.append(None if rounded_target is None else float(rounded_target))
             executed_actions.append(executed_action)
             plan_action = info.get("execution_plan_action")
             plan_reason = info.get("execution_plan_reason")
@@ -307,6 +619,66 @@ def rollout(factory: HistoricalEnvironmentFactory, predict, *, seed: int,
             else:
                 plan_actions[plan_action] += 1
                 plan_reasons[plan_reason] += 1
+            decision_id = info.get("execution_decision_id")
+            plan_id = info.get("execution_plan_id")
+            idempotency_key = info.get("execution_idempotency_key")
+            client_order_id = info.get("execution_client_order_id")
+            if (not isinstance(decision_id, str) or not decision_id
+                    or not isinstance(plan_id, str) or not plan_id
+                    or not isinstance(idempotency_key, str) or not idempotency_key
+                    or (plan_action == "SUBMIT") != isinstance(client_order_id, str)):
+                decision_identity_errors += 1
+            else:
+                if plan_action == "SUBMIT":
+                    expected_client_id = "RLES-" + sha256(
+                        idempotency_key.encode("utf-8")).hexdigest()
+                    if client_order_id != expected_client_id:
+                        decision_identity_errors += 1
+                    if isinstance(client_order_id, str):
+                        submitted_client_order_ids.add(client_order_id)
+                if include_execution_trace:
+                    try:
+                        policy_equity_before = Decimal(str(info["policy_equity_before"]))
+                        policy_equity_after = Decimal(str(info["policy_equity_after"]))
+                        policy_equity_change = Decimal(str(info["policy_equity_change"]))
+                    except (KeyError, ArithmeticError, TypeError, ValueError) as exc:
+                        raise DataError("native policy-barrier equity facts are invalid") from exc
+                    policy_equity_currency = info.get("policy_equity_currency")
+                    if (not policy_equity_before.is_finite() or not policy_equity_after.is_finite()
+                            or not policy_equity_change.is_finite()
+                            or policy_equity_after - policy_equity_before != policy_equity_change
+                            or not isinstance(policy_equity_currency, str)
+                            or not policy_equity_currency):
+                        raise DataError("native policy-barrier equity facts do not reconcile")
+                    decision_trace.append({
+                        "decision_id": decision_id,
+                        "decision_ts_ns": int(info["decision_ts_ns"]),
+                        "plan_id": plan_id,
+                        "idempotency_key": idempotency_key,
+                        # Actor output is a normalized Box action, not an
+                        # exposure target. Keep the legacy alias for existing
+                        # diagnostic artifacts while making units explicit.
+                        "actor_raw_action": requested_action,
+                        "actor_raw_action_unit": "normalized_box[-1,1]",
+                        "risk_target_unit": "fraction_of_risk_budget",
+                        "actor_requested_target": requested_action,
+                        "soft_target": info.get("risk_soft_target"),
+                        "hard_risk_target": info.get("risk_adjusted_target"),
+                        "quantity_rounded_target": rounded_target,
+                        "hard_risk_adjustment": float(info["risk_hard_adjustment"]),
+                        "action": plan_action,
+                        "reason": plan_reason,
+                        "delta_qty": info.get("execution_delta_qty"),
+                        "client_order_id": client_order_id,
+                        "related_order_ids": list(info.get("execution_related_order_ids", ())),
+                        "executed_exposure": executed_action,
+                        "net_exposure": float(info["net_exposure"]),
+                        "policy_equity_before": str(policy_equity_before),
+                        "policy_equity_after": str(policy_equity_after),
+                        "policy_equity_change": str(policy_equity_change),
+                        "equity_currency": policy_equity_currency,
+                        "market_features": dict(info["market_features"]),
+                    })
             interventions += int(float(info["risk_guard_intervention"]) > 0)
             soft_amount = float(info["risk_soft_adjustment"])
             hard_amount = float(info["risk_hard_adjustment"])
@@ -316,6 +688,7 @@ def rollout(factory: HistoricalEnvironmentFactory, predict, *, seed: int,
                 raise DataError("native risk adjustment attribution is invalid")
             components_known = components_known and known
             attribution.observe(requested=requested_action, executed=executed_action,
+                                rounded=None if rounded_target is None else float(rounded_target),
                                 soft=soft_target if known else None,
                                 risk=risk_target if known else None,
                                 action=plan_action, reason=plan_reason)
@@ -330,7 +703,90 @@ def rollout(factory: HistoricalEnvironmentFactory, predict, *, seed: int,
             factory.snapshots, fill_references=factory.fill_references,
             sample_interval_ns=MINUTE_NS,
             allow_price_improvement=factory.execution.fill(factory.mode).data_granularity == "quote",
+            include_account_rows=include_account_rows,
+            linear_equity_rounding=Decimal("0.00000001"),
         )
+        native_orders: dict[str, dict] = {}
+        final_snapshot = factory.snapshots[-1] if factory.snapshots else None
+        native_orders = _index_native_orders(getattr(final_snapshot, "all_orders", ()))
+        fills_by_order: dict[str, list[dict]] = {}
+        for fill in report.get("fills", ()):
+            identity = fill.get("client_order_id")
+            if not isinstance(identity, str) or not identity or identity != identity.strip():
+                raise DataError("native fill history lacks client identity")
+            fills_by_order.setdefault(identity, []).append(fill)
+        if decision_identity_errors:
+            report["execution_decision_diagnostics"] = {
+                "components_known": False,
+                "decision_count": len(requested_actions),
+                "missing_or_invalid_identity_count": decision_identity_errors,
+                "action_counts": dict(sorted(plan_actions.items())),
+                "reason_counts": dict(sorted(plan_reasons.items())),
+            }
+        else:
+            submitted_ids = submitted_client_order_ids
+            decision_status_counts: Counter[str] = Counter()
+            submitted_with_fills = 0
+            unfilled_reasons: Counter[str] = Counter()
+            for identity in submitted_ids:
+                order = native_orders.get(identity)
+                order_fills = fills_by_order.get(identity, [])
+                filled_qty = sum((Decimal(str(fill["last_qty"]))
+                                  for fill in order_fills), Decimal(0))
+                status = str(order.get("status", "unknown")).upper() if order else "unknown"
+                decision_status_counts[status] += 1
+                submitted_with_fills += int(bool(order_fills))
+                reason = _unfilled_order_reason(order, filled_qty)
+                if reason is not None:
+                    unfilled_reasons[reason] += 1
+            if include_execution_trace:
+                for row in decision_trace:
+                    if row["action"] != "SUBMIT":
+                        row["submission_status"] = "not_submitted"
+                        row["native_order_status"] = None
+                        row["related_native_orders"] = [
+                            _related_native_order_trace(
+                                identity, native_orders.get(identity), fills_by_order.get(identity, []),
+                            ) for identity in row["related_order_ids"]
+                        ]
+                        row["fills"] = []
+                        row["filled_qty"] = "0"
+                        row.update(_fee_summary([]))
+                        row["unfilled_reason"] = None
+                        continue
+                    identity = row["client_order_id"]
+                    order = native_orders.get(identity)
+                    order_fills = fills_by_order.get(identity, [])
+                    filled_qty = sum((Decimal(str(fill["last_qty"]))
+                                      for fill in order_fills), Decimal(0))
+                    fee_summary = _fee_summary(order_fills)
+                    status = str(order.get("status", "unknown")).upper() if order else "unknown"
+                    row["submission_status"] = "native_order_observed" if order else "unknown"
+                    row["native_order_status"] = status
+                    row["fills"] = [{
+                        "event_id": fill["event_id"], "trade_id": fill.get("trade_id"),
+                        "quantity": fill["last_qty"], "price": fill["last_px"],
+                        "fee": fill["commission"], "ts_event": fill["ts_event"],
+                    } for fill in order_fills]
+                    row["filled_qty"] = str(filled_qty)
+                    row.update(fee_summary)
+                    row["unfilled_reason"] = _unfilled_order_reason(order, filled_qty)
+            report["execution_decision_diagnostics"] = {
+                "components_known": decision_identity_errors == 0,
+                "decision_count": len(requested_actions),
+                "missing_or_invalid_identity_count": 0,
+                "submit_decision_count": plan_actions["SUBMIT"],
+                "native_order_count": sum(identity in native_orders for identity in submitted_ids),
+                "submitted_decisions_with_fills": submitted_with_fills,
+                "native_order_status_counts": dict(sorted(decision_status_counts.items())),
+                "unfilled_reason_counts": dict(sorted(unfilled_reasons.items())),
+                "action_counts": dict(sorted(plan_actions.items())),
+                "reason_counts": dict(sorted(plan_reasons.items())),
+                "trace_included": include_execution_trace,
+            }
+            if include_execution_trace:
+                report["execution_decision_trace"] = decision_trace
+                report["terminal_settlement_trace"] = terminal_settlement_trace
         report["risk_guard_interventions"] = interventions
         report["risk_soft_adjustment_steps"] = soft_adjustment_steps
         report["risk_hard_interventions"] = hard_interventions
@@ -338,6 +794,25 @@ def rollout(factory: HistoricalEnvironmentFactory, predict, *, seed: int,
         report["risk_hard_adjustment_total"] = hard_adjustment_total
         report["risk_total_adjustment"] = total_adjustment
         report["risk_intervention_components_known"] = components_known
+        if (rounded_targets and len(rounded_targets) == len(requested_actions)
+                and all(value is not None for value in rounded_targets)
+                and len(risk_targets) == len(requested_actions)):
+            rounded = np.asarray(rounded_targets, dtype=np.float64)
+            risk_values = np.asarray(risk_targets, dtype=np.float64)
+            report["quantity_rounding_diagnostics"] = {
+                "components_known": True,
+                "count": int(rounded.size),
+                "risk_adjusted_target_abs_mean": float(np.mean(np.abs(risk_values))),
+                "quantity_rounded_target_abs_mean": float(np.mean(np.abs(rounded))),
+                "risk_to_rounded_target_gap_abs_mean": float(np.mean(np.abs(risk_values - rounded))),
+                "rounded_target_to_actual_exposure_gap_abs_mean": float(np.mean(
+                    np.abs(rounded - np.asarray(executed_actions, dtype=np.float64)))),
+            }
+        else:
+            report["quantity_rounding_diagnostics"] = {
+                "components_known": False,
+                "count": sum(value is not None for value in rounded_targets),
+            }
         requested = np.asarray(requested_actions, dtype=np.float64)
         executed = np.asarray(executed_actions, dtype=np.float64)
         action_gap = np.abs(requested - executed)
@@ -390,10 +865,57 @@ def rollout(factory: HistoricalEnvironmentFactory, predict, *, seed: int,
         }
         report["execution_attribution"] = attribution.report()
         report["action_market_response"] = action_feature_response.report()
+        if isinstance(reset_info, dict) and "decision_ts_ns" in reset_info:
+            report["initial_decision_ts_ns"] = int(reset_info["decision_ts_ns"])
+            report["episode_window"] = reset_info.get("episode_window")
         return report, (np.stack(observations) if collect_observations
                         else np.empty((0, observation.size), dtype=np.float32))
     finally:
         env.close()
+
+
+def _fixed_observation_corpus(factory: HistoricalEnvironmentFactory, predict, *, seed: int,
+                              episodes: int, episode_steps: int) -> tuple[np.ndarray, dict[str, Any]]:
+    """Build a bounded, deterministic parity/distillation corpus across exclusive Train lanes."""
+    full_steps = len(factory.rows) - 3
+    if (type(episodes) is not int or not 1 <= episodes <= 32
+            or type(episode_steps) is not int or episode_steps < 2
+            or episode_steps > full_steps // episodes):
+        raise DataError("fixed observation corpus must fit in 1-32 exclusive Train lanes")
+    offsets = _episode_start_offsets(
+        train_window_steps=full_steps, episode_steps=episode_steps, num_envs=episodes,
+    )
+    batches = []
+    observed_windows = []
+    for rank in range(episodes):
+        report, observations = rollout(
+            factory, predict, seed=(seed + rank) % 2**32, episode_rank=rank,
+            episode_count=episodes, episode_steps=episode_steps,
+            reset_options={"rles_episode_index": 1},
+        )
+        if observations.shape[0] != episode_steps + 1:
+            raise DataError("fixed observation corpus window ended before its registered length")
+        decision_ts = int(report["initial_decision_ts_ns"])
+        start_offset = int(np.searchsorted(
+            [row.decision_ts_ns for row in factory.rows], decision_ts,
+        ))
+        observed_windows.append({"rank": rank, "initial_decision_ts_ns": decision_ts,
+                                 "start_offset": start_offset,
+                                 "episode_window": report["episode_window"]})
+        batches.append(observations)
+    corpus = np.ascontiguousarray(np.concatenate(batches, axis=0), dtype=np.float32)
+    return corpus, {
+        "sampling_policy": "rank_exclusive_deterministic_train_windows_v2",
+        "episode_count": episodes,
+        "episode_steps": episode_steps,
+        "initial_start_offsets": list(offsets),
+        "observed_windows": observed_windows,
+        "unique_decision_timestamps": episodes * episode_steps,
+        "observation_rows_including_window_starts": int(corpus.shape[0]),
+        "observation_width": int(corpus.shape[1]),
+        "observation_sha256": sha256(corpus.tobytes(order="C")).hexdigest(),
+        "scope": "train-only fixed parity/distillation corpus",
+    }
 
 
 def _evaluation_factory(config: dict, training: HistoricalEnvironmentFactory) -> HistoricalEnvironmentFactory:
@@ -406,6 +928,7 @@ def _evaluation_factory(config: dict, training: HistoricalEnvironmentFactory) ->
         raise DataError("training may query only the declared Validation split")
     if evaluation["start_ns"] < training.end_ns:
         raise DataError("evaluation window overlaps training")
+    record_development(config, evaluation, label="validation")
     return HistoricalEnvironmentFactory(**{**config["environment"], **evaluation, "split": "validation",
                                             "fit_scaler": False, "scaler": training.scaler,
                                             "reward_scale": training.reward_config.reward_scale})
@@ -474,6 +997,15 @@ def _rl_sampling_policy(config: dict) -> tuple[int, int | None]:
     return num_envs, episode_steps
 
 
+def _fixed_corpus_policy(config: dict) -> tuple[int, int]:
+    episodes = config.get("rl_corpus_episodes", 1)
+    episode_steps = config.get("rl_corpus_episode_steps", 256)
+    if (type(episodes) is not int or episodes != 1
+            or type(episode_steps) is not int or episode_steps < 2):
+        raise DataError("fixed observation corpus currently requires one episode and episode steps >= 2")
+    return episodes, episode_steps
+
+
 def _training_coverage_report(*, rl_steps: int, num_envs: int,
                               train_window_decision_steps: int,
                               episode_decision_steps: int,
@@ -537,17 +1069,66 @@ def _worker_memory_policy(config: dict) -> tuple[bool, int, dict]:
     return enforce_worker_memory_limit, worker_ram_bytes, worker_resources
 
 
-def train(config: dict, *, evaluate: bool = True) -> dict:
+def _gpu_lease_identity(learner_device: str) -> dict[str, Any] | None:
+    """Return a user-wide lock identity shared by distinct run output folders."""
+    if learner_device == "cpu":
+        return None
+    if learner_device != "cuda":
+        raise DataError("GPU lease requires a resolved cpu/cuda learner device")
+    override = os.environ.get("RLES_GPU_LEASE_DIRECTORY")
+    if override is not None:
+        if not override.strip():
+            raise DataError("RLES_GPU_LEASE_DIRECTORY cannot be empty")
+        root = Path(override).expanduser()
+        if not root.is_absolute():
+            raise DataError("RLES_GPU_LEASE_DIRECTORY must be an absolute shared path")
+    elif os.name == "nt":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        root = (Path(local_app_data) if local_app_data else
+                Path.home() / "AppData" / "Local")
+        root = root / "NautilusTrader-RL-ES" / "GPU-leases"
+    else:
+        state_home = os.environ.get("XDG_STATE_HOME")
+        root = (Path(state_home) if state_home else Path.home() / ".local" / "state")
+        root = root / "nautilus-trader-rl-es" / "GPU-leases"
+    return {"scope": "user_shared", "directory": str(root.resolve()), "gpu_index": 0}
+
+
+def _rl_gpu_memory_fraction(value: Any, learner_device: str) -> float | None:
+    """Validate the optional PyTorch caching-allocator budget."""
+    if value is None:
+        return None
+    if (type(value) not in (int, float) or not np.isfinite(value)
+            or not 0 < value <= 1):
+        raise DataError("rl_gpu_memory_fraction must be finite numeric in (0,1]")
+    if learner_device != "cuda":
+        raise DataError("rl_gpu_memory_fraction requires rl_device=cuda")
+    return float(value)
+
+
+def train(config: dict, *, evaluate: bool = True,
+          prepared_training: HistoricalEnvironmentFactory | None = None) -> dict:
+    if "train_data_access" in config and evaluate:
+        raise DataError("scoped Train data access requires evaluate=False")
     import torch
 
     torch.set_num_threads(1)
+    fitness_spec = _es_fitness_spec(config)
     route = Route(config.get("route", "A0"))
     rl_device = _resolve_rl_device(config.get("rl_device", "cpu"), route)
+    gpu_lease = _gpu_lease_identity(rl_device)
+    rl_gpu_memory_fraction = _rl_gpu_memory_fraction(config.get("rl_gpu_memory_fraction"), rl_device)
     rl_num_envs, requested_episode_steps = _rl_sampling_policy(config)
+    corpus_episodes, corpus_episode_steps = _fixed_corpus_policy(config)
     if "R1" not in STAGES[route] and (rl_num_envs != 1 or requested_episode_steps is not None):
         raise DataError(f"route {route.value} has no R1 learner; RL episode sampling is unsupported")
     enforce_worker_memory_limit, worker_ram_bytes, worker_resources = _worker_memory_policy(config)
-    training = prepare(config)
+    if prepared_training is None:
+        training = prepare(config)
+    else:
+        if getattr(prepared_training, "application_training_recipe_hash", None) != _training_factory_recipe_hash(config):
+            raise DataError("reused Train factory does not match this candidate's frozen recipe")
+        training = prepared_training
     algorithm = config.get("algorithm", "PPO")
     steps, population, generations = config.get("steps", 32), config.get("population", 4), config.get("generations", 1)
     seed = config.get("seed", 31)
@@ -569,7 +1150,7 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
             raise DataError("saved PPO output bridge flag must be Boolean")
     policy_hidden = (*hidden, 1) if canonical_ppo_output else hidden
     risk_space = SoftRiskSpace(tuple(SoftRiskDimension(name, 0.1, 1.0)
-                                     for name in ("exposure_multiplier", "drawdown_throttle", "volatility_throttle")))
+                                     for name in ("exposure_multiplier", "drawdown_throttle")))
     action_hash = digest({"target_net_exposure": [-1, 1], "shape": [1]})
     fingerprint = TransitionFingerprint(
         env_contract=digest("NautilusBarrierEnv-v0.4.0"), dataset=training.store.snapshot_hash,
@@ -592,7 +1173,7 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
                       "initial_start_offsets": episode_offsets,
                   },
               })),
-        terminal=digest("force_flatten_with_cost"),
+        terminal=digest("force_flatten_with_cost:finite_settlement_no_bootstrap_v1"),
     )
     hyperparameters = config.get("hyperparameters", {"n_steps": 8, "batch_size": 8, "n_epochs": 1} if algorithm == "PPO" else
                                 {"learning_starts": 8, "buffer_size": 256, "batch_size": 8, "train_freq": 1, "gradient_steps": 1})
@@ -604,10 +1185,18 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
                              (seed + rl_num_envs + 2) % 2**32,
                          ),
                          hyperparameters=hyperparameters, device=rl_device,
-                         normalize_observation=config.get("normalize_observation", False))
-    budgets = {stage: StageBudget(max_rl_steps=steps) if stage == "R1" else
-               StageBudget(max_population=population, max_generations=generations, max_evaluations=population * generations,
-                           max_lane_requests=population * generations) for stage in STAGES[route]}
+                         normalize_observation=config.get("normalize_observation", False),
+                         cuda_allocator_fraction=rl_gpu_memory_fraction)
+    budgets = {
+        stage: (StageBudget(max_rl_steps=steps) if stage == "R1" else
+                StageBudget(
+                    max_population=population,
+                    max_generations=generations,
+                    max_evaluations=(population + int(stage == "E2")) * generations,
+                    max_lane_requests=(population + int(stage == "E2")) * generations,
+                ))
+        for stage in STAGES[route]
+    }
     output = Path(config["output"])
     resume_checkpoint = None
     resume_stage = None
@@ -646,6 +1235,7 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
                   if key not in {"output", "resume_checkpoint"}}
     run_recipe_hash = digest(run_recipe)
     saved_run = None
+    e2_neutral_baseline = True
     if output.exists():
         resumable_routes = ({"R1": {Route.A0, Route.A2, Route.A3, Route.A4},
                              "E1": {Route.A1, Route.A3, Route.A4},
@@ -674,20 +1264,35 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
             if rl_manifest.get("num_timesteps") != steps:
                 raise DataError("existing R1 actor can only be reused from a full-budget checkpoint")
         saved_run = json.loads(run_manifest_path.read_text(encoding="utf-8"))
-        if (not isinstance(saved_run, dict)
-                or set(saved_run) not in (
+        allowed_manifest_sets = (
                     {"schema", "run_id", "attempt_id", "recipe_hash", "run_fingerprint"},
                     {"schema", "run_id", "attempt_id", "recipe_hash", "run_fingerprint", "actor_spec"},
                     {"schema", "run_id", "attempt_id", "recipe_hash", "run_fingerprint", "actor_spec", "canonical_ppo_output"},
-                    {"schema", "run_id", "attempt_id", "recipe_hash", "run_fingerprint", "actor_spec", "canonical_ppo_output", "worker_resources"})
+                    {"schema", "run_id", "attempt_id", "recipe_hash", "run_fingerprint", "actor_spec", "canonical_ppo_output", "worker_resources"},
+                    {"schema", "run_id", "attempt_id", "recipe_hash", "run_fingerprint", "actor_spec", "canonical_ppo_output", "worker_resources", "e2_neutral_protocol"},
+                    {"schema", "run_id", "attempt_id", "recipe_hash", "run_fingerprint", "actor_spec", "canonical_ppo_output", "worker_resources", "gpu_lease"},
+                    {"schema", "run_id", "attempt_id", "recipe_hash", "run_fingerprint", "actor_spec", "canonical_ppo_output", "worker_resources", "e2_neutral_protocol", "gpu_lease"})
+        if (not isinstance(saved_run, dict)
+                or (set(saved_run) not in allowed_manifest_sets
+                    and set(saved_run) - {"es_scenario_fold_id"} not in allowed_manifest_sets)
                 or saved_run["schema"] != "rles.historical-run.v1"
                 or saved_run["attempt_id"] != saved_run["run_id"]
                 or saved_run["recipe_hash"] != run_recipe_hash):
             raise DataError("resume configuration differs from the saved application run")
+        e2_neutral_baseline = saved_run.get("e2_neutral_protocol") == "paired_generation_neutral_r1_v1"
+        if "E2" in budgets and not e2_neutral_baseline:
+            # Preserve the frozen lane/evaluation caps of pre-protocol checkpoints.
+            budgets["E2"] = StageBudget(
+                max_population=population, max_generations=generations,
+                max_evaluations=population * generations,
+                max_lane_requests=population * generations,
+            )
         if "actor_spec" in saved_run and _json_identity(saved_run["actor_spec"]) != _json_identity(asdict(actor_spec)):
             raise DataError("resume actor input scaling differs from the saved application run")
         if "worker_resources" in saved_run and saved_run["worker_resources"] != worker_resources:
             raise DataError("resume worker memory policy differs from the saved application run")
+        if "gpu_lease" in saved_run and saved_run["gpu_lease"] != gpu_lease:
+            raise DataError("resume GPU lease scope differs from the saved application run")
         if resume_stage in {"E1", "E2"}:
             from rles_es_evotorch.checkpoint import ESCheckpointStore
 
@@ -726,21 +1331,37 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
         run_id = "historical-" + uuid.uuid4().hex
     if saved_run is not None:
         run_id = saved_run["run_id"]
+    scenario_fold_id = config.get("es_scenario_fold_id", run_id)
+    if (saved_run is not None
+            and saved_run.get("es_scenario_fold_id", run_id) != scenario_fold_id):
+        raise DataError("ES scenario fold differs from the saved application run")
     spec = RunSpec(run_id=run_id, attempt_id=run_id, route=route, algorithm=algorithm, seed=seed,
                    data_hash=fingerprint.dataset, feature_hash=fingerprint.feature, config_hash=rl_config.hash,
                    hard_risk_hash=fingerprint.hard_risk, execution_hash=fingerprint.execution,
                    normalization_hash=fingerprint.normalization, soft_risk_schema_hash=risk_space.signature,
                    initial_soft_risk_hash=fingerprint.soft_risk, actor_signature=actor_spec.signature, stage_budget=budgets)
     if saved_run is not None and saved_run["run_fingerprint"] != spec.fingerprint:
+        legacy_space = SoftRiskSpace(tuple(SoftRiskDimension(name, 0.1, 1.0)
+                                          for name in ("exposure_multiplier", "drawdown_throttle",
+                                                       "volatility_throttle")))
+        legacy_spec = replace(spec, soft_risk_schema_hash=legacy_space.signature)
+        if saved_run["run_fingerprint"] == legacy_spec.fingerprint:
+            risk_space, spec = legacy_space, legacy_spec
+    if saved_run is not None and saved_run["run_fingerprint"] != spec.fingerprint:
         raise DataError("reconstructed RunSpec differs from the original application attempt")
     ledger = ResearchLedger(output / "research.sqlite")
     if saved_run is None:
         ledger.create(run_id, run_id, validation_budget=1, hpo_budget=1,
                       es_evaluation_budget=max(1, sum(b.max_lane_requests for b in budgets.values())))
-        _write(run_manifest_path, {"schema": "rles.historical-run.v1", "run_id": run_id,
-                                   "attempt_id": run_id, "recipe_hash": run_recipe_hash,
-                                   "run_fingerprint": spec.fingerprint, "actor_spec": asdict(actor_spec),
-                                   "canonical_ppo_output": canonical_ppo_output, "worker_resources": worker_resources})
+        run_manifest = {"schema": "rles.historical-run.v1", "run_id": run_id,
+                        "attempt_id": run_id, "recipe_hash": run_recipe_hash,
+                        "run_fingerprint": spec.fingerprint, "actor_spec": asdict(actor_spec),
+                        "canonical_ppo_output": canonical_ppo_output, "worker_resources": worker_resources,
+                        "gpu_lease": gpu_lease,
+                        "e2_neutral_protocol": "paired_generation_neutral_r1_v1"}
+        if "es_scenario_fold_id" in config:
+            run_manifest["es_scenario_fold_id"] = scenario_fold_id
+        _write(run_manifest_path, run_manifest)
     else:
         ledger_state = ledger.state(run_id)
         if ledger_state["run_id"] != run_id or ledger_state["state"] != "DEVELOPMENT":
@@ -759,17 +1380,28 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
     frozen_scaler_json = json.dumps(
         asdict(training.scaler), sort_keys=True, separators=(",", ":"), allow_nan=False,
     )
+    frozen_train_access_json = (None if "train_data_access" not in config else json.dumps({
+        "output": config["output"], "environment": config["environment"],
+        "train_data_access": config["train_data_access"],
+    }, sort_keys=True, separators=(",", ":"), allow_nan=False))
     rl_env_factory = _HistoricalRLEnvFactory(
         frozen_recipe_json, frozen_scaler_json, fingerprint.hash, rl_num_envs,
-        requested_episode_steps,
+        requested_episode_steps, shared_factory=training if rl_num_envs == 1 else None,
+        train_access_json=frozen_train_access_json,
     )
 
     def execute_es(context):
         stage = context.stage
+        worker_env_config = {
+            "recipe": frozen_recipe, "scaler": asdict(training.scaler),
+            "transition_hash": fingerprint.hash,
+        }
+        if frozen_train_access_json is not None:
+            worker_env_config["registered_train_access"] = json.loads(frozen_train_access_json)
         worker_config = {
             "candidate_kind": "actor" if stage == "E1" else "soft_risk",
-            "env_factory_ref": "rles_gym_bridge.historical:make_historical_es_env",
-            "env_config": {"recipe": frozen_recipe, "scaler": asdict(training.scaler), "transition_hash": fingerprint.hash},
+            "env_factory_ref": "rles_orchestrator.native_es_worker:make_registered_historical_es_env",
+            "env_config": worker_env_config,
             "actor_spec": asdict(actor_spec),
             "actor_signature": actor_spec.signature, "transition_hash": fingerprint.hash, "episode_steps": len(training.rows) - 3,
         }
@@ -791,10 +1423,16 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
             selection=selection, quota=run_quota,
             factory_ref="rles_orchestrator.native_es_worker:make_native_es_session", factory_config=worker_config,
             payload_builder=lambda _request: {}, payload_builder_id=digest("historical-native-payload-v1"),
-            fitness_spec=FitnessSpec(), tail_fraction=0.25, fold_id=run_id, episode_ids=("train-inner",),
+            fitness_spec=fitness_spec, tail_fraction=0.25,
+            fold_id=scenario_fold_id, episode_ids=("train-inner",),
             checkpoint_dir=checkpoint_dir, workers=1, lease_owner=run_id, ram_bytes_per_worker=worker_ram_bytes,
             startup_timeout_s=60, timeout_s=120, resume=resume_es,
             enforce_memory_limit=enforce_worker_memory_limit,
+            include_neutral_baseline=(stage == "E2" and e2_neutral_baseline),
+            include_constraint_evidence=(
+                isinstance(fitness_spec, ConstraintPriorityFitnessSpec)
+                or config.get("es_candidate_evidence", False)
+            ),
         )
         try:
             result = executor(context)
@@ -806,13 +1444,25 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
                     "workers": executor.worker_resource_evidence,
                 })
         state[stage] = result.evolution_result
+        if stage == "E1":
+            if result.evolution_result is None:
+                raise DataError("E1 stage completed without a selected optimizer result")
+            selected_genome = np.asarray(result.evolution_result.best_search_vector, dtype=np.float32)
+            state["E1_stage_actor_artifact"] = _persist_e1_stage_actor(
+                output / "E1-selected-actor.json", actor_spec, selected_genome,
+                result.metadata.get("lane_evidence_hash", ""),
+            )
         return result
 
     def execute_rl(context):
+        nonlocal fixed_corpus_metadata
         previous = context.previous
         source = (None if previous is None else np.asarray(state["E1"].best_search_vector, dtype=np.float32))
         teacher = (lambda batch: np.zeros((len(batch), 1), dtype=np.float32)) if source is None else (lambda batch: act(actor_spec, source, batch))
-        _, corpus = rollout(training, teacher, seed=seed)
+        corpus, fixed_corpus_metadata = _fixed_observation_corpus(
+            training, teacher, seed=seed,
+            episodes=corpus_episodes, episode_steps=corpus_episode_steps,
+        )
         distillation = config.get("distillation", {})
 
         def restore_env_factory(replay_values):
@@ -823,7 +1473,7 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
                 requested_episode_steps, tuple(
                     json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
                     for value in replay_values
-                ),
+                ), train_access_json=frozen_train_access_json,
             )
 
         executor = RLStageExecutor(
@@ -845,11 +1495,24 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
         allocation = ComputeAllocation(
             quota=run_quota, owner=run_id, attempt_id=run_id, cpu_cores=rl_num_envs,
             ram_bytes=4 * 1024**3, learner_device=rl_device,
-            gpu_lock_directory=(output / "GPU-leases") if rl_device == "cuda" else None,
+            gpu_lock_directory=Path(gpu_lease["directory"]) if gpu_lease is not None else None,
+            gpu_index=gpu_lease["gpu_index"] if gpu_lease is not None else 0,
         )
         with allocation:
             return executor(context)
 
+    fixed_corpus_metadata: dict[str, Any] | None = None
+    trial_recipe = {
+        "run_recipe": run_recipe,
+        "dataset_sha256": fingerprint.dataset,
+        "run_fingerprint": spec.fingerprint,
+    }
+    trial_attempt_key = begin_application_trial(
+        run_id=run_id, recipe=trial_recipe, feature_sha=fingerprint.feature, seed=seed,
+        resumed=resume_stage is not None,
+        detail={"route": route.value, "algorithm": algorithm, "stage": resume_stage,
+                "evaluate": evaluate, "dataset_sha256": fingerprint.dataset},
+    )
     try:
         runners = {stage: ProviderBackedStageRunner(stage, execute_rl if stage == "R1" else execute_es, selection)
                    for stage in STAGES[route]}
@@ -877,15 +1540,56 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
             episode_decision_steps=rl_episode_steps,
             episode_start_offsets=episode_offsets,
         )
-        bundle = {"schema": "rles.historical-bundle.v1", "actor": actor_metadata, "soft_multipliers": risk_parameters,
+        stage_actor_artifacts: dict[str, dict[str, str]] = {}
+        e1_stage_actor_path = output / "E1-selected-actor.json"
+        if e1_stage_actor_path.is_file():
+            e1_stage_actor_hash = _verify_file(e1_stage_actor_path)
+            e1_stage_actor = json.loads(e1_stage_actor_path.read_text(encoding="utf-8"))
+            e1_lineage = next((artifact for artifact in lineage if artifact.stage == "E1"), None)
+            if (not isinstance(e1_stage_actor, dict)
+                    or e1_stage_actor.get("schema") != "rles.selected-stage-actor.v1"
+                    or e1_stage_actor.get("stage") != "E1"
+                    or e1_lineage is None
+                    or e1_stage_actor.get("actor_hash") != e1_lineage.actor_hash
+                    or e1_stage_actor.get("lane_evidence_hash")
+                    != e1_lineage.metadata.get("lane_evidence_hash")
+                    or e1_stage_actor.get("actor_spec")
+                    != json.loads(json.dumps(asdict(actor_spec), sort_keys=True,
+                                             separators=(",", ":"), allow_nan=False))):
+                raise DataError("persisted E1 stage actor differs from the attested lineage")
+            try:
+                reconstructed_e1_hash = genome_hash(
+                    actor_spec, np.asarray(e1_stage_actor["genome"], dtype=np.float32),
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise DataError("persisted E1 stage actor genome is malformed") from exc
+            if reconstructed_e1_hash != e1_lineage.actor_hash:
+                raise DataError("persisted E1 stage actor genome hash differs from the lineage")
+            stage_actor_artifacts["E1"] = {
+                "path": e1_stage_actor_path.name,
+                "sha256": e1_stage_actor_hash,
+                "actor_hash": str(e1_stage_actor["actor_hash"]),
+                "lane_evidence_hash": str(e1_stage_actor["lane_evidence_hash"]),
+            }
+        bundle = {"schema": "rles.historical-bundle.v1", "actor": actor_metadata,
+                  "es_scenario_fold_id": scenario_fold_id, "soft_multipliers": risk_parameters,
+                  "stage_actor_artifacts": stage_actor_artifacts,
+                  "es_candidate_evidence": config.get("es_candidate_evidence", False),
                   "reward_scale": training.reward_config.reward_scale,
                   "rl_device": rl_device,
-                  "runtime_resources": {"es_worker_policy": worker_resources, "coordinator_learner_enforcement": "quota_only"},
+                  "runtime_resources": {
+                      "es_worker_policy": worker_resources,
+                      "coordinator_learner_enforcement": "quota_only",
+                      "gpu_lease": gpu_lease,
+                      "cuda_allocator_fraction": rl_gpu_memory_fraction,
+                  },
                   "training_coverage": training_coverage,
+                  "fixed_observation_corpus": fixed_corpus_metadata,
                   "environment": config["environment"], "training_end_ns": training.end_ns,
                   "preprocessing": training.metadata(),
                   "lineage": [{"stage": a.stage, "usage": asdict(a.usage), "actor_hash": a.actor_hash,
-                               "soft_risk_hash": a.soft_risk_hash} for a in lineage]}
+                               "soft_risk_hash": a.soft_risk_hash,
+                               "metadata": dict(a.metadata)} for a in lineage]}
         bundle_hash = _write_verified(output / "bundle.json", bundle)
         report = backtest(config, output, factory=evaluation) if evaluation is not None else None
         report_hash = (_write_verified(output / "report.json", report)
@@ -896,34 +1600,81 @@ def train(config: dict, *, evaluate: bool = True) -> dict:
         })
         result = {"output": str(output), "route": route.value, "algorithm": algorithm,
                   "rl_device": rl_device, "training_coverage": training_coverage}
+        if fixed_corpus_metadata is not None:
+            result["fixed_observation_corpus"] = fixed_corpus_metadata
         if report is not None:
             result.update({"metrics": report["metrics"], "terminal_flat": report["terminal_flat"]})
+        finish_application_trial(
+            trial_attempt_key, status="completed",
+            detail={"route": route.value, "algorithm": algorithm, "run_fingerprint": spec.fingerprint,
+                    "bundle_sha256": bundle_hash, "report_sha256": report_hash},
+        )
         return result
-    except Exception as exc:
-        _write(output / "FAILED.json", {"error": type(exc).__name__, "detail": str(exc)})
+    except BaseException as exc:
+        trial_status = "interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "failed"
+        finish_application_trial(
+            trial_attempt_key, status=trial_status,
+            detail={"error": type(exc).__name__, "detail": str(exc),
+                    "route": route.value, "algorithm": algorithm},
+        )
+        if isinstance(exc, Exception):
+            _write(output / "FAILED.json", {"error": type(exc).__name__, "detail": str(exc)})
         raise
 
 
 def backtest(config: dict, bundle_path: str | Path, *, factory: HistoricalEnvironmentFactory | None = None,
-             allow_execution_stress: bool = False) -> dict:
+             allow_execution_stress: bool = False, summary_only: bool = False,
+             evaluation_access: EvaluationAccess | None = None,
+             include_execution_trace: bool = False) -> dict:
+    if "train_data_access" in config:
+        access_identity = digest([config.get("environment"), config["train_data_access"]])
+        if (factory is None or factory.split != "train_inner"
+                or getattr(factory, "application_registered_train_access", None) != access_identity):
+            raise DataError("scoped Train backtest requires a factory built by the registered Train reader")
     if type(allow_execution_stress) is not bool:
         raise DataError("execution stress authorization must be an explicit boolean")
+    if type(summary_only) is not bool:
+        raise DataError("summary-only report flag must be Boolean")
+    if type(include_execution_trace) is not bool:
+        raise DataError("execution trace flag must be Boolean")
+    requested = (config.get("evaluation", {}).get("split", "test") if factory is None
+                 else factory.split)
+    formal = requested in {"test", "holdout"}
+    if formal and not isinstance(evaluation_access, EvaluationAccess):
+        raise DataError("formal Test/Holdout requires WFO research access; use diagnose-train for exploration")
+    if requested not in {"test", "holdout", "train_inner", "validation"}:
+        raise DataError("unknown evaluation split")
     root = Path(bundle_path).resolve()
-    _verify_file(root / "bundle.json")
+    bundle_sha = _verify_file(root / "bundle.json")
     bundle = json.loads((root / "bundle.json").read_text(encoding="utf-8"))
     raw_scaler = dict(bundle["preprocessing"]["scaler"])
     raw_scaler["mean"], raw_scaler["std"] = tuple(raw_scaler["mean"]), tuple(raw_scaler["std"])
+    if formal:
+        window: dict = config["evaluation"] if factory is None else {
+            "start_ns": factory.start_ns, "end_ns": factory.end_ns, "mode": factory.mode,
+        }
+        assert evaluation_access is not None
+        evaluation_access.consume(bundle_sha=bundle_sha, split=requested,
+                                  start_ns=window["start_ns"], end_ns=window["end_ns"],
+                                  market=market_key(config["environment"]["instrument"] if factory is None
+                                                    else factory.instrument),
+                                  mode=window.get("mode", "base"))
+    elif factory is not None and "train_data_access" not in config:
+        record_development(config, {"start_ns": factory.start_ns, "end_ns": factory.end_ns},
+                           label=requested)
     if factory is None:
         if _json_identity(config["environment"]) != _json_identity(bundle["environment"]):
             raise DataError("backtest may not replace the trained environment recipe")
         if config["evaluation"]["start_ns"] < bundle["training_end_ns"]:
             raise DataError("backtest window overlaps training")
         requested = config["evaluation"].get("split", "test")
-        if requested not in {"test", "holdout"}:
-            raise DataError("backtest requires an explicit Test or Holdout split")
+        if requested not in {"test", "holdout", "validation"}:
+            raise DataError("standalone exploration requires an explicit Validation split")
         bundle_reward_scale = bundle.get("reward_scale", 1.0)
         if config.get("reward_scale", bundle_reward_scale) != bundle_reward_scale:
             raise DataError("backtest reward scale differs from the trained bundle")
+        if not formal:
+            record_development(config, config["evaluation"], label="validation")
         factory = HistoricalEnvironmentFactory(**{**bundle["environment"], **config["evaluation"],
                                                    "fit_scaler": False, "split": requested,
                                                    "scaler": Scaler(**raw_scaler),
@@ -974,12 +1725,17 @@ def backtest(config: dict, bundle_path: str | Path, *, factory: HistoricalEnviro
             raise DataError("ES actor integrity mismatch")
         predict = lambda batch: act(spec, genome, batch)
     report, _ = rollout(factory, predict, seed=config.get("seed", 31),
-                        soft_parameters=bundle["soft_multipliers"], collect_observations=False)
+                        soft_parameters=bundle["soft_multipliers"], collect_observations=False,
+                        include_account_rows=not summary_only,
+                        include_execution_trace=include_execution_trace)
     report["dataset_quality"] = asdict(factory.quality)
     report["execution_mode"] = factory.mode
     report["latency_model_id"] = factory.execution.latency(factory.mode).model_id
     report["fill_model_id"] = factory.execution.fill(factory.mode).model_id
     report["fee_multiplier"] = str(getattr(factory.execution.fill(factory.mode), "fee_multiplier", Decimal("1")))
+    report["simulated_depth_fraction"] = str(getattr(
+        factory.execution.fill(factory.mode), "simulated_depth_fraction", Decimal("1"),
+    ))
     if hasattr(factory.execution, "schema_version"):
         report["execution_scenario_hash"] = resolve_scenario(factory.execution, factory.mode).scenario_hash
     else:
@@ -989,6 +1745,8 @@ def backtest(config: dict, bundle_path: str | Path, *, factory: HistoricalEnviro
             "latency_model_id": factory.execution.latency(factory.mode).model_id,
             "fill_model_id": factory.execution.fill(factory.mode).model_id,
             "fee_multiplier": report["fee_multiplier"],
+            **({"simulated_depth_fraction": report["simulated_depth_fraction"]}
+               if report["simulated_depth_fraction"] != "1" else {}),
         }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     report["market_data_provenance"] = sorted({
         e.provenance for e in factory.store.events if e.kind != "instrument_rule"
@@ -996,11 +1754,18 @@ def backtest(config: dict, bundle_path: str | Path, *, factory: HistoricalEnviro
     report["rule_provenance"] = sorted({
         e.provenance for e in factory.store.events if e.kind == "instrument_rule"
     })
+    report["evaluation_scope"] = {"split": requested, "formal": formal,
+                                  "project_access_key": evaluation_access.key if evaluation_access else None}
     return report
 
 
-def diagnose_train(config: dict, bundle_path: str | Path) -> dict:
+def diagnose_train(config: dict, bundle_path: str | Path, *,
+                   include_execution_trace: bool = False) -> dict:
     """Replay only the bundle's frozen Train window, without refitting or queries."""
+    if not isinstance(config, dict) or "train_data_access" not in config:
+        raise DataError("Train diagnostics require registered scoped Train data access")
+    if config.get("evaluation") is not None:
+        raise DataError("Train diagnostics reject Evaluation configuration")
     root = Path(bundle_path).resolve()
     _verify_file(root / "bundle.json")
     bundle = json.loads((root / "bundle.json").read_text(encoding="utf-8"))
@@ -1011,10 +1776,10 @@ def diagnose_train(config: dict, bundle_path: str | Path) -> dict:
         raise DataError("Train diagnostic window differs from the bundle training boundary")
     raw_scaler = dict(bundle["preprocessing"]["scaler"])
     raw_scaler["mean"], raw_scaler["std"] = tuple(raw_scaler["mean"]), tuple(raw_scaler["std"])
-    factory = HistoricalEnvironmentFactory(**{**environment, "split": "train_inner",
-                                              "fit_scaler": False, "scaler": Scaler(**raw_scaler),
-                                              "reward_scale": bundle.get("reward_scale", 1.0)})
-    report = backtest(config, root, factory=factory)
+    factory = prepare(config, fit_scaler=False, scaler=Scaler(**raw_scaler),
+                      compact_report_snapshots=True, require_scoped_train_access=True)
+    report = backtest(config, root, factory=factory, summary_only=True,
+                      include_execution_trace=include_execution_trace)
     report["diagnostic_scope"] = {
         "split": "train_inner", "start_ns": factory.start_ns, "end_ns": factory.end_ns,
         "purpose": "exploratory mechanism diagnosis; not independent strategy acceptance",
@@ -1030,23 +1795,37 @@ def digest_schema(values: dict) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments[:1] == ["world-model"]:
+        from rles_world_model.cli import main as world_model_main
+
+        return world_model_main(arguments[1:])
     parser = argparse.ArgumentParser(prog="rles", description=__doc__)
     parser.add_argument("command", choices=("market-audit", "validate", "train", "backtest", "diagnose-train", "wfo"))
     parser.add_argument("--config", required=True)
     parser.add_argument("--bundle")
+    parser.add_argument("--execution-trace", action="store_true",
+                        help="include per-decision native order and fill attribution in reports")
+    parser.add_argument("--train-only", action="store_true",
+                        help="run frozen Train stages and persist diagnostics without querying Validation")
     parser.add_argument("--resume", action="store_true",
                         help="resume WFO at verified training checkpoints and durable evaluation boundaries")
     args = parser.parse_args(argv)
     try:
         if args.resume and args.command != "wfo":
             raise DataError("--resume is supported only by the WFO command")
+        if args.train_only and args.command != "train":
+            raise DataError("--train-only is supported only by the train command")
         config = load_config(args.config)
+        if ("train_data_access" in config
+                and args.command not in {"validate", "train", "diagnose-train"}):
+            raise DataError("scoped Train data access is limited to Train-only commands")
         if args.command == "market-audit":
             result = audit_market(config)
         elif args.command == "validate":
             result = prepare(config).metadata()
         elif args.command == "train":
-            result = train(config)
+            result = train(config, evaluate=not args.train_only)
         elif args.command == "wfo":
             from .wfo_application import run_wfo
 
@@ -1056,8 +1835,11 @@ def main(argv: list[str] | None = None) -> int:
                 raise DataError(f"{args.command} requires --bundle")
             _backtest_output_path(config)
             train_diagnostic = args.command == "diagnose-train"
-            report = (diagnose_train(config, args.bundle) if train_diagnostic
-                      else backtest(config, args.bundle))
+            report = (diagnose_train(config, args.bundle,
+                                     include_execution_trace=args.execution_trace)
+                      if train_diagnostic else
+                      backtest(config, args.bundle,
+                               include_execution_trace=args.execution_trace))
             result = _persist_backtest_report(config, args.bundle, report,
                                               train_diagnostic=train_diagnostic)
         print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))

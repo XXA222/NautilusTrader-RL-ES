@@ -19,10 +19,15 @@ class ConservativeBpsFillModel:
     research model with sufficient simulated depth for the requested order;
     the native engine owns matching, fees, funding and account changes.
     """
-    def __init__(self, slippage_bps: Decimal, record_reference: Callable | None = None) -> None:
+    def __init__(self, slippage_bps: Decimal, record_reference: Callable | None = None,
+                 simulated_depth_fraction: Decimal = Decimal("1")) -> None:
         if not slippage_bps.is_finite() or not 0 < slippage_bps < 10_000:
             raise ValueError("bar execution requires positive slippage below 10000 bps")
+        if (not simulated_depth_fraction.is_finite()
+                or not Decimal(0) <= simulated_depth_fraction <= Decimal(1)):
+            raise ValueError("simulated depth fraction must be in [0, 1]")
         self.slippage = slippage_bps / 10_000
+        self.simulated_depth_fraction = simulated_depth_fraction
         self._record_reference = record_reference
 
     def is_limit_filled(self) -> bool:
@@ -48,8 +53,13 @@ class ConservativeBpsFillModel:
             reference = best_ask if order.side == OrderSide.BUY else best_bid
             self._record_reference(str(order.client_order_id), reference.as_decimal())
         book = OrderBook(instrument.id, BookType.L2_MBP)
-        book.add(BookOrder(OrderSide.BUY, instrument.make_price(bid), order.quantity, 1), 0, 1, 0)
-        book.add(BookOrder(OrderSide.SELL, instrument.make_price(ask), order.quantity, 2), 0, 2, 0)
+        step = instrument.size_increment.as_decimal()
+        depth_units = (order.quantity.as_decimal() * self.simulated_depth_fraction / step)
+        depth = depth_units.to_integral_value(rounding=ROUND_FLOOR) * step
+        if depth > 0:
+            simulated_size = instrument.make_qty(depth)
+            book.add(BookOrder(OrderSide.BUY, instrument.make_price(bid), simulated_size, 1), 0, 1, 0)
+            book.add(BookOrder(OrderSide.SELL, instrument.make_price(ask), simulated_size, 2), 0, 2, 0)
         return book
 
 
@@ -136,7 +146,8 @@ def make_perpetual_session(*, rule: Mapping[str, Any], execution: Any, mode: str
             "fee_model": MakerTakerFeeModel(maker_fee, taker_fee),
             "fill_model": (DefaultFillModel(prob_fill_on_limit=1.0, prob_slippage=0.0, random_seed=0)
                            if quote_execution else
-                           ConservativeBpsFillModel(fill.slippage_bps, record_fill_reference)),
+                           ConservativeBpsFillModel(fill.slippage_bps, record_fill_reference,
+                                                    fill.simulated_depth_fraction)),
             "latency_model": StaticLatencyModel(base_latency_nanos=latency.decision_ns,
                                                 insert_latency_nanos=latency.submit_ns + latency.venue_ns,
                                                 update_latency_nanos=latency.submit_ns + latency.venue_ns,

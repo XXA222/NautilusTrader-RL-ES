@@ -1,0 +1,126 @@
+{
+  "schema": "rles.m33-action-value-preregistration.v1",
+  "status": "frozen_before_paired_replay",
+  "objective": "Attribute the already-frozen actor and simple baselines by fixed market regimes, native exposure, execution and modeled costs; no retraining or selection.",
+  "scope": "train_inner_development_only_scenario_costs",
+  "frozen_plan": {
+    "path": "D:\\Program Files\\NautilusTrader_RL_ES\\docs\\audit_evidence\\20261017\\m33_action_value\\plan.json",
+    "sha256": "c2fd9bd5b662d9fe2be41751b4ae0f958399677bc670cebbc438bbc459107dfc"
+  },
+  "prior_baseline_plan": {
+    "path": "D:\\Program Files\\NautilusTrader_RL_ES\\configs\\train_signal_baselines_20261016.json",
+    "sha256": "da29700ff7778510b89225502b60689e78fa9169538a950b0ac1f4fb8c21cfa5"
+  },
+  "prior_baseline_summary": {
+    "path": "D:\\Program Files\\NautilusTrader_RL_ES\\docs\\audit_evidence\\20261016\\train_signal_baselines_summary.json",
+    "sha256": "aabab10514b73cd60b0760b4369d8363a70d375b7623b7f92e90b8bafe63fed9"
+  },
+  "prior_baseline_reports": 36,
+  "bundle": {
+    "path": "D:\\Program Files\\NautilusTrader_RL_ES\\.artifacts\\audit-development-20261016\\models\\candidate-seed-102\\bundle.json",
+    "sha256": "ea2ea516780f25756c7dae35636ee59eca7e3443a24259c6b58526b2536fec68"
+  },
+  "market_and_rules": {
+    "market": {
+      "path": "D:\\Program Files\\NautilusTrader_RL_ES\\.artifacts\\audit-development-20261016\\data\\market.parquet",
+      "sha256": "06323e909997909dee35b4abf1543444ae230f30cbc1f672ded033b3bc41fe70"
+    },
+    "rules": {
+      "path": "D:\\Program Files\\NautilusTrader_RL_ES\\.artifacts\\audit-development-20261016\\data\\scenario-rules.json",
+      "sha256": "690292b508ce722d6ba2f5b9fb745671f56fc396d2026943fd36668e9028c93b"
+    }
+  },
+  "source_code_sha256": {
+    "packages/orchestrator/src/rles_orchestrator/application.py": "8743cadb5e9196535d5ebf85453333240fc540d49d1e2bb00a70fd526549bc38",
+    "packages/orchestrator/src/rles_orchestrator/research_access.py": "6fcce53f2137e299f407df46694b5911dc543b47d6c179ac4c93d26e9596b412",
+    "packages/gym_bridge/src/rles_gym_bridge/env.py": "e98aa714a659f5f79c9776f8cb71aad517dda9ac7932cec0ba8ab2ce9cd67372",
+    "packages/gym_bridge/src/rles_gym_bridge/historical.py": "a70eb0faaa9aa7ecc7522729b44b1a57d4cf349d3cf09e0d1a9675050539dd3e",
+    "packages/rl_sb3/src/rles_rl_sb3/provider.py": "f047f8cda227620abaf813ef36d29b68b0d7cd61435b6925bca0f1efeb373bce",
+    "qa/train_signal_baselines.py": "bf2b9bc4cd4e24b25543dde8e71c19ad67c664ac4dc1b84e1016a27abf3ffe2b",
+    "qa/preregister_m33_action_value.py": "b1ddd920f5e9f1258a168f87a1873588c683ca0f5b752e793d5d39fcf2e84bf7",
+    "qa/analyze_m33_action_value.py": "1114f046aa50758c51227f3974e225a618b8ae2179502b77be39389ca4c9a62e"
+  },
+  "replay_output": "D:\\Program Files\\NautilusTrader_RL_ES\\.artifacts\\audit-development-20261017\\m33-action-value-v1",
+  "windows": [
+    {
+      "start_ns": 1705276800000000000,
+      "end_ns": 1705363200000000000
+    },
+    {
+      "start_ns": 1707955200000000000,
+      "end_ns": 1708041600000000000
+    },
+    {
+      "start_ns": 1710460800000000000,
+      "end_ns": 1710547200000000000
+    }
+  ],
+  "modes": [
+    "base",
+    "stress"
+  ],
+  "policies": [
+    "B0_no_trade",
+    "B1_always_long",
+    "B4_always_short",
+    "B2_simple_momentum",
+    "B5_simple_reversal",
+    "frozen_rl"
+  ],
+  "seed": 102,
+  "regime_policy": {
+    "volatility": {
+      "feature": "volatility_5m",
+      "scheme": "fixed_absolute_volatility_upper_closed_v1",
+      "ratio_upper_closed_cuts": [
+        0.00025,
+        0.0005,
+        0.001
+      ]
+    },
+    "trend": {
+      "feature": "return_15m",
+      "scheme": "signed_feature_v1"
+    },
+    "funding": {
+      "feature": "last_settled_funding",
+      "scheme": "signed_feature_v1"
+    },
+    "thresholds_fit_from_evaluation_data": false
+  },
+  "per_decision_metrics": [
+    "native_equity_delta",
+    "gross_marked_price_pnl",
+    "fee",
+    "funding",
+    "slippage_attribution",
+    "turnover",
+    "plan_action_and_reason",
+    "native_fill_count",
+    "requested_and_executed_action",
+    "net_exposure",
+    "market_features"
+  ],
+  "holding_duration": "contiguous nonzero native net-exposure runs by direction; descriptive proxy, not exchange position identity",
+  "paired_uncertainty": {
+    "method": "paired nonoverlapping block bootstrap within each window and cost mode",
+    "block_minutes": 60,
+    "replicates": 5000,
+    "seed": 61017,
+    "interval": "percentile 95% interval for the full-window cumulative USDT PnL difference",
+    "minimum_blocks": 6,
+    "interpretation": "within-path dependence sensitivity only; windows are previously reused Train data and do not provide independent validation"
+  },
+  "evaluation_queries": {
+    "validation": 0,
+    "test": 0,
+    "holdout": 0,
+    "outer_2026": 0
+  },
+  "limitations": [
+    "three one-day windows are previously reused Train dates and are not independent evidence",
+    "Bar execution assumes sufficient simulated depth; historical rules and costs remain scenario-only",
+    "zero fees or fees already embedded in native equity must not be subtracted twice",
+    "descriptive regime attribution and bootstrap intervals do not establish predictive or causal value"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "schema_version": "rles.world_model.b0_audit.v0",
+  "status": "BLOCKED",
+  "scope": "synthetic_unit_tests_only",
+  "repository_commit": "c24d1bc4a47584f91a4c4db93bf77117d4e8341c",
+  "dataset_hash": null,
+  "fold_hash": null,
+  "bar_count": null,
+  "missing_minutes": null,
+  "duplicate_minutes": null,
+  "market_model_eligible": null,
+  "perpetual_economics_eligible": false,
+  "reason": "This work did not use a Route B Train/Validation access reservation, source identity, or FoldManifest. This report does not decode market payloads or reuse existing Test/Holdout windows.",
+  "engineering_test_result": "11 passed",
+  "next_action": "Select and reserve an eligible Train window plus an authorized Validation window; record curated marker, dataset hash, FeatureSpec hash, availability policy, and FoldManifest before payload reads."
+}

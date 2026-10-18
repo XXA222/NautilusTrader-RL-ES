@@ -112,6 +112,7 @@ class RiskActionReview:
     components_known: bool
     soft_target: Decimal | None = None
     risk_target: Decimal | None = None
+    rounded_target_exposure: Decimal | None = None
 
     def __post_init__(self) -> None:
         if type(self.plan) is not ExecutionPlan or type(self.components_known) is not bool:
@@ -128,6 +129,10 @@ class RiskActionReview:
         for target in (self.soft_target, self.risk_target):
             if target is not None and (type(target) is not Decimal or not target.is_finite() or not -1 <= target <= 1):
                 raise ValueError("normalized risk targets must be finite Decimals in [-1,1]")
+        if (self.rounded_target_exposure is not None
+                and (type(self.rounded_target_exposure) is not Decimal
+                     or not self.rounded_target_exposure.is_finite())):
+            raise ValueError("quantity-rounded target exposure must be a finite Decimal")
 
 
 class BarrierEpisode:

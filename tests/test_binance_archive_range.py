@@ -87,6 +87,120 @@ def test_import_range_fetches_each_day_and_month_once_and_clips_funding(tmp_path
     assert result["schema"] == "rles.binance-archive-range.v1"
 
 
+def test_aggtrades_archive_becomes_causal_one_second_aggressor_flow(tmp_path):
+    source = tmp_path / "ETHUSDT-aggTrades-2024-01-01.zip"
+    csv_bytes = (
+        b"agg_trade_id,price,quantity,first_trade_id,last_trade_id,transact_time,is_buyer_maker\n"
+        b"101,2000.00,0.10,500,500,1700000000000,false\n"
+        b"102,1999.00,0.20,501,502,1700000000000,true\n"
+        b"103,2001.00,0.30,503,503,1700000001500,false\n"
+    )
+    with ZipFile(source, "w", compression=ZIP_DEFLATED) as archive:
+        archive.writestr("ETHUSDT-aggTrades-2024-01-01.csv", csv_bytes)
+    digest = sha256(source.read_bytes()).hexdigest()
+
+    events = binance_archive.archive_events(
+        source, stream="aggTrades", instrument="ETHUSDT-PERP.SIM",
+        source_url="fixture:aggTrades", expected_sha256=digest, delay_ns=1_000_000,
+    )
+
+    assert len(events) == 2
+    first, second = events
+    assert first.kind == second.kind == "trade_flow_1s"
+    assert first.ts_event_ns == 1_700_000_001_000_000_000
+    assert first.available_at_ns == first.ts_event_ns + 1_000_000
+    assert first.payload["trade_count"] == 2
+    assert first.payload["aggressor_buy_qty"] == "0.10"
+    assert first.payload["aggressor_sell_qty"] == "0.20"
+    assert first.payload["aggressor_buy_notional"] == "200.0000"
+    assert first.payload["aggressor_sell_notional"] == "399.8000"
+    assert first.payload["first_trade_id"] == 500
+    assert first.payload["last_trade_id"] == 502
+    assert first.payload["high_price"] == "2000.00"
+    assert first.payload["low_price"] == "1999.00"
+    assert second.ts_event_ns == 1_700_000_002_000_000_000
+    assert second.payload["trade_count"] == 1
+
+
+def test_aggtrades_archive_rejects_out_of_order_trade_ids(tmp_path):
+    source = tmp_path / "bad.zip"
+    csv_bytes = (
+        b"agg_trade_id,price,quantity,first_trade_id,last_trade_id,transact_time,is_buyer_maker\n"
+        b"102,2000.00,0.10,500,500,1700000000000,false\n"
+        b"101,1999.00,0.20,501,501,1700000001000,true\n"
+    )
+    with ZipFile(source, "w", compression=ZIP_DEFLATED) as archive:
+        archive.writestr("trades.csv", csv_bytes)
+    digest = sha256(source.read_bytes()).hexdigest()
+    with pytest.raises(binance_archive.DataError, match="identity, order"):
+        binance_archive.archive_events(
+            source, stream="aggTrades", instrument="ETHUSDT-PERP.SIM",
+            source_url="fixture:aggTrades", expected_sha256=digest, delay_ns=1_000_000,
+        )
+
+
+def test_monthly_archive_import_uses_three_checksums_and_clips_inclusive_days(tmp_path, monkeypatch):
+    fetched = []
+
+    def fake_fetch(relative_url, destination):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"fixture")
+        fetched.append(relative_url)
+        return {"path": str(destination), "url": "fixture:" + relative_url, "sha256": "b" * 64}
+
+    def timestamp(day, hour=0, minute=1):
+        epoch_ordinal = date(1970, 1, 1).toordinal()
+        return ((date.fromisoformat(day).toordinal() - epoch_ordinal) * DAY_NS
+                + hour * 60 * MINUTE_NS + minute * MINUTE_NS)
+
+    def fake_archive_events(path, *, stream, instrument, source_url, expected_sha256, delay_ns):
+        month = path.stem[-7:]
+        assert month == "2024-01"
+        if stream == "fundingRate":
+            settlements = (timestamp("2024-01-01", minute=-1), timestamp("2024-01-31", minute=-1),
+                           timestamp("2024-02-01", minute=-1))
+            result = []
+            for index, ts in enumerate(settlements):
+                for kind, payload in (
+                    ("funding_settlement", {"rate": "0.0001", "settlement_ns": ts,
+                                             "interval_minutes": 480}),
+                    ("funding_update", {"rate": "0.0001", "rate_semantics": "last_settled_rate"}),
+                ):
+                    result.append(Event(f"monthly-{kind}-{index}", kind, ts, ts + delay_ns,
+                                        ts + delay_ns, Availability.DERIVED, expected_sha256,
+                                        {"instrument": instrument, **payload}, source_url))
+            return tuple(result)
+
+        kind = {"klines": "ohlcv_1m", "markPriceKlines": "mark",
+                "indexPriceKlines": "index"}[stream]
+        rows = (timestamp("2024-01-01"), timestamp("2024-02-01", minute=0),
+                timestamp("2024-02-01"))
+        payload = ({"open": "100", "high": "101", "low": "99", "close": "100", "volume": "2"}
+                   if kind == "ohlcv_1m" else {"price": "100"})
+        return tuple(Event(f"monthly-{kind}-{index}", kind, ts, ts + delay_ns, ts + delay_ns,
+                           Availability.DERIVED, expected_sha256,
+                           {"instrument": instrument, **payload}, source_url)
+                     for index, ts in enumerate(rows))
+
+    monkeypatch.setattr(binance_archive, "fetch_archive", fake_fetch)
+    monkeypatch.setattr(binance_archive, "archive_events", fake_archive_events)
+    output = tmp_path / "bundle"
+    (output / "raw").mkdir(parents=True)
+    result = binance_archive.import_range(
+        symbol="ETHUSDT", start_day="2024-01-31", end_day="2024-01-31",
+        output=output, delay_ns=1_000_000, archive_interval="monthly",
+    )
+
+    assert len(fetched) == 4
+    assert all(url.startswith("monthly/") for url in fetched)
+    store = read_curated(output / "market.parquet")
+    assert sum(event.kind == "ohlcv_1m" for event in store.events) == 1
+    assert sum(event.kind == "mark" for event in store.events) == 1
+    assert sum(event.kind == "index" for event in store.events) == 1
+    assert sum(event.kind == "funding_settlement" for event in store.events) == 1
+    assert result["archive_interval"] == "monthly"
+
+
 def test_funding_api_events_preserve_settlement_facts_and_observed_interval():
     import json
 

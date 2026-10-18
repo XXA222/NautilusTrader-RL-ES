@@ -421,6 +421,21 @@ class ResearchLedger:
                      'es_lane_requests':[dict(zip(('run_id','attempt_id','stage','request_key','request_hash'),r)) for r in lane_requests],
                      'raw_query_counts':counters,
                      'es_lane_request_count':len(lane_requests),
+                     'trial_count_inventory':{
+                         'scope':'current_protocol_only',
+                         'observed_candidate_ids':sorted({q[2] for q in queries if q[2]}),
+                         'observed_fold_ids':sorted({q[3] for q in queries if q[3]}),
+                         'raw_query_counts':counters,
+                         'es_lane_request_count':len(lane_requests),
+                         'stage_receipt_count':len(stages),
+                         'project_historical_effective_trials':'not_estimated',
+                         'limitations':[
+                             'protocol queries do not record every unqueried or failed candidate attempt',
+                             'candidate IDs are not canonical parameter-level deduplication keys',
+                             'seeds and feature versions are not globally reconciled across protocols',
+                             'manual selections and unledgered historical experiments are not inventoried',
+                         ],
+                     },
                      'protocol_last_audit_seq':audit[0] if audit else None,
                      'protocol_last_audit_hash':audit[1] if audit else None,
                      'effective_trials':'REQUIRES_EXPLICIT_APPROVED_STATISTICAL_POLICY'}

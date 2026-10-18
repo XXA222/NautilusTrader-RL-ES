@@ -1,0 +1,94 @@
+{
+  "schema": "rles.bar-cost-comparison.v1",
+  "split": "train_inner",
+  "source_plan_sha256": "82eeb26cf6c8daae72ed7c4d1f26a777d174425de87f3927b2ddb884b0094003",
+  "bundle_sha256": "ea2ea516780f25756c7dae35636ee59eca7e3443a24259c6b58526b2536fec68",
+  "source_hashes": {
+    "market": "06323e909997909dee35b4abf1543444ae230f30cbc1f672ded033b3bc41fe70",
+    "rules": "690292b508ce722d6ba2f5b9fb745671f56fc396d2026943fd36668e9028c93b"
+  },
+  "window": {
+    "start_ns": 1705276800000000000,
+    "end_ns": 1713052800000000000
+  },
+  "seed": 102,
+  "policy": {
+    "kind": "fixed_target",
+    "target_exposure": 0.25,
+    "soft_multipliers": null
+  },
+  "minimum_free_bytes_observed": 12566274048,
+  "stop_free_bytes": 2147483648,
+  "modes": {
+    "base": {
+      "decision_steps": 129597,
+      "initial_equity": "10000.00000000",
+      "final_equity": "10052.48862672",
+      "net_pnl": "52.48862672",
+      "net_return": 0.0052488626719948694,
+      "max_drawdown": 0.009193882269473375,
+      "turnover_ratio": 0.05658350699407102,
+      "gross_return_before_reported_costs": 0.006748534999999996,
+      "total_slippage_cost": 0.057760000000000006,
+      "total_fee": 0.28397867,
+      "total_funding": -14.65498461,
+      "funding_event_count": 269,
+      "terminal_flat": true,
+      "order_metrics": {
+        "native_order_count": 3,
+        "filled_orders": 3,
+        "partially_filled_orders": 0,
+        "unfilled_orders": 0,
+        "filled_order_ratio": 1.0,
+        "ordered_qty": "0.202",
+        "filled_qty": "0.202",
+        "quantity_fill_ratio": "1",
+        "fill_count": 3,
+        "filled_quote_notional": "567.95733"
+      }
+    },
+    "stress": {
+      "decision_steps": 129597,
+      "initial_equity": "10000.00000000",
+      "final_equity": "10051.97778497",
+      "net_pnl": "51.97778497",
+      "net_return": 0.0051977784969376994,
+      "max_drawdown": 0.00919417168021086,
+      "turnover_ratio": 0.056581804513294975,
+      "gross_return_before_reported_costs": 0.0067485350000000355,
+      "total_slippage_cost": 0.28464999999999996,
+      "total_fee": 0.56793042,
+      "total_funding": -14.65498461,
+      "funding_event_count": 269,
+      "terminal_flat": true,
+      "order_metrics": {
+        "native_order_count": 3,
+        "filled_orders": 3,
+        "partially_filled_orders": 0,
+        "unfilled_orders": 0,
+        "filled_order_ratio": 1.0,
+        "ordered_qty": "0.202",
+        "filled_qty": "0.202",
+        "quantity_fill_ratio": "1",
+        "fill_count": 3,
+        "filled_quote_notional": "567.93042"
+      }
+    }
+  },
+  "stress_minus_base": {
+    "net_pnl": -0.5108417499999973,
+    "net_return": -5.108417505717e-05,
+    "max_drawdown": 2.894107374862287e-07,
+    "turnover_ratio": -1.7024807760432359e-06,
+    "total_slippage_cost": 0.22688999999999995,
+    "total_fee": 0.28395175000000006,
+    "total_funding": 0.0
+  },
+  "limitations": [
+    "Costs and market rules are scenario assumptions, not verified historical exchange rules.",
+    "Bar fill simulation provides depth sized to the order and cannot certify executable market depth.",
+    "Filled notional and quantity fill ratios describe simulated native fills, not live liquidity.",
+    "A single fixed-action Train-inner sensitivity run is not model selection or alpha evidence."
+  ],
+  "formal_evaluation_queries": 0
+}

@@ -173,6 +173,7 @@ class RLConfig:
     normalize_reward: bool = False
     noise_sigma: float = 0.1
     version: str = "0.4.0"
+    cuda_allocator_fraction: float | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.policy, PolicySpec) or not isinstance(self.fingerprint, TransitionFingerprint) or not isinstance(self.seeds, SeedSpec):
@@ -183,6 +184,13 @@ class RLConfig:
             raise ContractError("L4 contract version mismatch")
         if self.device not in ("cpu", "cuda"):
             raise ContractError("device must be concretely resolved before L4")
+        if self.cuda_allocator_fraction is not None:
+            if (type(self.cuda_allocator_fraction) not in (int, float)
+                    or not math.isfinite(self.cuda_allocator_fraction)
+                    or not 0 < self.cuda_allocator_fraction <= 1):
+                raise ContractError("cuda_allocator_fraction must be finite and in (0,1]")
+            if self.device != "cuda":
+                raise ContractError("cuda_allocator_fraction requires CUDA device")
         if type(self.normalize_observation) is not bool or type(self.normalize_reward) is not bool:
             raise ContractError("Normalization switches must be bool")
         if type(self.noise_sigma) not in (float, int):
@@ -255,14 +263,18 @@ class RLConfig:
 
     @property
     def hash(self) -> str:
-        return digest({
+        identity = {
             "algorithm": self.algorithm, "policy": asdict(self.policy),
             "fingerprint": asdict(self.fingerprint), "seeds": asdict(self.seeds),
             "hyperparameters": dict(self.hyperparameters), "device": self.device,
             "normalize_observation": self.normalize_observation,
             "normalize_reward": self.normalize_reward, "noise_sigma": self.noise_sigma,
             "version": self.version,
-        })
+        }
+        # Preserve pre-budget identities for existing checkpoints and run manifests.
+        if self.cuda_allocator_fraction is not None:
+            identity["cuda_allocator_fraction"] = self.cuda_allocator_fraction
+        return digest(identity)
 
     @property
     def num_envs(self) -> int:

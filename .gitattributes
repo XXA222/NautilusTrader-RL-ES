@@ -1,0 +1,3 @@
+# Fixture manifests bind exact bytes. Windows autocrlf must not alter their
+# source evidence or checksum files when a clean checkout is created.
+tests/fixtures/** -text whitespace=cr-at-eol

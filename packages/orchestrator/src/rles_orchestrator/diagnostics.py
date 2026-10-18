@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 class _Group:
     count: int = 0
     risk_count: int = 0
+    rounding_count: int = 0
+    risk_rounding_count: int = 0
     totals: dict[str, float] = field(default_factory=dict)
 
     def add(self, values: dict[str, float]) -> None:
@@ -19,8 +21,9 @@ class ExecutionAttribution:
     """Keep observed plan reasons separate; absent risk targets remain unknown.
 
     A SUBMIT is an order plan, not proof of a fill. The final gap includes
-    quantity rounding, pending orders, fills and mark movement. These summaries
-    describe observations and do not establish a counterfactual causal effect.
+    pending orders, fills and mark movement; a separate rounded target isolates
+    the quantity-step stage. These summaries describe observations and do not
+    establish a counterfactual causal effect.
     """
 
     def __init__(self) -> None:
@@ -28,7 +31,7 @@ class ExecutionAttribution:
         self.missing_plan_count = 0
         self.groups: dict[tuple[str, str], _Group] = {}
 
-    def observe(self, *, requested: float, executed: float,
+    def observe(self, *, requested: float, executed: float, rounded: float | None = None,
                 soft: float | None, risk: float | None,
                 action: str | None, reason: str | None) -> None:
         self.count += 1
@@ -56,6 +59,15 @@ class ExecutionAttribution:
                 "soft_to_risk_gap_abs_mean": abs(soft - risk),
                 "risk_to_executed_gap_abs_mean": abs(risk - executed),
             })
+        if rounded is not None:
+            group.rounding_count += 1
+            group.add({
+                "rounded_target_abs_mean": abs(rounded),
+                "rounded_to_executed_gap_abs_mean": abs(rounded - executed),
+            })
+            if risk is not None:
+                group.risk_rounding_count += 1
+                group.add({"risk_to_rounded_gap_abs_mean": abs(risk - rounded)})
 
     def report(self) -> dict:
         groups = []
@@ -75,12 +87,26 @@ class ExecutionAttribution:
                     **{name: group.totals[name] / group.risk_count if group.risk_count else None
                        for name in sorted(risk_fields)},
                 },
+                "quantity_rounding": {
+                    "count": group.rounding_count,
+                    "components_known": (group.rounding_count == group.count
+                                         and group.risk_rounding_count == group.count),
+                    **{name: (group.totals[name] / count if count else None)
+                       for name, count in (
+                           ("rounded_target_abs_mean", group.rounding_count),
+                           ("risk_to_rounded_gap_abs_mean", group.risk_rounding_count),
+                           ("rounded_to_executed_gap_abs_mean", group.rounding_count),
+                       )},
+                },
             })
         return {
             "schema": "rles.execution-attribution.v1", "count": self.count,
             "missing_plan_count": self.missing_plan_count,
             "components_known": self.count > 0 and self.missing_plan_count == 0
             and all(group.risk_count == group.count for group in self.groups.values()),
+            "quantity_rounding_components_known": self.count > 0 and self.missing_plan_count == 0
+            and all(group.rounding_count == group.count
+                    and group.risk_rounding_count == group.count for group in self.groups.values()),
             "groups": groups,
-            "interpretation": "descriptive; SUBMIT is not a fill; final gap includes mark movement",
+            "interpretation": "descriptive; SUBMIT is not a fill; post-native gap includes pending orders, fills and mark movement",
         }

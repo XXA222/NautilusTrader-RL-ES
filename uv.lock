@@ -21,6 +21,7 @@ members = [
     "rles-research",
     "rles-risk",
     "rles-rl-sb3",
+    "rles-world-model",
 ]
 
 [[package]]
@@ -1300,6 +1301,7 @@ application = [
     { name = "rles-gym-bridge", extra = ["historical"] },
     { name = "rles-research" },
     { name = "rles-rl-sb3" },
+    { name = "rles-world-model" },
 ]
 native-es-runtime = [
     { name = "rles-compute-runtime" },
@@ -1333,6 +1335,7 @@ requires-dist = [
     { name = "rles-rl-sb3", marker = "extra == 'application'", editable = "packages/rl_sb3" },
     { name = "rles-rl-sb3", marker = "extra == 'native-es-worker'", editable = "packages/rl_sb3" },
     { name = "rles-rl-sb3", marker = "extra == 'native-rl-runtime'", editable = "packages/rl_sb3" },
+    { name = "rles-world-model", marker = "extra == 'application'", editable = "packages/world_model" },
 ]
 provides-extras = ["application", "native-es-worker", "native-es-runtime", "native-rl-runtime"]
 
@@ -1382,6 +1385,17 @@ requires-dist = [
     { name = "stable-baselines3", specifier = "==2.9.0" },
     { name = "torch", specifier = ">=2.14,<2.15" },
 ]
+
+[[package]]
+name = "rles-world-model"
+version = "0.1.0.dev0"
+source = { editable = "packages/world_model" }
+dependencies = [
+    { name = "rles-data" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "rles-data", editable = "packages/data" }]
 
 [[package]]
 name = "rpds-py"

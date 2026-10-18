@@ -10,15 +10,17 @@ from hashlib import sha256
 import json
 import math
 from threading import Lock
-from typing import Callable, Iterable, Mapping, Protocol, Sequence
+from typing import Callable, Iterable, Mapping, Protocol, Sequence, cast
 
 import numpy as np
 from .actor import ActorGenomeSpec
-from .fitness import FitnessSpec
+from .fitness import ConstraintPriorityFitnessSpec, FitnessSpec
 from .soft_risk import SoftRiskSpace
 
 
 _HEX = frozenset("0123456789abcdef")
+ConstraintEvidenceCandidate = tuple[str, int, float, int, tuple[str, ...], str]
+ConstraintEvidenceRecord = tuple[int, tuple[ConstraintEvidenceCandidate, ...]]
 
 
 def _sha_json(value: object) -> str:
@@ -91,6 +93,8 @@ class CandidateResult:
     fitness: float
     evidence_hash: str
     split: str = "train_inner"
+    feasible: bool = True
+    rejection_reason: str | None = None
 
     def __post_init__(self) -> None:
         if any(not isinstance(v, str) or not v.strip() for v in (
@@ -104,6 +108,11 @@ class CandidateResult:
             raise PermissionError("ES result cannot originate from Validation/Test")
         if isinstance(self.fitness, bool) or not isinstance(self.fitness, (int, float)) or not math.isfinite(self.fitness):
             raise ValueError("nonfinite result fitness")
+        if (type(self.feasible) is not bool
+                or (self.feasible and self.rejection_reason is not None)
+                or (not self.feasible and (not isinstance(self.rejection_reason, str)
+                                           or not self.rejection_reason.strip()))):
+            raise ValueError("candidate feasibility and rejection reason disagree")
         _check_hash(self.request_hash)
         _check_hash(self.evidence_hash)
 
@@ -240,6 +249,20 @@ class CandidateAggregate:
     evidence_hash: str
     candidate_kind: str
     candidate_schema_hash: str
+    infeasible_episodes: int = 0
+    rejection_reasons: tuple[str, ...] = ()
+    selection_fitness: float | None = None
+
+    def __post_init__(self) -> None:
+        if (type(self.infeasible_episodes) is not int or self.infeasible_episodes < 0
+                or not isinstance(self.rejection_reasons, tuple)
+                or any(not isinstance(reason, str) or not reason for reason in self.rejection_reasons)
+                or tuple(sorted(set(self.rejection_reasons))) != self.rejection_reasons
+                or (self.selection_fitness is not None
+                    and (isinstance(self.selection_fitness, bool)
+                         or not isinstance(self.selection_fitness, (float, int))
+                         or not math.isfinite(self.selection_fitness)))):
+            raise ValueError("invalid candidate feasibility aggregate")
 
 
 def dispatch_generation(
@@ -248,6 +271,7 @@ def dispatch_generation(
     budget: EvaluationBudget,
     candidate_spec: ActorGenomeSpec | SoftRiskSpace,
     actor_signature: str | None = None,
+    feasibility_first: bool = False,
 ) -> tuple[CandidateAggregate, ...]:
     """Candidate-level lane adapter; external L6 owns asynchronous execution.
 
@@ -256,7 +280,8 @@ def dispatch_generation(
     """
     batch = tuple(requests)
     if (not batch or not callable(dispatch) or not isinstance(budget, EvaluationBudget)
-            or not isinstance(candidate_spec, (ActorGenomeSpec, SoftRiskSpace))):
+            or not isinstance(candidate_spec, (ActorGenomeSpec, SoftRiskSpace))
+            or type(feasibility_first) is not bool):
         raise ValueError("invalid ES compute lane dependencies")
     if isinstance(candidate_spec, ActorGenomeSpec):
         expected_kind = "actor"
@@ -310,16 +335,32 @@ def dispatch_generation(
     budget.reserve(batch)
     raw_results = tuple(dispatch(batch))
     ordered = reconcile(batch, raw_results)
+    if feasibility_first and any(
+        result.feasible and not -1.0 < result.fitness < 1.0 for result in ordered
+    ):
+        raise ValueError("feasible candidate fitness must be strictly bounded in (-1, 1)")
     output = []
     for candidate_id in sorted(candidate_ids):
         group = [r for r in ordered if r.candidate_id == candidate_id]
         score = math.fsum(r.fitness for r in group) / len(group)
         if not math.isfinite(score):
             raise OverflowError("nonfinite across-scenario aggregate fitness")
-        evidence = _sha_json(tuple((r.episode_id, r.request_hash, r.evidence_hash, r.fitness)
-                                   for r in group))
+        infeasible = sum(not row.feasible for row in group)
+        selection_fitness = -2.0 if feasibility_first and infeasible else score
+        evidence_rows: tuple[tuple[object, ...], ...]
+        if any(not row.feasible or row.rejection_reason is not None for row in group):
+            evidence_rows = tuple((r.episode_id, r.request_hash, r.evidence_hash, r.fitness,
+                                   r.feasible, r.rejection_reason) for r in group)
+        else:
+            # Preserve the legacy aggregate digest for old FitnessSpec checkpoints.
+            evidence_rows = tuple((r.episode_id, r.request_hash, r.evidence_hash, r.fitness)
+                                  for r in group)
+        evidence = _sha_json(evidence_rows)
+        rejection_reasons = tuple(sorted({r.rejection_reason for r in group
+                                          if r.rejection_reason is not None}))
         output.append(CandidateAggregate(candidate_id, first.generation, len(group), score,
-                                         evidence, expected_kind, expected_signature))
+                                         evidence, expected_kind, expected_signature,
+                                         infeasible, rejection_reasons, selection_fitness))
     return tuple(output)
 
 
@@ -337,14 +378,20 @@ class GenerationLaneEvaluator:
                  episode_ids: tuple[str, ...], candidate_spec: ActorGenomeSpec | SoftRiskSpace,
                  dispatch: Callable[[tuple[CandidateRequest, ...]], Iterable[CandidateResult]],
                  budget: EvaluationBudget, dispatch_id: str,
-                 actor_signature: str | None = None):
+                 actor_signature: str | None = None,
+                 include_neutral_baseline: bool = False,
+                 include_constraint_evidence: bool = False,
+                 feasibility_first: bool = False):
         if (not all(isinstance(value, str) and value.strip() for value in
                     (run_id, attempt_id, fold_id))
                 or type(root_seed) is not int or root_seed < 0
                 or not isinstance(episode_ids, tuple) or not episode_ids
                 or any(not isinstance(value, str) or not value.strip() for value in episode_ids)
                 or len(set(episode_ids)) != len(episode_ids)
-                or not callable(dispatch) or not isinstance(budget, EvaluationBudget)):
+                or not callable(dispatch) or not isinstance(budget, EvaluationBudget)
+                or type(include_neutral_baseline) is not bool
+                or type(include_constraint_evidence) is not bool
+                or type(feasibility_first) is not bool):
             raise ValueError("invalid generation lane identity, scenarios, or dispatch")
         _check_hash(dispatch_id)
         if isinstance(candidate_spec, ActorGenomeSpec):
@@ -363,32 +410,62 @@ class GenerationLaneEvaluator:
         self.candidate_spec, self.dispatch, self.budget = candidate_spec, dispatch, budget
         self.actor_signature = actor_signature
         self.dispatch_id = dispatch_id
+        self.include_neutral_baseline = include_neutral_baseline
+        self.include_constraint_evidence = include_constraint_evidence
+        self.feasibility_first = feasibility_first
+        self._checkpoint_schema = 3 + int(include_neutral_baseline) + 2 * int(include_constraint_evidence)
+        self.neutral_candidate = None
+        if include_neutral_baseline:
+            if not isinstance(candidate_spec, SoftRiskSpace):
+                raise ValueError("neutral R1 baseline is only valid for E2 SoftRisk candidates")
+            self.neutral_candidate = tuple(1.0 for _ in candidate_spec.dimensions)
+            candidate_spec.decode(np.asarray(self.neutral_candidate, dtype=np.float32))
         self._generation_evidence: list[tuple[int, int, int, str]] = []
+        self._neutral_evidence: list[tuple[int, float, str]] = []
+        self._constraint_evidence: list[ConstraintEvidenceRecord] = []
 
     @property
     def signature(self) -> str:
-        return _sha_json({
-            "schema": 3,
+        identity: dict[str, object] = {
+            "schema": self._checkpoint_schema,
             "run_id": self.run_id, "attempt_id": self.attempt_id, "fold_id": self.fold_id,
             "root_seed": self.root_seed, "episode_ids": self.episode_ids,
             "candidate_schema": self.candidate_spec.signature,
             "actor_signature": self.actor_signature, "dispatch_id": self.dispatch_id,
             "budget_maximum": self.budget.maximum,
             "budget_reservation_id": self.budget.reservation_id,
-        })
+        }
+        if self.include_neutral_baseline:
+            identity["neutral_baseline"] = self.neutral_candidate
+        if self.include_constraint_evidence:
+            identity["constraint_evidence"] = True
+        if self.feasibility_first:
+            identity["feasibility_first"] = True
+        return _sha_json(identity)
 
     def checkpoint_state(self) -> dict[str, object]:
-        return {
-            "schema": 3,
+        state: dict[str, object] = {
+            "schema": self._checkpoint_schema,
             "signature": self.signature,
             "budget": self.budget.checkpoint_state(),
             "generation_evidence": tuple(self._generation_evidence),
         }
+        if self.include_neutral_baseline:
+            state["neutral_evidence"] = tuple(self._neutral_evidence)
+        if self.include_constraint_evidence:
+            state["constraint_evidence"] = tuple(self._constraint_evidence)
+        return state
 
     def restore_checkpoint_state(self, state: object) -> None:
+        expected_state_keys = {"schema", "signature", "budget", "generation_evidence"}
+        if self.include_neutral_baseline:
+            expected_state_keys.add("neutral_evidence")
+        if self.include_constraint_evidence:
+            expected_state_keys.add("constraint_evidence")
+        expected_schema = self._checkpoint_schema
         if (not isinstance(state, dict)
-                or set(state) != {"schema", "signature", "budget", "generation_evidence"}
-                or state["schema"] != 3 or type(state["schema"]) is not int
+                or set(state) != expected_state_keys
+                or state["schema"] != expected_schema or type(state["schema"]) is not int
                 or state["signature"] != self.signature
                 or not isinstance(state["generation_evidence"], tuple)):
             raise ValueError("generation evaluator checkpoint identity mismatch")
@@ -411,13 +488,72 @@ class GenerationLaneEvaluator:
                 or not isinstance(budget_state.get("dispatched"), tuple)
                 or len(budget_state["dispatched"]) != request_total):
             raise ValueError("generation evidence and reserved lane requests disagree")
+        neutral_evidence = state.get("neutral_evidence", ())
+        if self.include_neutral_baseline:
+            if not isinstance(neutral_evidence, tuple) or len(neutral_evidence) != len(evidence):
+                raise ValueError("neutral baseline checkpoint evidence is incomplete")
+            for index, record in enumerate(neutral_evidence):
+                if (not isinstance(record, tuple) or len(record) != 3
+                        or type(record[0]) is not int or record[0] != index
+                        or isinstance(record[1], bool) or not isinstance(record[1], (float, int))
+                        or not math.isfinite(record[1])
+                        or not isinstance(record[2], str) or len(record[2]) != 64
+                        or any(char not in "0123456789abcdef" for char in record[2])):
+                    raise ValueError("malformed neutral baseline checkpoint evidence")
+        constraint_evidence = state.get("constraint_evidence", ())
+        if self.include_constraint_evidence:
+            if not isinstance(constraint_evidence, tuple) or len(constraint_evidence) != len(evidence):
+                raise ValueError("constraint evidence checkpoint is incomplete")
+            for generation, record in enumerate(constraint_evidence):
+                if (not isinstance(record, tuple) or len(record) != 2
+                        or type(record[0]) is not int or record[0] != generation
+                        or not isinstance(record[1], tuple)):
+                    raise ValueError("malformed generation constraint evidence")
+                for candidate in record[1]:
+                    if (not isinstance(candidate, tuple) or len(candidate) != 6
+                            or not isinstance(candidate[0], str) or not candidate[0]
+                            or type(candidate[1]) is not int or candidate[1] < 1
+                            or isinstance(candidate[2], bool) or not isinstance(candidate[2], (float, int))
+                            or not math.isfinite(candidate[2])
+                            or type(candidate[3]) is not int or not 0 <= candidate[3] <= candidate[1]
+                            or not isinstance(candidate[4], tuple)
+                            or any(not isinstance(reason, str) or not reason for reason in candidate[4])
+                            or not isinstance(candidate[5], str) or len(candidate[5]) != 64
+                            or any(char not in "0123456789abcdef" for char in candidate[5])):
+                        raise ValueError("malformed candidate constraint evidence")
         self.budget.restore_checkpoint_state(state["budget"])
         self._generation_evidence = list(evidence)
+        self._neutral_evidence = list(neutral_evidence)
+        self._constraint_evidence = list(cast(tuple[ConstraintEvidenceRecord, ...], constraint_evidence))
+
+    @property
+    def best_neutral_baseline(self) -> tuple[float, int, str] | None:
+        """Best exact-neutral score, its generation, and supporting evidence digest."""
+        if not self._neutral_evidence:
+            return None
+        generation, score, digest = max(self._neutral_evidence, key=lambda row: (row[1], -row[0]))
+        return float(score), generation, digest
 
     @property
     def evidence_hash(self) -> str:
         """Digest all generation-level candidate and worker evidence in this attempt."""
         return _sha_json(tuple(self._generation_evidence))
+
+    @property
+    def constraint_evidence(self) -> tuple[dict[str, object], ...]:
+        """Structured per-generation rejection reasons for audit/report output."""
+        return tuple({
+            "generation": generation,
+            "candidates": tuple({
+                "candidate_id": candidate_id,
+                "episodes": episodes,
+                "mean_fitness": mean_fitness,
+                "infeasible_episodes": infeasible,
+                "selection_fitness": (-2.0 if self.feasibility_first and infeasible else mean_fitness),
+                "rejection_reasons": reasons,
+                "evidence_hash": evidence_hash,
+            } for candidate_id, episodes, mean_fitness, infeasible, reasons, evidence_hash in candidates),
+        } for generation, candidates in self._constraint_evidence)
 
     def __call__(self, candidates: np.ndarray, *, generation: int) -> np.ndarray:
         matrix = np.asarray(candidates)
@@ -430,6 +566,10 @@ class GenerationLaneEvaluator:
             raise ValueError("generation candidate dimension violates frozen schema")
         genomes = {f"g{generation:08d}-c{index:08d}": tuple(float(x) for x in row)
                    for index, row in enumerate(matrix)}
+        if self.include_neutral_baseline:
+            if self.neutral_candidate is None:
+                raise RuntimeError("neutral baseline schema was not initialized")
+            genomes["neutral-r1"] = self.neutral_candidate
         requests = tuple(
             CandidateRequest(
                 run_id=self.run_id, attempt_id=self.attempt_id, generation=generation,
@@ -448,19 +588,41 @@ class GenerationLaneEvaluator:
             requests, dispatch=self.dispatch, budget=self.budget,
             candidate_spec=self.candidate_spec,
             actor_signature=self.actor_signature,
+            feasibility_first=self.feasibility_first,
         )
-        scores = np.asarray([aggregate.mean_fitness for aggregate in aggregates], dtype=np.float32)
+        aggregates_by_id = {aggregate.candidate_id: aggregate for aggregate in aggregates}
+        scores = np.asarray([
+            (aggregates_by_id[f"g{generation:08d}-c{index:08d}"].selection_fitness
+             if aggregates_by_id[f"g{generation:08d}-c{index:08d}"].selection_fitness is not None
+             else aggregates_by_id[f"g{generation:08d}-c{index:08d}"].mean_fitness)
+            for index in range(matrix.shape[0])
+        ], dtype=np.float32)
         if scores.shape != (matrix.shape[0],) or not np.isfinite(scores).all():
             raise ValueError("candidate aggregates do not match population")
         if generation != len(self._generation_evidence):
             raise RuntimeError("lane generation evidence must be recorded once in order")
         generation_hash = _sha_json(tuple(
             (aggregate.candidate_id, aggregate.episodes, aggregate.mean_fitness,
+             aggregate.selection_fitness, aggregate.evidence_hash, aggregate.candidate_kind,
+             aggregate.candidate_schema_hash)
+            if self.feasibility_first else
+            (aggregate.candidate_id, aggregate.episodes, aggregate.mean_fitness,
              aggregate.evidence_hash, aggregate.candidate_kind,
              aggregate.candidate_schema_hash)
             for aggregate in aggregates
         ))
         self._generation_evidence.append((generation, len(aggregates), len(requests), generation_hash))
+        if self.include_constraint_evidence:
+            self._constraint_evidence.append((generation, tuple(
+                (aggregate.candidate_id, aggregate.episodes, aggregate.mean_fitness,
+                 aggregate.infeasible_episodes, aggregate.rejection_reasons, aggregate.evidence_hash)
+                for aggregate in aggregates
+            )))
+        if self.include_neutral_baseline:
+            neutral = aggregates_by_id["neutral-r1"]
+            neutral_score = (neutral.selection_fitness if neutral.selection_fitness is not None
+                             else neutral.mean_fitness)
+            self._neutral_evidence.append((generation, neutral_score, neutral.evidence_hash))
         return scores
 
 
@@ -475,14 +637,15 @@ class WorkerLaneDispatcher:
 
     def __init__(self, lane: CandidateBatchLane,
                  payload_builder: Callable[[CandidateRequest], Mapping[str, object]],
-                 *, payload_builder_id: str, fitness_spec: FitnessSpec,
+                 *, payload_builder_id: str,
+                 fitness_spec: FitnessSpec | ConstraintPriorityFitnessSpec,
                  tail_fraction: float):
         if not callable(getattr(lane, "evaluate", None)) or not callable(payload_builder):
             raise TypeError("worker lane and JSON payload builder are required")
         runtime_signature = getattr(lane, "runtime_signature", None)
         _check_hash(runtime_signature)
         _check_hash(payload_builder_id)
-        if not isinstance(fitness_spec, FitnessSpec):
+        if not isinstance(fitness_spec, (FitnessSpec, ConstraintPriorityFitnessSpec)):
             raise TypeError("explicit frozen FitnessSpec is required")
         if (isinstance(tail_fraction, bool) or not isinstance(tail_fraction, (int, float))
                 or not math.isfinite(tail_fraction) or not 0 < tail_fraction <= 1):
@@ -494,9 +657,13 @@ class WorkerLaneDispatcher:
 
     @property
     def signature(self) -> str:
-        return _sha_json(("worker-lane-dispatch-v4", self._lane_runtime_signature,
+        legacy_identity = ("worker-lane-dispatch-v4", self._lane_runtime_signature,
                           self.payload_builder_id,
-                          tuple(vars(self.fitness_spec).items()), self.tail_fraction))
+                          tuple(vars(self.fitness_spec).items()), self.tail_fraction)
+        if isinstance(self.fitness_spec, FitnessSpec):
+            # Keep the legacy evaluator/checkpoint signature byte-for-byte stable.
+            return _sha_json(legacy_identity)
+        return _sha_json((*legacy_identity, self.fitness_spec.protocol))
 
     def __call__(self, requests: tuple[CandidateRequest, ...]) -> tuple[CandidateResult, ...]:
         if self.lane.runtime_signature != self._lane_runtime_signature:
@@ -540,13 +707,21 @@ class WorkerLaneDispatcher:
             value = output[lane_id]
             required = {"initial_equity", "final_equity", "step_log_returns", "drawdowns",
                         "risk_intervention_count", "risk_intervention_steps",
-                        "risk_intervention_rate", "evidence_hash", "request_hash",
+                        "risk_intervention_rate", "insolvency", "margin_facts_known",
+                        "maintenance_margin_breach", "native_liquidation_detected",
+                        "evidence_hash", "request_hash",
                         "account_isolation_id"}
             if not isinstance(value, Mapping) or not required.issubset(value):
                 raise ValueError("L6 output needs native episode facts, evidence, and echoed request/account identity")
             if (value["request_hash"] != request.request_hash
                     or value["account_isolation_id"] != request.account_isolation_id):
                 raise ValueError("L6 output does not echo the dispatched request and isolated account")
+            if any(type(value[name]) is not bool for name in (
+                    "insolvency", "margin_facts_known", "maintenance_margin_breach",
+                    "native_liquidation_detected")):
+                raise ValueError("L6 output must report explicit native feasibility facts")
+            if isinstance(self.fitness_spec, ConstraintPriorityFitnessSpec) and value["margin_facts_known"] is not True:
+                raise ValueError("constraint-priority fitness requires native margin/liquidation facts")
             raw_returns, raw_drawdowns = value["step_log_returns"], value["drawdowns"]
             if not isinstance(raw_returns, list) or not isinstance(raw_drawdowns, list):
                 raise ValueError("L6 episode facts must use JSON arrays")
@@ -564,19 +739,38 @@ class WorkerLaneDispatcher:
                     or not math.isclose(intervention_rate, intervention_count / intervention_steps,
                                         rel_tol=0.0, abs_tol=1e-12)):
                 raise ValueError("L6 risk intervention count, denominator and rate disagree")
-            fitness = self.fitness_spec.score_episode(
-                split=request.split,
-                initial_equity=value["initial_equity"], final_equity=value["final_equity"],
-                step_log_returns=raw_returns, drawdowns=raw_drawdowns,
-                risk_intervention_rate=intervention_rate,
-                tail_fraction=self.tail_fraction,
-            )
+            fitness_facts = {
+                "split": request.split,
+                "initial_equity": value["initial_equity"],
+                "final_equity": value["final_equity"],
+                "step_log_returns": raw_returns,
+                "drawdowns": raw_drawdowns,
+                "risk_intervention_rate": intervention_rate,
+                "tail_fraction": self.tail_fraction,
+                "insolvency": value["insolvency"],
+                "maintenance_margin_breach": value["maintenance_margin_breach"],
+                "native_liquidation_detected": value["native_liquidation_detected"],
+            }
+            if isinstance(self.fitness_spec, ConstraintPriorityFitnessSpec):
+                decision = self.fitness_spec.evaluate_episode(**fitness_facts)
+                fitness = decision.score
+                evidence_hash = _sha_json((value["evidence_hash"], decision.feasible,
+                                           decision.rejection_reason, fitness))
+                feasible, rejection_reason = decision.feasible, decision.rejection_reason
+            else:
+                fitness_facts.pop("insolvency")
+                fitness_facts.pop("maintenance_margin_breach")
+                fitness_facts.pop("native_liquidation_detected")
+                fitness = self.fitness_spec.score_episode(**fitness_facts)
+                evidence_hash = value["evidence_hash"]
+                feasible, rejection_reason = True, None
             results.append(CandidateResult(
                 run_id=request.run_id, attempt_id=request.attempt_id,
                 generation=request.generation, candidate_id=request.candidate_id,
                 episode_id=request.episode_id, seed=request.seed,
                 request_hash=request.request_hash,
                 account_isolation_id=request.account_isolation_id,
-                fitness=fitness, evidence_hash=value["evidence_hash"],
+                fitness=fitness, evidence_hash=evidence_hash,
+                feasible=feasible, rejection_reason=rejection_reason,
             ))
         return tuple(results)

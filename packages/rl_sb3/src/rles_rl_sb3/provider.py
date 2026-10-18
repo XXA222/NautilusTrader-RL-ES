@@ -1,8 +1,10 @@
 """The standalone L4 RLProvider, with native SB3 algorithms and Q-gate injection."""
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
+from array import array
 from dataclasses import dataclass
+import heapq
 from pathlib import Path
 import time
 import sys
@@ -24,6 +26,11 @@ from .normalize import (assert_frozen, attach_train, export_stats,
                         freeze_for_eval)
 
 GateAuthorizer = Callable[[tuple[str, ...], RLConfig], bool]
+
+# Fixed, raw-ratio boundaries keep volatility summaries comparable across
+# learn calls. They are descriptive bins, not strategy thresholds or fitted
+# estimates; equality belongs to the lower (upper-closed) bucket.
+_VOLATILITY_REGIME_CUTS = (0.00025, 0.0005, 0.001)
 
 
 @dataclass(frozen=True)
@@ -61,10 +68,32 @@ class TrainingDiagnostics:
     executed_exposure_change_abs_mean: float
     guard_intervention_mean: float
     guard_intervention_fraction: float
+    soft_risk_adjustment_mean: float
+    soft_risk_intervention_fraction: float
+    hard_risk_adjustment_mean: float
+    hard_risk_intervention_fraction: float
+    requested_to_executed_abs_mean: float
+    execution_plan_reasons: tuple[tuple[str, int], ...]
     submit_fraction: float
     noop_fraction: float
     optimizer_metrics: tuple[tuple[str, float], ...]
     optimizer_undefined_metrics: tuple[str, ...]
+    # (requested-|action| bucket, count, r_econ sum/mean, r_shape sum,
+    # hard-risk intervention fraction, submit fraction, mean executed |exposure|).
+    # This is descriptive on-policy attribution, not a causal action effect.
+    requested_action_economic_bins: tuple[
+        tuple[str, int, float, float, float, float, float, float], ...
+    ]
+    # Exact per-learn-call facts. Market summaries are over observed L2 features;
+    # they do not claim calibrated regime boundaries.
+    position_state_counts: tuple[tuple[str, int], ...]
+    market_feature_summaries: tuple[tuple[str, int, float, float, float, float], ...]
+    # (family, feature, scheme, bucket, lower, upper, count, r_econ sum, mean).
+    # Volatility cut points are empirical quartiles from this Train-only learn call.
+    market_regime_economic_bins: tuple[
+        tuple[str, str, str, str, float | None, float | None, int, float, float], ...
+    ]
+    episode_window_overlap_pairs: int
 
 
 @dataclass(frozen=True)
@@ -77,6 +106,7 @@ class Performance:
     cpu_rss_bytes: int | None
     gpu_max_allocated_bytes: int | None
     diagnostics: TrainingDiagnostics | None = None
+    gpu_max_reserved_bytes: int | None = None
 
 
 class _Moments:
@@ -111,6 +141,57 @@ def _perf_rss() -> int | None:
     except ImportError:
         return None
     return int(psutil.Process().memory_info().rss)
+
+
+def _count_episode_window_overlap_pairs(windows: Iterable[tuple[int, int]]) -> int:
+    """Count inclusive timestamp-window intersections in O(n log n) time."""
+    active_ends: list[int] = []
+    overlap_pairs = 0
+    for start_ns, end_ns in sorted(windows):
+        while active_ends and active_ends[0] < start_ns:
+            heapq.heappop(active_ends)
+        overlap_pairs += len(active_ends)
+        heapq.heappush(active_ends, end_ns)
+    return overlap_pairs
+
+
+def _market_regime_bins(
+    samples: Mapping[str, tuple[str, array, array]],
+) -> tuple[tuple[str, str, str, str, float | None, float | None, int, float, float], ...]:
+    """Describe Train-call rewards across fixed, predeclared feature regimes."""
+    output = []
+    for family in ("volatility", "trend", "funding"):
+        item = samples.get(family)
+        if item is None:
+            continue
+        feature_name, raw_values, raw_rewards = item
+        values = np.frombuffer(raw_values, dtype=np.float64)
+        rewards = np.frombuffer(raw_rewards, dtype=np.float64)
+        if len(values) != len(rewards) or not len(values):
+            raise ContractError("market regime diagnostic sample alignment failed")
+        labels: tuple[str, ...]
+        if family == "volatility":
+            cuts = np.asarray(_VOLATILITY_REGIME_CUTS, dtype=np.float64)
+            bucket_indices = np.searchsorted(cuts, values, side="left")
+            scheme = "fixed_absolute_volatility_upper_closed_v1"
+            labels = ("le_0.00025", "0.00025_to_0.0005", "0.0005_to_0.001", "gt_0.001")
+            bounds: tuple[tuple[float | None, float | None], ...] = (
+                (None, float(cuts[0])), (float(cuts[0]), float(cuts[1])),
+                (float(cuts[1]), float(cuts[2])), (float(cuts[2]), None),
+            )
+        else:
+            bucket_indices = np.where(values < 0, 0, np.where(values > 0, 2, 1))
+            scheme = "signed_feature_v1"
+            labels = ("negative", "zero", "positive")
+            bounds = ((None, 0.0), (0.0, 0.0), (0.0, None))
+        for index, label in enumerate(labels):
+            selected = rewards[bucket_indices == index]
+            total = float(np.sum(selected, dtype=np.float64))
+            count = int(selected.size)
+            lower, upper = bounds[index]
+            output.append((family, feature_name, scheme, label, lower, upper,
+                           count, total, total / count if count else 0.0))
+    return tuple(output)
 
 
 class RLProvider:
@@ -169,6 +250,18 @@ class RLProvider:
             seeds = tuple((s + 0x9e3779b9) % 2**32 for s in seeds)
         return make_sync_env(self.env_factory, seeds, phase, self.config.policy)
 
+    def _configure_cuda_allocator(self, torch: Any) -> None:
+        fraction = self.config.cuda_allocator_fraction
+        if fraction is None:
+            return
+        if self.config.device != "cuda":
+            raise ContractError("CUDA allocator budget requires CUDA device")
+        if not torch.cuda.is_available():
+            raise GateBlocked("CUDA requested but unavailable; never silently fall back to CPU")
+        # PyTorch applies this to its caching allocator only, so set it before
+        # constructing vectors or loading a model that may allocate CUDA tensors.
+        torch.cuda.set_per_process_memory_fraction(fraction, torch.cuda.current_device())
+
     def create(self) -> RLProvider:
         self._gates("L3-020", "L3-021", "L1-013")
         if self.model is not None:
@@ -178,6 +271,7 @@ class RLProvider:
             import torch
             if not torch.cuda.is_available():
                 raise GateBlocked("CUDA requested but unavailable; never silently fall back to CPU")
+            self._configure_cuda_allocator(torch)
         vec = self._new_vec("train")
         try:
             assert_transition_proof(vec, self.config.fingerprint.hash)
@@ -268,13 +362,27 @@ class RLProvider:
         requested_change = _Moments()
         executed_change = _Moments()
         guard_values = _Moments()
+        soft_risk_values = _Moments()
+        hard_risk_values = _Moments()
+        requested_executed_delta = _Moments()
+        execution_reason_counts: dict[str, int] = {}
+        action_bin_edges = (0.05, 0.15, 0.30, 0.60)
+        action_bin_names = ("abs_lt_0.05", "abs_0.05_0.15", "abs_0.15_0.30",
+                            "abs_0.30_0.60", "abs_0.60_1.00")
+        action_bin_values = {name: [0, 0.0, 0.0, 0, 0, 0.0] for name in action_bin_names}
         decision_timestamps: set[int] = set()
         decision_start_ns: int | None = None
         decision_end_ns: int | None = None
+        market_feature_values: dict[str, _Moments] = {}
+        market_feature_minmax: dict[str, tuple[float, float]] = {}
+        market_regime_samples: dict[str, tuple[str, array, array]] = {}
+        position_state_counts: dict[str, int] = {"flat": 0, "long": 0, "short": 0}
+        episode_windows: dict[tuple[int, int, int], tuple[int, int]] = {}
         previous_requested: list[float | None] = [None] * self.config.num_envs
         previous_executed: list[float | None] = [None] * self.config.num_envs
         diagnostic_counts = {
-            "episodes": 0, "guarded": 0, "submit": 0, "noop": 0,
+            "episodes": 0, "guarded": 0, "soft_guarded": 0,
+            "hard_guarded": 0, "submit": 0, "noop": 0,
         }
 
         class TransitionGuard(BaseCallback):
@@ -295,7 +403,9 @@ class RLProvider:
                 required = {
                     "r_econ", "r_shape", "r_train", "requested_action",
                     "policy_executed_action_pre_terminal", "risk_guard_intervention",
-                    "execution_plan_action", "decision_ts_ns",
+                    "risk_soft_adjustment", "risk_hard_adjustment",
+                    "execution_plan_action", "execution_plan_reason", "decision_ts_ns",
+                    "episode_window", "market_features", "net_exposure",
                 }
                 for rank, info in enumerate(infos):
                     if not isinstance(info, dict) or not required <= set(info):
@@ -308,6 +418,53 @@ class RLProvider:
                                          else min(decision_start_ns, decision_ts_ns))
                     decision_end_ns = (decision_ts_ns if decision_end_ns is None
                                        else max(decision_end_ns, decision_ts_ns))
+                    window = info["episode_window"]
+                    if not isinstance(window, dict) or not {
+                        "start_ns", "end_ns", "episode_index", "start_offset", "decision_steps",
+                    } <= set(window):
+                        raise ContractError("native training info lacks the exact episode window")
+                    window_values = tuple(window[key] for key in (
+                        "start_ns", "end_ns", "episode_index", "start_offset", "decision_steps",
+                    ))
+                    if any(type(value) is not int or value < 0 for value in window_values):
+                        raise ContractError("native training episode window is invalid")
+                    window_key = (rank, window["episode_index"], window["start_offset"])
+                    episode_windows[window_key] = (window["start_ns"], window["end_ns"])
+                    features = info["market_features"]
+                    if not isinstance(features, dict):
+                        raise ContractError("native training market features are invalid")
+                    for feature_name, feature_value in features.items():
+                        if type(feature_name) is not str or not feature_name:
+                            raise ContractError("native training market feature name is invalid")
+                        moments = market_feature_values.setdefault(feature_name, _Moments())
+                        moments.add(feature_value, f"market.{feature_name}")
+                        number = float(feature_value)
+                        low, high = market_feature_minmax.get(feature_name, (number, number))
+                        market_feature_minmax[feature_name] = (min(low, number), max(high, number))
+                    regime_features: tuple[tuple[str, tuple[str, ...]], ...] = (
+                        ("volatility", ("volatility_5m", "volatility_15m", "volatility_60m")),
+                        ("trend", ("return_15m", "return_5m", "return_1m")),
+                        ("funding", ("last_settled_funding",)),
+                    )
+                    for family, candidates in regime_features:
+                        feature_name = next((name for name in candidates if name in features), None)
+                        if feature_name is None:
+                            continue
+                        current = market_regime_samples.get(family)
+                        if current is None:
+                            current = (feature_name, array("d"), array("d"))
+                            market_regime_samples[family] = current
+                        elif current[0] != feature_name:
+                            raise ContractError("market regime feature changed during one learn call")
+                        current[1].append(float(features[feature_name]))
+                        current[2].append(float(info["r_econ"]))
+                    net_exposure = info["net_exposure"]
+                    if type(net_exposure) not in (int, float) or not np.isfinite(float(net_exposure)):
+                        raise ContractError("native training net exposure is invalid")
+                    state = "flat" if abs(float(net_exposure)) <= 1e-12 else (
+                        "long" if float(net_exposure) > 0 else "short"
+                    )
+                    position_state_counts[state] += 1
                     econ.add(info["r_econ"], "r_econ")
                     shape.add(info["r_shape"], "r_shape")
                     train_reward.add(info["r_train"], "r_train")
@@ -322,11 +479,34 @@ class RLProvider:
                     guard = float(info["risk_guard_intervention"])
                     guard_values.add(guard, "risk_guard_intervention")
                     diagnostic_counts["guarded"] += int(guard > 0)
+                    soft_adjustment = float(info["risk_soft_adjustment"])
+                    hard_adjustment = float(info["risk_hard_adjustment"])
+                    soft_risk_values.add(soft_adjustment, "risk_soft_adjustment")
+                    hard_risk_values.add(hard_adjustment, "risk_hard_adjustment")
+                    diagnostic_counts["soft_guarded"] += int(soft_adjustment > 0)
+                    diagnostic_counts["hard_guarded"] += int(hard_adjustment > 0)
+                    requested_executed_delta.add(
+                        abs(requested_value - executed_value), "requested_to_executed_action_delta",
+                    )
                     action = info["execution_plan_action"]
                     if action not in {"SUBMIT", "NOOP", "WAIT", "CANCEL"}:
                         raise ContractError("native execution-plan action is invalid")
+                    reason = info["execution_plan_reason"]
+                    if not isinstance(reason, str) or not reason:
+                        raise ContractError("native execution-plan reason is invalid")
+                    execution_reason_counts[reason] = execution_reason_counts.get(reason, 0) + 1
                     diagnostic_counts["submit"] += int(action == "SUBMIT")
                     diagnostic_counts["noop"] += int(action == "NOOP")
+                    magnitude = abs(requested_value)
+                    bin_index = next((i for i, edge in enumerate(action_bin_edges) if magnitude < edge),
+                                     len(action_bin_names) - 1)
+                    bin_values = action_bin_values[action_bin_names[bin_index]]
+                    bin_values[0] += 1
+                    bin_values[1] += float(info["r_econ"])
+                    bin_values[2] += float(info["r_shape"])
+                    bin_values[3] += int(float(info["risk_hard_adjustment"]) > 0)
+                    bin_values[4] += int(action == "SUBMIT")
+                    bin_values[5] += abs(executed_value)
                     previous_requested_value = previous_requested[rank]
                     previous_executed_value = previous_executed[rank]
                     if (previous_requested_value is None) != (previous_executed_value is None):
@@ -377,7 +557,8 @@ class RLProvider:
         after = getattr(self.model, "_n_updates", None)
         delta = (after - previous) if isinstance(after, int) and isinstance(previous, int) else None
         if econ.count != n or any(values.count != n for values in (
-            shape, train_reward, requested, requested_abs, executed, executed_abs, guard_values,
+            shape, train_reward, requested, requested_abs, executed, executed_abs,
+            guard_values, soft_risk_values, hard_risk_values, requested_executed_delta,
         )):
             self._tainted = True
             raise ContractError("native learning diagnostic count differs from sampled transitions")
@@ -417,15 +598,39 @@ class RLProvider:
             executed_exposure_change_abs_mean=executed_change.mean,
             guard_intervention_mean=guard_values.mean,
             guard_intervention_fraction=diagnostic_counts["guarded"] / n,
+            soft_risk_adjustment_mean=soft_risk_values.mean,
+            soft_risk_intervention_fraction=diagnostic_counts["soft_guarded"] / n,
+            hard_risk_adjustment_mean=hard_risk_values.mean,
+            hard_risk_intervention_fraction=diagnostic_counts["hard_guarded"] / n,
+            requested_to_executed_abs_mean=requested_executed_delta.mean,
+            execution_plan_reasons=tuple(sorted(execution_reason_counts.items())),
             submit_fraction=diagnostic_counts["submit"] / n,
             noop_fraction=diagnostic_counts["noop"] / n,
             optimizer_metrics=tuple(optimizer_metrics),
             optimizer_undefined_metrics=tuple(optimizer_undefined_metrics),
+            requested_action_economic_bins=tuple(
+                (name, int(values[0]), values[1], values[1] / values[0] if values[0] else 0.0,
+                 values[2], values[3] / values[0] if values[0] else 0.0,
+                 values[4] / values[0] if values[0] else 0.0,
+                 values[5] / values[0] if values[0] else 0.0)
+                for name, values in action_bin_values.items()
+            ),
+            position_state_counts=tuple(sorted(position_state_counts.items())),
+            market_feature_summaries=tuple(
+                (name, values.count, values.mean, values.std,
+                 market_feature_minmax[name][0], market_feature_minmax[name][1])
+                for name, values in sorted(market_feature_values.items())
+            ),
+            market_regime_economic_bins=_market_regime_bins(market_regime_samples),
+            episode_window_overlap_pairs=_count_episode_window_overlap_pairs(
+                episode_windows.values(),
+            ),
         )
         self._perf = Performance(samples=n, steps_per_second=n / max(elapsed, 1e-9),
                                  updates=delta, updates_per_second=None if delta is None else delta / max(elapsed, 1e-9),
                                  elapsed_seconds=elapsed, cpu_rss_bytes=_perf_rss(),
                                  gpu_max_allocated_bytes=torch.cuda.max_memory_allocated() if self.config.device == "cuda" else None,
+                                 gpu_max_reserved_bytes=torch.cuda.max_memory_reserved() if self.config.device == "cuda" else None,
                                  diagnostics=diagnostics)
         return self._perf
 
@@ -545,6 +750,9 @@ class RLProvider:
         if self.model is not None:
             raise ContractError("Must load into a fresh provider")
         self._runtime()
+        if self.config.cuda_allocator_fraction is not None:
+            import torch
+            self._configure_cuda_allocator(torch)
         base = self._new_vec("train")
         try:
             # Rebuild L3's native episode boundary before reading its token or

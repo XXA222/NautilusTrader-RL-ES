@@ -45,6 +45,19 @@ def validate_payload(kind: str, p: dict[str, Any], ts: int) -> None:
         for key in ("update_id", "transaction_time_ns"):
             if type(p.get(key)) is not int or p[key] < 0:
                 raise DataError(f"{key} must be a nonnegative integer")
+    elif kind == "trade_flow_1s":
+        for key in ("aggressor_buy_qty", "aggressor_sell_qty",
+                    "aggressor_buy_notional", "aggressor_sell_notional",
+                    "first_price", "last_price", "high_price", "low_price"):
+            _number(p, key, allow_zero=key.startswith("aggressor_"))
+        if (type(p.get("trade_count")) is not int or p["trade_count"] <= 0
+                or type(p.get("first_trade_id")) is not int or p["first_trade_id"] < 0
+                or type(p.get("last_trade_id")) is not int or p["last_trade_id"] < p["first_trade_id"]):
+            raise DataError("trade_flow_1s requires positive count and ordered nonnegative trade IDs")
+        if _number(p, "high_price") < max(_number(p, "first_price"), _number(p, "last_price")):
+            raise DataError("trade_flow_1s high price is below an observed endpoint")
+        if _number(p, "low_price") > min(_number(p, "first_price"), _number(p, "last_price")):
+            raise DataError("trade_flow_1s low price is above an observed endpoint")
     elif kind in ("funding_update", "funding_settlement"):
         _number(p, "rate", signed=True)
         if kind == "funding_settlement":

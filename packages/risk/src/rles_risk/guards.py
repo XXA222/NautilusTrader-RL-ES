@@ -72,12 +72,13 @@ class SoftRiskParams:
     def with_multipliers(self, values: Mapping[str, float]) -> SoftRiskParams:
         """Apply L5's neutral multiplier mapping without exposing hard limits.
 
-        Smaller exposure/volatility multipliers reduce target scale. A smaller
-        drawdown multiplier increases the drawdown reduction coefficient, whose
-        L3 convention is the inverse of L5's multiplier convention.
+        New E2 searches use independent exposure and drawdown multipliers.
+        The three-key form remains readable for existing checkpoint schemas;
+        it must not be used when constructing a new search space.
         """
-        if set(values) != {"exposure_multiplier", "drawdown_throttle", "volatility_throttle"}:
-            raise ValueError("exact exposure/drawdown/volatility multiplier keys required")
+        if set(values) not in ({"exposure_multiplier", "drawdown_throttle"},
+                               {"exposure_multiplier", "drawdown_throttle", "volatility_throttle"}):
+            raise ValueError("exposure/drawdown multiplier keys required")
         physical = {}
         for name, value in values.items():
             if type(value) not in (int, float, Decimal):
@@ -87,7 +88,8 @@ class SoftRiskParams:
                 raise ValueError("soft multiplier must only reduce exposure")
             physical[name] = number
         return SoftRiskParams(
-            target_scale=self.target_scale * physical["exposure_multiplier"] * physical["volatility_throttle"],
+            target_scale=self.target_scale * physical["exposure_multiplier"]
+            * physical.get("volatility_throttle", Decimal(1)),
             max_turnover_fraction=self.max_turnover_fraction,
             drawdown_throttle=1 - (1 - self.drawdown_throttle) * physical["drawdown_throttle"],
             funding_sensitivity=self.funding_sensitivity,

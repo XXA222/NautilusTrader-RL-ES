@@ -1,0 +1,12 @@
+{
+  "status": "PASS",
+  "upstream_commit": "e01491fad6434b2245a3b8ca201dd7faedcc458c",
+  "jax_version": "0.11.2",
+  "devices": [
+    "cpu:0"
+  ],
+  "rssm_import": true,
+  "action_independence": true,
+  "checkpoint_resume": true,
+  "detail": null
+}

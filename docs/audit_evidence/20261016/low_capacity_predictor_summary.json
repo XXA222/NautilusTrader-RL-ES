@@ -1,0 +1,189 @@
+{
+  "schema": "rles.low-capacity-forecast-evidence.v1",
+  "scope": "development-only internal diagnostics; not independent OOS",
+  "dataset_snapshot_hash": "258834aba27e77b0c97fbb4a5ca9fc6c18699f2f8d0d56c77812d1946bbc1adb",
+  "source_event_count": 4403867,
+  "bundle_sha256": "ea2ea516780f25756c7dae35636ee59eca7e3443a24259c6b58526b2536fec68",
+  "plan_sha256": "972ba3efdf14c2417eca5934ae873b571cf9569b2d0f46ca450502bfcde1004b",
+  "plan_errata_sha256": "395ab83192a13555f451f70d5b98d46c093d6efedf00697aa840dabb1bcad985",
+  "runner_sha256": "94d5527354e5dbcbe2ffcaa03ec6f4c4e85783272c51a022fdef3dad92cb64ca",
+  "source_identity_sha256": "d6948264cb94ad3be7953a03194baeeb5b50c114651d9a03b08104200db5c303",
+  "original_summary_sha256": "56f074ab30e64ee6814bf41fc6709b0e684e4cc4deea17fc72427acdc204d42e",
+  "amended_summary_sha256": "537ffdf2f3fc042a271ae0c055130c3010312080782c8c62968942287a23c83d",
+  "folds": [
+    {
+      "fold": 1,
+      "source_interval_ns": [
+        1722729600000000000,
+        1740963600000000000
+      ],
+      "feature_count": 5,
+      "feature_names": [
+        "return_1m",
+        "volatility_5m",
+        "volume_5m",
+        "basis",
+        "last_settled_funding"
+      ],
+      "feature_samples": 60480,
+      "data_quality": "DQ-B",
+      "horizons": [
+        {
+          "minutes": 5,
+          "train_samples": 51839,
+          "test_samples": 8640,
+          "ridge_spearman_ic": -0.009266532521114323,
+          "ridge_top_decile_long_net_bp": -13.931086517202163,
+          "ridge_bottom_decile_short_net_bp": -12.52855795480004,
+          "momentum_spearman_ic": -0.015669863450587,
+          "reversal_spearman_ic": 0.015669863450587,
+          "reversal_top_decile_long_net_bp": -14.224300443757084
+        },
+        {
+          "minutes": 15,
+          "train_samples": 51837,
+          "test_samples": 8640,
+          "ridge_spearman_ic": -0.019656321623051833,
+          "ridge_top_decile_long_net_bp": -12.999820796048118,
+          "ridge_bottom_decile_short_net_bp": -12.060311472827227,
+          "momentum_spearman_ic": -0.020083823006716215,
+          "reversal_spearman_ic": 0.020083823006716215,
+          "reversal_top_decile_long_net_bp": -18.880729853501958
+        },
+        {
+          "minutes": 60,
+          "train_samples": 51828,
+          "test_samples": 8640,
+          "ridge_spearman_ic": 0.009464645133619998,
+          "ridge_top_decile_long_net_bp": -5.263221046048106,
+          "ridge_bottom_decile_short_net_bp": -9.359595645723282,
+          "momentum_spearman_ic": -0.013583551311120443,
+          "reversal_spearman_ic": 0.013583551311120443,
+          "reversal_top_decile_long_net_bp": -27.84437667968222
+        }
+      ]
+    },
+    {
+      "fold": 2,
+      "source_interval_ns": [
+        1741046400000000000,
+        1759280400000000000
+      ],
+      "feature_count": 5,
+      "feature_names": [
+        "return_1m",
+        "volatility_5m",
+        "volume_5m",
+        "basis",
+        "last_settled_funding"
+      ],
+      "feature_samples": 60480,
+      "data_quality": "DQ-B",
+      "horizons": [
+        {
+          "minutes": 5,
+          "train_samples": 51839,
+          "test_samples": 8640,
+          "ridge_spearman_ic": 0.03668992374838588,
+          "ridge_top_decile_long_net_bp": -10.882895009147841,
+          "ridge_bottom_decile_short_net_bp": -10.984988093134799,
+          "momentum_spearman_ic": -0.03972151182689439,
+          "reversal_spearman_ic": 0.03972151182689439,
+          "reversal_top_decile_long_net_bp": -12.281833208937568
+        },
+        {
+          "minutes": 15,
+          "train_samples": 51837,
+          "test_samples": 8640,
+          "ridge_spearman_ic": 0.00031900571381485805,
+          "ridge_top_decile_long_net_bp": -11.615698800033721,
+          "ridge_bottom_decile_short_net_bp": -11.786542622835166,
+          "momentum_spearman_ic": -0.05936106763537744,
+          "reversal_spearman_ic": 0.05936106763537744,
+          "reversal_top_decile_long_net_bp": -10.07136780132743
+        },
+        {
+          "minutes": 60,
+          "train_samples": 51828,
+          "test_samples": 8640,
+          "ridge_spearman_ic": -0.005727597076576392,
+          "ridge_top_decile_long_net_bp": -11.572960637480522,
+          "ridge_bottom_decile_short_net_bp": -7.810154804374854,
+          "momentum_spearman_ic": -0.005615663287086111,
+          "reversal_spearman_ic": 0.005615663287086111,
+          "reversal_top_decile_long_net_bp": -13.64978334526814
+        }
+      ]
+    },
+    {
+      "fold": 3,
+      "source_interval_ns": [
+        1759363200000000000,
+        1777597200000000000
+      ],
+      "feature_count": 5,
+      "feature_names": [
+        "return_1m",
+        "volatility_5m",
+        "volume_5m",
+        "basis",
+        "last_settled_funding"
+      ],
+      "feature_samples": 60480,
+      "data_quality": "DQ-B",
+      "horizons": [
+        {
+          "minutes": 5,
+          "train_samples": 51839,
+          "test_samples": 8640,
+          "ridge_spearman_ic": -0.015696904902874953,
+          "ridge_top_decile_long_net_bp": -12.127502420269868,
+          "ridge_bottom_decile_short_net_bp": -13.00572000438609,
+          "momentum_spearman_ic": -0.04656820861766285,
+          "reversal_spearman_ic": 0.04656820861766285,
+          "reversal_top_decile_long_net_bp": -10.949777384533174
+        },
+        {
+          "minutes": 15,
+          "train_samples": 51837,
+          "test_samples": 8640,
+          "ridge_spearman_ic": 0.014255003479186592,
+          "ridge_top_decile_long_net_bp": -11.155921701606353,
+          "ridge_bottom_decile_short_net_bp": -11.283203436904598,
+          "momentum_spearman_ic": -0.0752302888921855,
+          "reversal_spearman_ic": 0.0752302888921855,
+          "reversal_top_decile_long_net_bp": -11.682689992264851
+        },
+        {
+          "minutes": 60,
+          "train_samples": 51828,
+          "test_samples": 8640,
+          "ridge_spearman_ic": -0.003924218278114049,
+          "ridge_top_decile_long_net_bp": -12.012114069318057,
+          "ridge_bottom_decile_short_net_bp": -5.721922113085112,
+          "momentum_spearman_ic": -0.05173539027223882,
+          "reversal_spearman_ic": 0.05173539027223882,
+          "reversal_top_decile_long_net_bp": -9.752977647037994
+        }
+      ]
+    }
+  ],
+  "round_trip_cost_bps_scenario_only": 12.0,
+  "decision": "No stable ridge IC or positive scenario-cost tail results across folds; do not expand frozen candidate budget or advance to Test/Holdout.",
+  "limits": [
+    "All selected periods are previously used Train data and now registered as development.",
+    "Fee/slippage hurdle is an explicit scenario assumption, not verified historical economics.",
+    "Forecast labels and tail hurdle summaries do not model position sizing, turnover, funding, or execution.",
+    "Forecast rows are sampled every five minutes; overlapping 15m/60m targets are dependent.",
+    "No block bootstrap or statistical significance claim is made."
+  ],
+  "artifacts": {
+    "preregistered_plan": "configs/low_capacity_predictor_20261016.json",
+    "plan_errata": "configs/low_capacity_predictor_20261016.errata.json",
+    "runner": "qa/low_capacity_predictor_20261016.py",
+    "prepare_plan": "qa/prepare_low_capacity_predictor_20261016.py",
+    "full_reports": ".artifacts/audit-development-20261016/low-capacity-predictor-v2/",
+    "failed_first_attempt": ".artifacts/audit-development-20261016/low-capacity-predictor-v1/FAILED.json"
+  },
+  "provenance_note": "An earlier candidate fold overlapping a reserved 2024 Holdout was rejected before preregistration. A first execution then stopped on full-window funding-schedule coverage; the corrected run clipped the schedule and completed. One duplicate development ledger row records that failed fold attempt."
+}

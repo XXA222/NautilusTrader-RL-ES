@@ -49,6 +49,38 @@ def _decision(*, target: str, current: str = "0",
     )
 
 
+@pytest.mark.parametrize("sign", [-1, 1])
+def test_explicit_zero_target_exits_small_position_without_deadband(sign):
+    legacy = replace(_planner().config, deadband=Decimal("0.10"))
+    rules = InstrumentRules("BTC/USD.SIM", Decimal("0.0001"), Decimal("0.0001"),
+                            Decimal("5"), Decimal("1"))
+    args = dict(decision_id="voluntary-flat", instrument=rules, target_exposure=Decimal(0),
+                risk_budget_notional=Decimal("1000"), equity=Decimal("1000"),
+                mark_price=Decimal("100"), current_qty=Decimal("0.5") * sign, pending=())
+    assert TargetQuantityPlanner(legacy).plan(**args).reason == "deadband"
+    explicit = replace(legacy, zero_target_policy="close")
+    decision = TargetQuantityPlanner(explicit).plan(**args)
+    assert (decision.action, decision.reason, decision.delta_qty) == ("SUBMIT", "policy_flat", -args["current_qty"])
+    assert legacy.fingerprint() != explicit.fingerprint()
+
+
+def test_explicit_flat_cancels_pending_orders_and_respects_dated_minimums():
+    planner = TargetQuantityPlanner(replace(_planner().config, deadband=Decimal("0.10"),
+                                            zero_target_policy="close", pending_order_policy="wait"))
+    rules = InstrumentRules("BTC/USD.SIM", Decimal("0.0001"), Decimal("0.0001"),
+                            Decimal("20"), Decimal("1"))
+    args = dict(decision_id="flat-dust", instrument=rules, target_exposure=Decimal(0),
+                risk_budget_notional=Decimal("1000"), equity=Decimal("1000"),
+                mark_price=Decimal("100"), current_qty=Decimal("0.1"), pending=())
+    blocked = planner.plan(**args)
+    assert blocked.action == "NOOP" and "historical minimum" in blocked.reason
+    allowed = planner.plan(**{**args, "instrument": replace(rules, reduce_only_min_notional_exempt=True)})
+    assert allowed.action == "SUBMIT" and allowed.reason == "policy_flat"
+    pending = (PendingOrder("native-1", Decimal("1"), "ACCEPTED"),)
+    assert planner.plan(**{**args, "current_qty": Decimal(0), "pending": pending}).action == "CANCEL"
+    assert planner.plan(**{**args, "pending": (replace(pending[0], status="PENDING_CANCEL"),)}).action == "WAIT"
+
+
 @pytest.mark.parametrize(("target", "pending", "action", "policy"), (
     ("0.5", (), "SUBMIT", PendingOrderPolicy.NONE),
     ("0", (), "NOOP", PendingOrderPolicy.NONE),
@@ -101,6 +133,31 @@ def test_fee_stress_is_hashed_and_only_increases_positive_fees() -> None:
     rebate = {"maker_fee": "-0.0001", "taker_fee": "0.0005"}
     assert _effective_fee_rates(rebate, config, "stress") == (Decimal("-0.0001"), Decimal("0.0010"))
     assert rule["maker_fee"] == "0.0002"  # source facts remain untouched
+
+
+def test_partial_depth_stress_is_explicit_and_bound_to_execution_identity() -> None:
+    config = replace(
+        _planner().config,
+        stress_fill=FillProfile("depth-stress", Decimal("2"),
+                                simulated_depth_fraction=Decimal("0.4")),
+    )
+    assert config.fingerprint() != _planner().config.fingerprint()
+    scenario = resolve_scenario(config, "stress")
+    assert scenario.simulated_depth_fraction == "0.4"
+    assert scenario.scenario_hash != resolve_scenario(_planner().config, "stress").scenario_hash
+    assert FillProfile("base", Decimal("1")).simulated_depth_fraction == Decimal(1)
+
+
+def test_partial_depth_is_bounded_and_quote_depth_cannot_be_synthetic() -> None:
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        FillProfile("invalid-depth", Decimal("2"), simulated_depth_fraction=Decimal("1.1"))
+    with pytest.raises(ValueError, match="base execution must retain"):
+        replace(_planner().config,
+                base_fill=FillProfile("partial-base", Decimal("1"),
+                                      simulated_depth_fraction=Decimal("0.5")))
+    with pytest.raises(ValueError, match="native displayed depth"):
+        FillProfile("synthetic-quote-cap", Decimal(0), "quote",
+                    simulated_depth_fraction=Decimal("0.5"))
 
 
 def test_default_fee_multipliers_preserve_legacy_execution_fingerprint() -> None:

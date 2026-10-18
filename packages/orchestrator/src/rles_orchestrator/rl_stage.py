@@ -170,7 +170,10 @@ class RLStageExecutor:
                 raise RuntimeError("durable R1 learning diagnostics failed integrity verification")
             record = json.loads(payload.decode("utf-8"))
             if (not isinstance(record, dict)
-                    or record.get("schema") != "rles.r1-learning.v1"
+                    or record.get("schema") not in {
+                        "rles.r1-learning.v1", "rles.r1-learning.v2", "rles.r1-learning.v3",
+                        "rles.r1-learning.v4", "rles.r1-learning.v5",
+                    }
                     or record.get("config_hash") != self.config.hash
                     or record.get("transition_hash") != self.config.fingerprint.hash
                     or record.get("attempt_id") != context.spec.attempt_id
@@ -187,11 +190,23 @@ class RLStageExecutor:
             if (type(samples) is not int or samples < 1 or diagnostics is None
                     or getattr(diagnostics, "samples", None) != samples):
                 raise RuntimeError("L4 training performance lacks native learning diagnostics")
+            resources = {
+                "cpu_rss_bytes": getattr(performance, "cpu_rss_bytes", None),
+                "gpu_max_allocated_bytes": getattr(performance, "gpu_max_allocated_bytes", None),
+                "gpu_max_reserved_bytes": getattr(performance, "gpu_max_reserved_bytes", None),
+            }
+            if any(value is not None and (type(value) is not int or value < 0)
+                   for value in resources.values()):
+                raise RuntimeError("L4 training performance has invalid resource measurements")
             block = {
                 "step_start": cursor,
                 "step_end": cursor + samples,
                 "samples": samples,
                 "updates": getattr(performance, "updates", None),
+                "resource_measurements": {
+                    "scope": "cpu_rss_at_learn_call_end; torch_cuda_allocator_peaks_since_learn_call_start",
+                    **resources,
+                },
                 "diagnostics": asdict(diagnostics),
             }
             blocks.append(block)
@@ -199,7 +214,7 @@ class RLStageExecutor:
         if cursor != self.train_steps:
             raise RuntimeError("R1 learning diagnostics do not cover the completed step budget")
         record = {
-            "schema": "rles.r1-learning.v1",
+            "schema": "rles.r1-learning.v5",
             "attempt_id": context.spec.attempt_id,
             "algorithm": self.config.algorithm,
             "config_hash": self.config.hash,

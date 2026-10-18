@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rles-world-model"
+version = "0.1.0.dev0"
+description = "Causal market replay and isolated DreamerV3 adapters for Route B"
+requires-python = "==3.14.7"
+dependencies = ["rles-data>=0.4.1,<0.5.0"]
+
+[project.scripts]
+rles-world-model = "rles_world_model.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rles_world_model"]

@@ -5,6 +5,7 @@ integrator must still enforce real process resource ceilings.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from .errors import ComputeError
@@ -48,15 +49,32 @@ class ComputeAllocation:
         reservation=self.quota.acquire(self.owner,cpu_cores=self.cpu_cores,
                                       ram_bytes=self.ram_bytes,gpus=int(self.gpu_lock is not None))
         self.lease=reservation
-        if self.gpu_lock:
-            try:
+        try:
+            if self.gpu_lock and os.name == 'nt':
+                job_name = os.environ.get('RLES_SUPERVISION_JOB_NAME')
+                memory_value = os.environ.get('RLES_SUPERVISION_MEMORY_BYTES')
+                if job_name is not None or memory_value is not None:
+                    try:
+                        memory_bytes = int(memory_value) if memory_value is not None else 0
+                    except ValueError as exc:
+                        raise ComputeError('invalid supervised application memory evidence') from exc
+                    if job_name is None or memory_bytes <= 0:
+                        raise ComputeError('incomplete supervised application Job evidence')
+                    assert self.gpu_lock is not None
+                    self.quota.enable_supervised_gpu_recovery(
+                        reservation, job_name=job_name, memory_bytes=memory_bytes,
+                        gpu_lock_directory=self.gpu_lock.path.parent,
+                        gpu_index=self.gpu_lock.gpu_index,
+                    )
+                    self.quota.seal_supervised_gpu_recovery(reservation)
+            if self.gpu_lock:
                 self.gpu_lock.acquire(attempt_id=self.attempt_id)
-            except BaseException:
-                # Exclusivity acquisition failed; quota can safely be released
-                # because no CUDA context could have been admitted by this owner.
-                self.quota.release(reservation)
-                self.lease=None
-                raise
+        except BaseException:
+            # Failed enrollment or exclusivity means this owner has not entered
+            # learner construction, so its fresh quota can safely be released.
+            self.quota.release(reservation)
+            self.lease=None
+            raise
         return reservation
 
     def release(self) -> None:

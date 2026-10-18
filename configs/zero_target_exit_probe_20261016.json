@@ -1,0 +1,42 @@
+{
+  "schema": "rles.zero-target-exit-probe.v1",
+  "date": "2026-10-16",
+  "split": "train_inner",
+  "scope": "deterministic execution semantics only; no strategy claim",
+  "bundle": "D:\\Program Files\\NautilusTrader_RL_ES\\.artifacts\\audit-development-20261016\\models\\candidate-seed-102",
+  "bundle_sha256": "ea2ea516780f25756c7dae35636ee59eca7e3443a24259c6b58526b2536fec68",
+  "dataset_sha256": "258834aba27e77b0c97fbb4a5ca9fc6c18699f2f8d0d56c77812d1946bbc1adb",
+  "source": {
+    "market_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.artifacts\\audit-development-20261016\\data\\market.parquet",
+    "market_sha256": "06323e909997909dee35b4abf1543444ae230f30cbc1f672ded033b3bc41fe70",
+    "rules_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.artifacts\\audit-development-20261016\\data\\scenario-rules.json",
+    "rules_sha256": "690292b508ce722d6ba2f5b9fb745671f56fc396d2026943fd36668e9028c93b"
+  },
+  "source_plan_sha256": "da29700ff7778510b89225502b60689e78fa9169538a950b0ac1f4fb8c21cfa5",
+  "window": {
+    "source_start_ns": 1738281600000000000,
+    "start_ns": 1738368000000000000,
+    "end_ns": 1738454400000000000
+  },
+  "instrument": "ETHUSDT-PERP.SIM",
+  "modes": [
+    "deadband",
+    "close"
+  ],
+  "seeds": [
+    102,
+    103,
+    104
+  ],
+  "action_path": {
+    "step_0": 0.25,
+    "steps_1_through_21": 0.05,
+    "step_22_onward": 0.0
+  },
+  "max_probe_steps_after_zero": 60,
+  "expected_semantic_difference": "under 0.10 deadband, a valid small residual position persists for zero target; close policy sends Reduce-Only close",
+  "execution": "same frozen base latency/fill/fees/rules; only zero_target_policy changes",
+  "selection": "none; compare plans, native exposure and fills, not net return",
+  "stop_free_bytes": 2147483648,
+  "historical_economics": "scenario-only; not verified historical execution facts"
+}

@@ -13,19 +13,20 @@ class RewardConfig:
     reward_scale: float = 1.0
 
     def __post_init__(self) -> None:
-        if type(self.reward_scale) not in (int, float):
-            raise ValueError("reward scale must be a real number")
-        try:
-            scale = float(self.reward_scale)
-        except (OverflowError, ValueError) as exc:
-            raise ValueError("reward scale must be finite") from exc
+        values = {
+            "lambda_dd": self.lambda_dd,
+            "lambda_guard": self.lambda_guard,
+            "insolvent_penalty": self.insolvent_penalty,
+            "reward_scale": self.reward_scale,
+        }
+        if any(type(value) not in (int, float) for value in values.values()):
+            raise ValueError("reward parameters must be real numbers")
+        if any(not isfinite(float(value)) for value in values.values()):
+            raise ValueError("reward parameters must be finite")
+        scale = float(self.reward_scale)
         if not isfinite(scale) or not 0 < scale <= 1_000_000:
             raise ValueError("reward scale must be in (0, 1000000]")
         object.__setattr__(self, "reward_scale", scale)
-        if any(not isfinite(x) for x in (
-            self.lambda_dd, self.lambda_guard, self.insolvent_penalty, self.reward_scale,
-        )):
-            raise ValueError("reward config must be finite")
         if self.lambda_dd < 0 or self.lambda_guard < 0 or self.insolvent_penalty >= 0:
             raise ValueError("invalid reward costs")
 

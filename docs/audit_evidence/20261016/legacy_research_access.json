@@ -1,0 +1,1265 @@
+{
+  "schema": "rles.legacy-research-access.v1",
+  "date": "2026-10-16",
+  "scope": [
+    ".tmp/real-ethusdt-scenario",
+    ".tmp/wfo-validation-recovery-20261013"
+  ],
+  "market_data_loaded": false,
+  "legacy_databases_modified": false,
+  "discovery_exit_code": 2,
+  "limitations": "Known WFO roots only; unledgered historical accesses cannot be inferred.",
+  "databases": [
+    {
+      "path": ".tmp/real-ethusdt-scenario/wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1/run/research.sqlite",
+      "sha256": "221cfe0a9527f3f6fc45df85d9a8ad904de104ae46cf7ecf1e4f6567366e2b65",
+      "protocols": [
+        {
+          "id": "real-ethusdt-wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1",
+          "run_id": "real-ethusdt-wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1",
+          "state": "ABORTED",
+          "recipe_sha": null,
+          "code_sha": null,
+          "retrain_sha": null,
+          "holdout_sha": null,
+          "selection_spec_sha": null,
+          "validation_limit": 2,
+          "hpo_limit": 0,
+          "es_limit": 0,
+          "resume_state": null,
+          "pre_holdout_end_ns": null,
+          "holdout_start_ns": null
+        }
+      ],
+      "queries": [
+        {
+          "query_id": "validation-0-sac-deadband-005",
+          "protocol_id": "real-ethusdt-wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1",
+          "kind": "validation",
+          "candidate": "sac-deadband-005",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791847661.4610136
+        },
+        {
+          "query_id": "validation-0-sac-deadband-010",
+          "protocol_id": "real-ethusdt-wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1",
+          "kind": "validation",
+          "candidate": "sac-deadband-010",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791848207.170165
+        }
+      ]
+    },
+    {
+      "path": ".tmp/real-ethusdt-scenario/wfo-deadband-fresh-2025-05-11-to-2025-08-26-v1/run/research.sqlite",
+      "sha256": "e450f7ed95ad205a695c07e7377ba74dcbc870836c61ff313c6c4230b2af3a5f",
+      "protocols": [
+        {
+          "id": "real-ethusdt-wfo-deadband-2025-05-11-to-2025-08-26-v1",
+          "run_id": "real-ethusdt-wfo-deadband-2025-05-11-to-2025-08-26-v1",
+          "state": "ABORTED",
+          "recipe_sha": null,
+          "code_sha": null,
+          "retrain_sha": null,
+          "holdout_sha": null,
+          "selection_spec_sha": null,
+          "validation_limit": 2,
+          "hpo_limit": 0,
+          "es_limit": 0,
+          "resume_state": null,
+          "pre_holdout_end_ns": null,
+          "holdout_start_ns": null
+        }
+      ],
+      "queries": [
+        {
+          "query_id": "validation-0-sac-deadband-001",
+          "protocol_id": "real-ethusdt-wfo-deadband-2025-05-11-to-2025-08-26-v1",
+          "kind": "validation",
+          "candidate": "sac-deadband-001",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791846052.0459366
+        },
+        {
+          "query_id": "validation-0-sac-deadband-005",
+          "protocol_id": "real-ethusdt-wfo-deadband-2025-05-11-to-2025-08-26-v1",
+          "kind": "validation",
+          "candidate": "sac-deadband-005",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791846600.1130028
+        }
+      ]
+    },
+    {
+      "path": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2/run/research.sqlite",
+      "sha256": "295160c25333adb4c13ef8aa3b057f351e47b7be3192fc4a00a307a0c5f0db69",
+      "protocols": [
+        {
+          "id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2",
+          "run_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2",
+          "state": "ABORTED",
+          "recipe_sha": null,
+          "code_sha": null,
+          "retrain_sha": null,
+          "holdout_sha": null,
+          "selection_spec_sha": null,
+          "validation_limit": 4,
+          "hpo_limit": 0,
+          "es_limit": 0,
+          "resume_state": null,
+          "pre_holdout_end_ns": null,
+          "holdout_start_ns": null
+        }
+      ],
+      "queries": [
+        {
+          "query_id": "validation-0-sac-causal-mtf-v1",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v1",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791896728.6840994
+        },
+        {
+          "query_id": "stress-validation-0-sac-causal-mtf-v1",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v1",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791897298.3460474
+        },
+        {
+          "query_id": "validation-0-sac-causal-mtf-v2",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v2",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791897356.1633189
+        }
+      ]
+    },
+    {
+      "path": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3/run/research.sqlite",
+      "sha256": "a5b141adb246d8fa91dd115a0126bb2691a8debfe55172092357a868c5a7be87",
+      "protocols": [
+        {
+          "id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+          "run_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+          "state": "ABORTED",
+          "recipe_sha": null,
+          "code_sha": null,
+          "retrain_sha": null,
+          "holdout_sha": null,
+          "selection_spec_sha": null,
+          "validation_limit": 4,
+          "hpo_limit": 0,
+          "es_limit": 0,
+          "resume_state": null,
+          "pre_holdout_end_ns": null,
+          "holdout_start_ns": null
+        }
+      ],
+      "queries": [
+        {
+          "query_id": "validation-0-sac-causal-mtf-v1",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v1",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791897756.0142262
+        },
+        {
+          "query_id": "stress-validation-0-sac-causal-mtf-v1",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v1",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791898358.1528456
+        },
+        {
+          "query_id": "validation-0-sac-causal-mtf-v2",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v2",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791898418.4759462
+        },
+        {
+          "query_id": "stress-validation-0-sac-causal-mtf-v2",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v2",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791899020.1475804
+        }
+      ]
+    },
+    {
+      "path": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1/.tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1/run/research.sqlite",
+      "sha256": "0a827d2ad92e28380fa349e169bc269fa4921aebe667d740594a47574ca5921a",
+      "protocols": [
+        {
+          "id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1",
+          "run_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1",
+          "state": "ABORTED",
+          "recipe_sha": null,
+          "code_sha": null,
+          "retrain_sha": null,
+          "holdout_sha": null,
+          "selection_spec_sha": null,
+          "validation_limit": 4,
+          "hpo_limit": 0,
+          "es_limit": 0,
+          "resume_state": null,
+          "pre_holdout_end_ns": null,
+          "holdout_start_ns": null
+        }
+      ],
+      "queries": [
+        {
+          "query_id": "validation-0-sac-causal-mtf-v1",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v1",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791895904.6299543
+        }
+      ]
+    },
+    {
+      "path": ".tmp/real-ethusdt-scenario/wfo-fresh-2025-01-24-to-2025-05-10-v1/run/research.sqlite",
+      "sha256": "99aa6e95cf9aeb1652cb8fb5ac913d0eb79239debece77a6641869b1d2a831d3",
+      "protocols": [
+        {
+          "id": "real-ethusdt-wfo-fresh-2025-01-24-2025-05-10-v1",
+          "run_id": "real-ethusdt-wfo-fresh-2025-01-24-2025-05-10-v1",
+          "state": "ABORTED",
+          "recipe_sha": null,
+          "code_sha": null,
+          "retrain_sha": null,
+          "holdout_sha": null,
+          "selection_spec_sha": null,
+          "validation_limit": 2,
+          "hpo_limit": 0,
+          "es_limit": 0,
+          "resume_state": null,
+          "pre_holdout_end_ns": null,
+          "holdout_start_ns": null
+        }
+      ],
+      "queries": [
+        {
+          "query_id": "validation-0-ppo-fullpass",
+          "protocol_id": "real-ethusdt-wfo-fresh-2025-01-24-2025-05-10-v1",
+          "kind": "validation",
+          "candidate": "ppo-fullpass",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791843504.342651
+        },
+        {
+          "query_id": "validation-0-sac-fullpass",
+          "protocol_id": "real-ethusdt-wfo-fresh-2025-01-24-2025-05-10-v1",
+          "kind": "validation",
+          "candidate": "sac-fullpass",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791843792.3502986
+        }
+      ]
+    },
+    {
+      "path": ".tmp/real-ethusdt-scenario/wfo-real-fullpass-60-15-15-v1/run/research.sqlite",
+      "sha256": "03546eef3a95b2a2da00928d472417c9d84bc7ca09ef25ae6a70706ffa9e796a",
+      "protocols": [
+        {
+          "id": "real-ethusdt-wfo-real-fullpass-60-15-15-v1",
+          "run_id": "real-ethusdt-wfo-real-fullpass-60-15-15-v1",
+          "state": "ABORTED",
+          "recipe_sha": null,
+          "code_sha": null,
+          "retrain_sha": null,
+          "holdout_sha": null,
+          "selection_spec_sha": null,
+          "validation_limit": 2,
+          "hpo_limit": 0,
+          "es_limit": 0,
+          "resume_state": null,
+          "pre_holdout_end_ns": null,
+          "holdout_start_ns": null
+        }
+      ],
+      "queries": [
+        {
+          "query_id": "validation-0-ppo-fullpass",
+          "protocol_id": "real-ethusdt-wfo-real-fullpass-60-15-15-v1",
+          "kind": "validation",
+          "candidate": "ppo-fullpass",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791839542.5334172
+        },
+        {
+          "query_id": "validation-0-sac-fullpass",
+          "protocol_id": "real-ethusdt-wfo-real-fullpass-60-15-15-v1",
+          "kind": "validation",
+          "candidate": "sac-fullpass",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791839875.284598
+        }
+      ]
+    },
+    {
+      "path": ".tmp/real-ethusdt-scenario/wfo-sacentcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1/run/research.sqlite",
+      "sha256": "7cc7213295542d6d3b3a2b9b2b36cfe6e3f336eda782f909b442d1e4ed561952",
+      "protocols": [
+        {
+          "id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1",
+          "run_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1",
+          "state": "ABORTED",
+          "recipe_sha": null,
+          "code_sha": null,
+          "retrain_sha": null,
+          "holdout_sha": null,
+          "selection_spec_sha": null,
+          "validation_limit": 2,
+          "hpo_limit": 0,
+          "es_limit": 0,
+          "resume_state": null,
+          "pre_holdout_end_ns": null,
+          "holdout_start_ns": null
+        }
+      ],
+      "queries": [
+        {
+          "query_id": "validation-0-sac-entcoef-auto",
+          "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1",
+          "kind": "validation",
+          "candidate": "sac-entcoef-auto",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791849394.6325557
+        },
+        {
+          "query_id": "validation-0-sac-entcoef-fixed-001",
+          "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1",
+          "kind": "validation",
+          "candidate": "sac-entcoef-fixed-001",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791849929.4989352
+        }
+      ]
+    },
+    {
+      "path": ".tmp/real-ethusdt-scenario/wfo-sacentcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1/run/research.sqlite",
+      "sha256": "8a8a71232f0e995298e29b6ea2b99b6edff0f50cceb2ead03f5b7b268177907b",
+      "protocols": [
+        {
+          "id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+          "run_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+          "state": "CLOSED",
+          "recipe_sha": "e5d3c30eb1c988bdc55414ebaf55e3f4a775b1b939a14968278795635ac28c8b",
+          "code_sha": "c283b148073f7496f491523c69aef085f450a69d22178b2379d9fcdc1442a74b",
+          "retrain_sha": "74aaab8a5718a237cb2acba37edfd0a25b37fcf2828ece3069fdd0e8c4187ed9",
+          "holdout_sha": "0b5ee9e9086570d8fd2c2fd138019f57826b946b160e9c45481b1904840511e0",
+          "selection_spec_sha": "5a68a83f3dfaffbd97d66e292a9440a853530b1e51914825707013a6ea8a70c6",
+          "validation_limit": 2,
+          "hpo_limit": 0,
+          "es_limit": 0,
+          "resume_state": null,
+          "pre_holdout_end_ns": 1782835322000000000,
+          "holdout_start_ns": 1782835322000000000
+        }
+      ],
+      "queries": [
+        {
+          "query_id": "validation-0-sac-entcoef-auto",
+          "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+          "kind": "validation",
+          "candidate": "sac-entcoef-auto",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791851441.8035705
+        },
+        {
+          "query_id": "validation-0-sac-entcoef-fixed-001",
+          "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+          "kind": "validation",
+          "candidate": "sac-entcoef-fixed-001",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791851975.1806238
+        },
+        {
+          "query_id": "test-0-sac-entcoef-fixed-001",
+          "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+          "kind": "test",
+          "candidate": "sac-entcoef-fixed-001",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791852570.6745386
+        }
+      ]
+    },
+    {
+      "path": ".tmp/wfo-validation-recovery-20261013/run/research.sqlite",
+      "sha256": "b1e92d657c61f406aa031cb1907bf22af3e30d71929ec0b8594199797f83557d",
+      "protocols": [
+        {
+          "id": "engineering-real-wfo-validation-recovery-20261013",
+          "run_id": "engineering-real-wfo-validation-recovery-20261013",
+          "state": "SUSPENDED",
+          "recipe_sha": null,
+          "code_sha": null,
+          "retrain_sha": null,
+          "holdout_sha": null,
+          "selection_spec_sha": null,
+          "validation_limit": 2,
+          "hpo_limit": 0,
+          "es_limit": 0,
+          "resume_state": "DEVELOPMENT",
+          "pre_holdout_end_ns": null,
+          "holdout_start_ns": null
+        }
+      ],
+      "queries": [
+        {
+          "query_id": "validation-0-engineering-a",
+          "protocol_id": "engineering-real-wfo-validation-recovery-20261013",
+          "kind": "validation",
+          "candidate": "engineering-a",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791860819.3114603
+        }
+      ]
+    }
+  ],
+  "entries": [
+    {
+      "key": "ace73ecdf55be1c155836ceb23ad8ee6d22c90a12acbaf9cd0b3b90513311834",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1761552061000000000,
+      "end_ns": 1762848061000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1",
+        "source_sha": "223c901ce1f05670575e41b13d8bccab383506598b752e8e2ac3bcc8a7720402",
+        "evidence": {
+          "query_id": "validation-0-sac-deadband-005",
+          "protocol_id": "real-ethusdt-wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1",
+          "kind": "validation",
+          "candidate": "sac-deadband-005",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791847661.4610136
+        }
+      }
+    },
+    {
+      "key": "04b91130966dbb9770e10e921e480adbac58c2af3697adcc774ea3f9101dc009",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1756339200000000000,
+      "end_ns": 1761523200000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1",
+        "source_sha": "223c901ce1f05670575e41b13d8bccab383506598b752e8e2ac3bcc8a7720402",
+        "evidence": {
+          "training_for": "validation-0-sac-deadband-005"
+        }
+      }
+    },
+    {
+      "key": "9be1b738add079aee67e829f9b648ee75594b7886e8a8466f26dfe1bb7111b07",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1761552061000000000,
+      "end_ns": 1762848061000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1",
+        "source_sha": "223c901ce1f05670575e41b13d8bccab383506598b752e8e2ac3bcc8a7720402",
+        "evidence": {
+          "query_id": "validation-0-sac-deadband-010",
+          "protocol_id": "real-ethusdt-wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1",
+          "kind": "validation",
+          "candidate": "sac-deadband-010",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791848207.170165
+        }
+      }
+    },
+    {
+      "key": "461366d33fe0a135c1200025d7bb6d490d27a88dfaf24f7cf5dbcbfe78950ccc",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1756339200000000000,
+      "end_ns": 1761523200000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1",
+        "source_sha": "223c901ce1f05670575e41b13d8bccab383506598b752e8e2ac3bcc8a7720402",
+        "evidence": {
+          "training_for": "validation-0-sac-deadband-010"
+        }
+      }
+    },
+    {
+      "key": "666d1828f4565767f969936959d0f023d9a9c450b4051a12ca08aa728115be89",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1752220861000000000,
+      "end_ns": 1753516861000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-deadband-fresh-2025-05-11-to-2025-08-26-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-deadband-2025-05-11-to-2025-08-26-v1",
+        "source_sha": "24b5cc7301ae50e0cc4a3acd9b739318998955fb9dc4bd4c64627caf6d0804f9",
+        "evidence": {
+          "query_id": "validation-0-sac-deadband-001",
+          "protocol_id": "real-ethusdt-wfo-deadband-2025-05-11-to-2025-08-26-v1",
+          "kind": "validation",
+          "candidate": "sac-deadband-001",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791846052.0459366
+        }
+      }
+    },
+    {
+      "key": "5f4a38e1439908670e7ac270ed419b7debda7bb87e5b211bfdca8edf99e5c18a",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1747008000000000000,
+      "end_ns": 1752192000000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-deadband-fresh-2025-05-11-to-2025-08-26-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-deadband-2025-05-11-to-2025-08-26-v1",
+        "source_sha": "24b5cc7301ae50e0cc4a3acd9b739318998955fb9dc4bd4c64627caf6d0804f9",
+        "evidence": {
+          "training_for": "validation-0-sac-deadband-001"
+        }
+      }
+    },
+    {
+      "key": "3c2ab778ba954211a62f2234ae0f65135218e6a3bef374b654011ad3d60f0de3",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1752220861000000000,
+      "end_ns": 1753516861000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-deadband-fresh-2025-05-11-to-2025-08-26-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-deadband-2025-05-11-to-2025-08-26-v1",
+        "source_sha": "24b5cc7301ae50e0cc4a3acd9b739318998955fb9dc4bd4c64627caf6d0804f9",
+        "evidence": {
+          "query_id": "validation-0-sac-deadband-005",
+          "protocol_id": "real-ethusdt-wfo-deadband-2025-05-11-to-2025-08-26-v1",
+          "kind": "validation",
+          "candidate": "sac-deadband-005",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791846600.1130028
+        }
+      }
+    },
+    {
+      "key": "4541748ace752d95a30a7c9715d32cea0474544f31eb2e9dd7136a55f5dcd074",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1747008000000000000,
+      "end_ns": 1752192000000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-deadband-fresh-2025-05-11-to-2025-08-26-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-deadband-2025-05-11-to-2025-08-26-v1",
+        "source_sha": "24b5cc7301ae50e0cc4a3acd9b739318998955fb9dc4bd4c64627caf6d0804f9",
+        "evidence": {
+          "training_for": "validation-0-sac-deadband-005"
+        }
+      }
+    },
+    {
+      "key": "2b281769ad3ff5e44d560fc0cbce5bee982c283d3a1757eda19b5810a147ecd2",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1752220861000000000,
+      "end_ns": 1753516861000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2",
+        "source_sha": "7882386875b789a9465b641adb7ba697de5ab287d2c5134c772f45347aeb5073",
+        "evidence": {
+          "query_id": "validation-0-sac-causal-mtf-v1",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v1",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791896728.6840994
+        }
+      }
+    },
+    {
+      "key": "7b67963a7f7ae0cbafac01166cbd81cd992651d8689935f1a2920339e63736f3",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1747008000000000000,
+      "end_ns": 1752192000000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2",
+        "source_sha": "7882386875b789a9465b641adb7ba697de5ab287d2c5134c772f45347aeb5073",
+        "evidence": {
+          "training_for": "validation-0-sac-causal-mtf-v1"
+        }
+      }
+    },
+    {
+      "key": "bc43063461ad2c2fa01502b0b6ad497e68e03edec6f1177d667a466953a5c35b",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1752220861000000000,
+      "end_ns": 1753516861000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2",
+        "source_sha": "7882386875b789a9465b641adb7ba697de5ab287d2c5134c772f45347aeb5073",
+        "evidence": {
+          "query_id": "stress-validation-0-sac-causal-mtf-v1",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v1",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791897298.3460474
+        }
+      }
+    },
+    {
+      "key": "71b5ddae5c7823d1e71cb2fa1d5fd0a7bf89c32d27dc55a5c44bb8ea7d0bd72d",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1747008000000000000,
+      "end_ns": 1752192000000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2",
+        "source_sha": "7882386875b789a9465b641adb7ba697de5ab287d2c5134c772f45347aeb5073",
+        "evidence": {
+          "training_for": "stress-validation-0-sac-causal-mtf-v1"
+        }
+      }
+    },
+    {
+      "key": "c259a07268eb8887589275766526b59b56a86962f68a81877f91979282eaaebc",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1752220861000000000,
+      "end_ns": 1753516861000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2",
+        "source_sha": "7882386875b789a9465b641adb7ba697de5ab287d2c5134c772f45347aeb5073",
+        "evidence": {
+          "query_id": "validation-0-sac-causal-mtf-v2",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v2",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791897356.1633189
+        }
+      }
+    },
+    {
+      "key": "8a41a37972ea9943aff1ddae3d65807c9f0139986a4bd5f199cc476fccbcf1eb",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1747008000000000000,
+      "end_ns": 1752192000000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2",
+        "source_sha": "7882386875b789a9465b641adb7ba697de5ab287d2c5134c772f45347aeb5073",
+        "evidence": {
+          "training_for": "validation-0-sac-causal-mtf-v2"
+        }
+      }
+    },
+    {
+      "key": "b3258b35a0eb4323f5db21223df01b65adc4277dfd377d1e950cb72b4e6794ca",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1752220861000000000,
+      "end_ns": 1753516861000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+        "source_sha": "5660ff71119e08203b2069bedb2c43dfa711df4f43113e7a033ea33b0ca9925a",
+        "evidence": {
+          "query_id": "validation-0-sac-causal-mtf-v1",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v1",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791897756.0142262
+        }
+      }
+    },
+    {
+      "key": "6ab100fe68590babff5d926abc4dfe95622e55a8ed39ad6a1ce873eff8f2acf3",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1747008000000000000,
+      "end_ns": 1752192000000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+        "source_sha": "5660ff71119e08203b2069bedb2c43dfa711df4f43113e7a033ea33b0ca9925a",
+        "evidence": {
+          "training_for": "validation-0-sac-causal-mtf-v1"
+        }
+      }
+    },
+    {
+      "key": "7ba594e67cc4b6251f33aa75495f8257561314a25e5756c89032ae117376a467",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1752220861000000000,
+      "end_ns": 1753516861000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+        "source_sha": "5660ff71119e08203b2069bedb2c43dfa711df4f43113e7a033ea33b0ca9925a",
+        "evidence": {
+          "query_id": "stress-validation-0-sac-causal-mtf-v1",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v1",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791898358.1528456
+        }
+      }
+    },
+    {
+      "key": "70eb986afeda6cf2b0257670111d34e1451adefa68c75689e47cc997a0b4185a",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1747008000000000000,
+      "end_ns": 1752192000000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+        "source_sha": "5660ff71119e08203b2069bedb2c43dfa711df4f43113e7a033ea33b0ca9925a",
+        "evidence": {
+          "training_for": "stress-validation-0-sac-causal-mtf-v1"
+        }
+      }
+    },
+    {
+      "key": "5707616733c9b3c6b170f63b7661ba6093d05d5fb46e7018c6d90cc1b7f365ed",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1752220861000000000,
+      "end_ns": 1753516861000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+        "source_sha": "5660ff71119e08203b2069bedb2c43dfa711df4f43113e7a033ea33b0ca9925a",
+        "evidence": {
+          "query_id": "validation-0-sac-causal-mtf-v2",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v2",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791898418.4759462
+        }
+      }
+    },
+    {
+      "key": "1dc602f252df8fe7b9b1ed0546145bc63e71a6947888584cdda645aa627c69bb",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1747008000000000000,
+      "end_ns": 1752192000000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+        "source_sha": "5660ff71119e08203b2069bedb2c43dfa711df4f43113e7a033ea33b0ca9925a",
+        "evidence": {
+          "training_for": "validation-0-sac-causal-mtf-v2"
+        }
+      }
+    },
+    {
+      "key": "15bb131c4b099faf5c670924bf8096068d37b9a1369cccc136b5acb277b7460d",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1752220861000000000,
+      "end_ns": 1753516861000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+        "source_sha": "5660ff71119e08203b2069bedb2c43dfa711df4f43113e7a033ea33b0ca9925a",
+        "evidence": {
+          "query_id": "stress-validation-0-sac-causal-mtf-v2",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v2",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791899020.1475804
+        }
+      }
+    },
+    {
+      "key": "da5b5e1d36b0cb3f98b94220dcb984dff57671663cf0a548c82f5be39d293eea",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1747008000000000000,
+      "end_ns": 1752192000000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+        "source_sha": "5660ff71119e08203b2069bedb2c43dfa711df4f43113e7a033ea33b0ca9925a",
+        "evidence": {
+          "training_for": "stress-validation-0-sac-causal-mtf-v2"
+        }
+      }
+    },
+    {
+      "key": "568cff8420fd2bbe9d0a11dcc18b12f8a37598218c16f6af3f70011507523f2b",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1752220861000000000,
+      "end_ns": 1753516861000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1/.tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1",
+        "source_sha": "24b5cc7301ae50e0cc4a3acd9b739318998955fb9dc4bd4c64627caf6d0804f9",
+        "evidence": {
+          "query_id": "validation-0-sac-causal-mtf-v1",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v1",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791895904.6299543
+        }
+      }
+    },
+    {
+      "key": "b7fbef5a7588cda6fbaaa876403d6a932fa4f0ae52509406177b59071240bc6f",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1747008000000000000,
+      "end_ns": 1752192000000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1/.tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1",
+        "source_sha": "24b5cc7301ae50e0cc4a3acd9b739318998955fb9dc4bd4c64627caf6d0804f9",
+        "evidence": {
+          "training_for": "validation-0-sac-causal-mtf-v1"
+        }
+      }
+    },
+    {
+      "key": "32e11c13a5440d86fd1b5ed3c48b985860850790af6df467675bcda77b99c711",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1742976061000000000,
+      "end_ns": 1744272061000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-fresh-2025-01-24-to-2025-05-10-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-fresh-2025-01-24-2025-05-10-v1",
+        "source_sha": "5bebefe3d70bf442cd3fee5cb19e20818a7b02a8e79bfa88f69e76f8be94ff3f",
+        "evidence": {
+          "query_id": "validation-0-ppo-fullpass",
+          "protocol_id": "real-ethusdt-wfo-fresh-2025-01-24-2025-05-10-v1",
+          "kind": "validation",
+          "candidate": "ppo-fullpass",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791843504.342651
+        }
+      }
+    },
+    {
+      "key": "e8171684219219f08cc51b2d95499d5a3be0401815e151d2854cf5dd12b437fe",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1737763200000000000,
+      "end_ns": 1742947200000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-fresh-2025-01-24-to-2025-05-10-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-fresh-2025-01-24-2025-05-10-v1",
+        "source_sha": "5bebefe3d70bf442cd3fee5cb19e20818a7b02a8e79bfa88f69e76f8be94ff3f",
+        "evidence": {
+          "training_for": "validation-0-ppo-fullpass"
+        }
+      }
+    },
+    {
+      "key": "ff2ef85467fa4902cace9a4a947aae1da514c8b8c016ff07dacd119d3369a480",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1742976061000000000,
+      "end_ns": 1744272061000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-fresh-2025-01-24-to-2025-05-10-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-fresh-2025-01-24-2025-05-10-v1",
+        "source_sha": "5bebefe3d70bf442cd3fee5cb19e20818a7b02a8e79bfa88f69e76f8be94ff3f",
+        "evidence": {
+          "query_id": "validation-0-sac-fullpass",
+          "protocol_id": "real-ethusdt-wfo-fresh-2025-01-24-2025-05-10-v1",
+          "kind": "validation",
+          "candidate": "sac-fullpass",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791843792.3502986
+        }
+      }
+    },
+    {
+      "key": "42d9fb509ad01afee5c6973ac30bebb4128ab61f833f2062d7ecd05e8ca5869c",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1737763200000000000,
+      "end_ns": 1742947200000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-fresh-2025-01-24-to-2025-05-10-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-fresh-2025-01-24-2025-05-10-v1",
+        "source_sha": "5bebefe3d70bf442cd3fee5cb19e20818a7b02a8e79bfa88f69e76f8be94ff3f",
+        "evidence": {
+          "training_for": "validation-0-sac-fullpass"
+        }
+      }
+    },
+    {
+      "key": "7ac4b9410df5f814fb5024e77a01c6862484bc957fe3e72c56ffd48c0fdbf620",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1733673361000000000,
+      "end_ns": 1734969361000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-real-fullpass-60-15-15-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-real-fullpass-60-15-15-v1",
+        "source_sha": "2d412ac357bc05052ec19ca34341690ad070071d31de998bc9af55092940b6c2",
+        "evidence": {
+          "query_id": "validation-0-ppo-fullpass",
+          "protocol_id": "real-ethusdt-wfo-real-fullpass-60-15-15-v1",
+          "kind": "validation",
+          "candidate": "ppo-fullpass",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791839542.5334172
+        }
+      }
+    },
+    {
+      "key": "a4fa02304c185cff5f48ceec8f5320e05d6b807a4ffc182800d8680842138a98",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1728460500000000000,
+      "end_ns": 1733644500000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-real-fullpass-60-15-15-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-real-fullpass-60-15-15-v1",
+        "source_sha": "2d412ac357bc05052ec19ca34341690ad070071d31de998bc9af55092940b6c2",
+        "evidence": {
+          "training_for": "validation-0-ppo-fullpass"
+        }
+      }
+    },
+    {
+      "key": "889c9d471e72b799356c1c8f097d74e09ff0f25f2c7d2dbe7c487cdb3b338e9a",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1733673361000000000,
+      "end_ns": 1734969361000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-real-fullpass-60-15-15-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-real-fullpass-60-15-15-v1",
+        "source_sha": "2d412ac357bc05052ec19ca34341690ad070071d31de998bc9af55092940b6c2",
+        "evidence": {
+          "query_id": "validation-0-sac-fullpass",
+          "protocol_id": "real-ethusdt-wfo-real-fullpass-60-15-15-v1",
+          "kind": "validation",
+          "candidate": "sac-fullpass",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791839875.284598
+        }
+      }
+    },
+    {
+      "key": "642aee503e8cd7a7c65981be3bc562d2a1cdbd470ee48be9a7b31b688522e9f0",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1728460500000000000,
+      "end_ns": 1733644500000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-real-fullpass-60-15-15-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-real-fullpass-60-15-15-v1",
+        "source_sha": "2d412ac357bc05052ec19ca34341690ad070071d31de998bc9af55092940b6c2",
+        "evidence": {
+          "training_for": "validation-0-sac-fullpass"
+        }
+      }
+    },
+    {
+      "key": "7250000eae2d076df09d39a5a36cc90d93914075f80b94ac9c30dfbda16ca21c",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1770883261000000000,
+      "end_ns": 1772179261000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-sacentcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1",
+        "source_sha": "6272b51210a26bd22fcd789dfc409601020e3df9c3c1f512c1c6553ae63723be",
+        "evidence": {
+          "query_id": "validation-0-sac-entcoef-auto",
+          "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1",
+          "kind": "validation",
+          "candidate": "sac-entcoef-auto",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791849394.6325557
+        }
+      }
+    },
+    {
+      "key": "fb5c2c5597573a75bf3d7350843d361e871afa7f1c03e008cca93d235f0a0da4",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1765670400000000000,
+      "end_ns": 1770854400000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-sacentcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1",
+        "source_sha": "6272b51210a26bd22fcd789dfc409601020e3df9c3c1f512c1c6553ae63723be",
+        "evidence": {
+          "training_for": "validation-0-sac-entcoef-auto"
+        }
+      }
+    },
+    {
+      "key": "be46c8d307ce5e6de5b8a874e4dbec8457f069f9428a1bcd9137b115505ab1ea",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1770883261000000000,
+      "end_ns": 1772179261000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-sacentcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1",
+        "source_sha": "6272b51210a26bd22fcd789dfc409601020e3df9c3c1f512c1c6553ae63723be",
+        "evidence": {
+          "query_id": "validation-0-sac-entcoef-fixed-001",
+          "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1",
+          "kind": "validation",
+          "candidate": "sac-entcoef-fixed-001",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791849929.4989352
+        }
+      }
+    },
+    {
+      "key": "58adedf02898793e3af376b5dd67dd2c9f06cd021965f464946785c7844dec46",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1765670400000000000,
+      "end_ns": 1770854400000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-sacentcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1",
+        "source_sha": "6272b51210a26bd22fcd789dfc409601020e3df9c3c1f512c1c6553ae63723be",
+        "evidence": {
+          "training_for": "validation-0-sac-entcoef-fixed-001"
+        }
+      }
+    },
+    {
+      "key": "b8204224f0f6d57585dd7010190bd9469e4274bdc93d03ddb72420ad1ab939a0",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1780214461000000000,
+      "end_ns": 1781510461000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-sacentcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+        "source_sha": "3d094853bbd8d60340411341a50ac4d16634e8019f2de4cde191e82e6cec6b72",
+        "evidence": {
+          "query_id": "validation-0-sac-entcoef-auto",
+          "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+          "kind": "validation",
+          "candidate": "sac-entcoef-auto",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791851441.8035705
+        }
+      }
+    },
+    {
+      "key": "237e5e43ac239c8b8941a9db54f6fff4c15728cd2c2be4db1b6c2cdaadc80428",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1775001600000000000,
+      "end_ns": 1780185600000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-sacentcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+        "source_sha": "3d094853bbd8d60340411341a50ac4d16634e8019f2de4cde191e82e6cec6b72",
+        "evidence": {
+          "training_for": "validation-0-sac-entcoef-auto"
+        }
+      }
+    },
+    {
+      "key": "5b7912f9e45aaac40a18188293d25261943c686a0c3734062ba48d25c3872521",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1780214461000000000,
+      "end_ns": 1781510461000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-sacentcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+        "source_sha": "3d094853bbd8d60340411341a50ac4d16634e8019f2de4cde191e82e6cec6b72",
+        "evidence": {
+          "query_id": "validation-0-sac-entcoef-fixed-001",
+          "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+          "kind": "validation",
+          "candidate": "sac-entcoef-fixed-001",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791851975.1806238
+        }
+      }
+    },
+    {
+      "key": "7d7a55062feafb0f58f52192a8972217d8ea85e9ec8a1fa78c261d1ed3674d29",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1775001600000000000,
+      "end_ns": 1780185600000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-sacentcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+        "source_sha": "3d094853bbd8d60340411341a50ac4d16634e8019f2de4cde191e82e6cec6b72",
+        "evidence": {
+          "training_for": "validation-0-sac-entcoef-fixed-001"
+        }
+      }
+    },
+    {
+      "key": "d457642dd5454d12c6594c4d6df1a13ef41da49538b78e42ac121d48154d2965",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1781539322000000000,
+      "end_ns": 1782835322000000000,
+      "purpose": "test",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-sacentcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+        "source_sha": "3d094853bbd8d60340411341a50ac4d16634e8019f2de4cde191e82e6cec6b72",
+        "evidence": {
+          "query_id": "test-0-sac-entcoef-fixed-001",
+          "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+          "kind": "test",
+          "candidate": "sac-entcoef-fixed-001",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791852570.6745386
+        }
+      }
+    },
+    {
+      "key": "bd60bcb63a06779dc491d0c6779920e4c0b8b2af89a4315b0a6900e97041282f",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1775001600000000000,
+      "end_ns": 1780185600000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-sacentcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+        "source_sha": "3d094853bbd8d60340411341a50ac4d16634e8019f2de4cde191e82e6cec6b72",
+        "evidence": {
+          "training_for": "test-0-sac-entcoef-fixed-001"
+        }
+      }
+    },
+    {
+      "key": "2f1da5435bb8fdd4944ee50f0f8e397550a4b3a63d63ac6193ddd1baa6c83ce7",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1782835322000000000,
+      "end_ns": 1784131322000000000,
+      "purpose": "holdout",
+      "identity": {
+        "database": ".tmp/real-ethusdt-scenario/wfo-sacentcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1/run/research.sqlite",
+        "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+        "source_sha": "3d094853bbd8d60340411341a50ac4d16634e8019f2de4cde191e82e6cec6b72",
+        "evidence": {
+          "holdout_sha": "0b5ee9e9086570d8fd2c2fd138019f57826b946b160e9c45481b1904840511e0",
+          "state": "CLOSED",
+          "conservative_end": false
+        }
+      }
+    },
+    {
+      "key": "25e2910ec01332f221b76bfacde46773bf06e7255dff72c4bdd68762d14f8d40",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1733673361000000000,
+      "end_ns": 1734969361000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/wfo-validation-recovery-20261013/run/research.sqlite",
+        "protocol_id": "engineering-real-wfo-validation-recovery-20261013",
+        "source_sha": "2d412ac357bc05052ec19ca34341690ad070071d31de998bc9af55092940b6c2",
+        "evidence": {
+          "query_id": "validation-0-engineering-a",
+          "protocol_id": "engineering-real-wfo-validation-recovery-20261013",
+          "kind": "validation",
+          "candidate": "engineering-a",
+          "fold_id": "60-15-15-0000",
+          "recorded": 1791860819.3114603
+        }
+      }
+    },
+    {
+      "key": "c140d961a810fda5d5dbb1c282e78c65e97054f873c65f539987982deca11e2a",
+      "market": "ETHUSDT",
+      "family": "perpetual-market-v1",
+      "start_ns": 1728460500000000000,
+      "end_ns": 1733644500000000000,
+      "purpose": "development",
+      "identity": {
+        "database": ".tmp/wfo-validation-recovery-20261013/run/research.sqlite",
+        "protocol_id": "engineering-real-wfo-validation-recovery-20261013",
+        "source_sha": "2d412ac357bc05052ec19ca34341690ad070071d31de998bc9af55092940b6c2",
+        "evidence": {
+          "training_for": "validation-0-engineering-a"
+        }
+      }
+    }
+  ],
+  "unresolved": []
+}

@@ -5,6 +5,7 @@ from collections import defaultdict
 from dataclasses import asdict
 from decimal import Decimal
 from hashlib import sha256
+from bisect import bisect_left, bisect_right
 import json
 from math import gcd
 from pathlib import Path
@@ -13,7 +14,7 @@ from typing import Any
 
 from rles_contracts.dto import DataQualityGrade, ExecutionPlan
 from rles_data.contracts import to_market_event
-from rles_data.core import Availability, CuratedStore, DataError, Event, FeatureField, FeatureSpec, KINDS, Window, digest
+from rles_data.core import Availability, CuratedStore, DataError, Event, FeatureField, FeatureSpec, KINDS, MINUTE_NS, Window, digest
 from rles_data.coverage import CoveragePolicy
 from rles_data.features import Scaler, fit_train, make_feature_row
 from rles_data.io import read_curated
@@ -150,6 +151,17 @@ def _visible_batches_by_decision(batches: tuple[tuple[int, Any], ...],
     return tuple(result)
 
 
+def partition_decision_lanes(full_steps: int, lane_count: int) -> tuple[tuple[int, int], ...]:
+    """Partition decision offsets into contiguous, rank-exclusive half-open lanes."""
+    if (type(full_steps) is not int or type(lane_count) is not int
+            or full_steps < 1 or not 1 <= lane_count <= full_steps):
+        raise DataError("invalid historical decision lane partition")
+    return tuple(
+        (rank * full_steps // lane_count, (rank + 1) * full_steps // lane_count)
+        for rank in range(lane_count)
+    )
+
+
 def _episode_lane(*, full_steps: int, episode_rank: int,
                   episode_count: int, episode_steps: int) -> tuple[int, int]:
     """Return a rank-exclusive decision lane for deterministic episode rotation."""
@@ -158,8 +170,7 @@ def _episode_lane(*, full_steps: int, episode_rank: int,
             or full_steps < 1 or not 0 <= episode_rank < episode_count
             or episode_steps < 1):
         raise DataError("invalid rotating historical episode partition")
-    start = episode_rank * full_steps // episode_count
-    end = (episode_rank + 1) * full_steps // episode_count
+    start, end = partition_decision_lanes(full_steps, episode_count)[episode_rank]
     if end - start < episode_steps:
         raise DataError("historical episode must fit inside every rank-exclusive time lane")
     return start, end
@@ -192,7 +203,13 @@ class HistoricalEnvironmentFactory:
                  mode: str = "base", scaler: Scaler | None = None,
                  fit_scaler: bool = False, split: str = "train_inner",
                  compact_native_history: bool = True,
-                 feature_profile: str = "legacy", reward_scale: float = 1.0) -> None:
+                 compact_report_snapshots: bool = False,
+                 feature_profile: str = "legacy", reward_scale: float = 1.0,
+                 reward_lambda_dd: float = 0.0, reward_lambda_guard: float = 0.0,
+                 prepared_store: CuratedStore | None = None) -> None:
+        # Set only by the application layer after prepare() computes its
+        # frozen root-config recipe identity.
+        self.application_training_recipe_hash: str | None = None
         if split not in {"train_inner", "validation", "test", "holdout"}:
             raise DataError("unknown historical research split")
         if fit_scaler and split != "train_inner":
@@ -201,14 +218,23 @@ class HistoricalEnvironmentFactory:
             raise DataError("evaluation must reuse the frozen training feature scaler")
         if type(compact_native_history) is not bool:
             raise DataError("native history compaction flag must be Boolean")
+        if type(compact_report_snapshots) is not bool:
+            raise DataError("report snapshot compaction flag must be Boolean")
         if not isinstance(feature_profile, str) or feature_profile not in {
             "legacy", "causal_mtf_v1", "causal_mtf_v2", "causal_mtf_v3",
         }:
             raise DataError("unsupported historical feature profile")
         self.compact_native_history = compact_native_history
+        self.compact_report_snapshots = compact_report_snapshots
         self.feature_profile = feature_profile
-        self.reward_config = RewardConfig(reward_scale=reward_scale)
-        self.store = CuratedStore((*read_curated(market_path).events, *load_rules(rules_path)))
+        self.reward_config = RewardConfig(
+            lambda_dd=reward_lambda_dd, lambda_guard=reward_lambda_guard,
+            reward_scale=reward_scale,
+        )
+        if prepared_store is not None and not isinstance(prepared_store, CuratedStore):
+            raise DataError("prepared history must be a validated CuratedStore")
+        self.store = (prepared_store if prepared_store is not None else
+                      CuratedStore((*read_curated(market_path).events, *load_rules(rules_path))))
         self.instrument, self.split, self.mode = instrument, split, mode
         self.start_ns, self.end_ns = start_ns, end_ns
         self.coverage = CoveragePolicy(**coverage_policy)
@@ -293,15 +319,24 @@ class HistoricalEnvironmentFactory:
         # non-default optimizer reward scale to its new artifacts.
         if self.reward_config.reward_scale != 1.0:
             config_identity["reward_scale"] = self.reward_config.reward_scale
+        if self.reward_config.lambda_dd != 0.0:
+            config_identity["reward_lambda_dd"] = self.reward_config.lambda_dd
+        if self.reward_config.lambda_guard != 0.0:
+            config_identity["reward_lambda_guard"] = self.reward_config.lambda_guard
         self.base_config_hash = digest({**config_identity, "mode": "base"})
         self.config_hash = digest({**config_identity, "mode": mode})
         transition_identity: dict[str, Any] = {
+            "terminal_value_semantics": "finite_settlement_no_bootstrap_v1",
             "data": self.store.snapshot_hash, "config": self.config_hash,
             "schema": self.schema.hash, "features": self.features.hash,
             "scaler": self.scaler.hash, "window": [start_ns, end_ns],
         }
         if self.reward_config.reward_scale != 1.0:
             transition_identity["reward_scale"] = self.reward_config.reward_scale
+        if self.reward_config.lambda_dd != 0.0:
+            transition_identity["reward_lambda_dd"] = self.reward_config.lambda_dd
+        if self.reward_config.lambda_guard != 0.0:
+            transition_identity["reward_lambda_guard"] = self.reward_config.lambda_guard
         if self.feature_profile == "causal_mtf_v3":
             known_schedule = self.coverage.known_schedule_times_ns
             if known_schedule is None:
@@ -314,6 +349,105 @@ class HistoricalEnvironmentFactory:
         self.transition_hash = digest(transition_identity)
         self.snapshots: list[Any] = []
         self.fill_references: dict[str, Decimal] = {}
+        self._market_batch_index: tuple[tuple[int, VisibleBatch], ...] | None = None
+        self._market_batch_times: tuple[int, ...] = ()
+        self._market_batch_groups_by_row: tuple[tuple[VisibleBatch, ...], ...] = ()
+        self._barrier_frames_by_row: tuple[BarrierFrame, ...] | None = None
+
+    def _visible_market_batch_index(self) -> tuple[tuple[int, VisibleBatch], ...]:
+        """Build one immutable availability-time index for all Episodes in this factory."""
+        if self._market_batch_index is not None:
+            return self._market_batch_index
+        warmup_minutes = max(
+            (field.lookback_bars * field.timeframe_minutes
+             for field in self.features.fields if field.source_kind == "ohlcv_1m"),
+            default=1,
+        ) + 2
+        first_decision_ns = self.rows[0].decision_ts_ns
+        last_decision_ns = self.rows[-1].decision_ts_ns
+        feed_start_ns = max(0, first_decision_ns - warmup_minutes * MINUTE_NS)
+        groups: dict[int, list] = defaultdict(list)
+        for event in self.store.available_event_window(feed_start_ns, last_decision_ns):
+            if event.kind in {"instrument_rule", "funding_update"}:
+                continue
+            if event.payload.get("instrument") != self.instrument:
+                continue
+            available_at_ns = event.available_at_ns
+            if available_at_ns is None:
+                continue
+            groups[available_at_ns].append(to_market_event(
+                event, quality_grade=DataQualityGrade(self.quality.grade.value)))
+        batches = tuple(
+            (timestamp, VisibleBatch(timestamp, tuple(events), True))
+            for timestamp, events in sorted(groups.items())
+        )
+        self._market_batch_times = tuple(timestamp for timestamp, _batch in batches)
+        self._market_batch_groups_by_row = _visible_batches_by_decision(
+            batches, tuple(row.decision_ts_ns for row in self.rows),
+        )
+        self._market_batch_index = batches
+        return batches
+
+    def _episode_market_batch_groups(self, *, start_offset: int,
+                                     episode_rows: tuple[Any, ...],
+                                     feed_start_ns: int) -> tuple[tuple[VisibleBatch, ...], ...]:
+        """Reuse row deltas while restoring the episode's required warmup prefix."""
+        batches = self._visible_market_batch_index()
+        first_batch = bisect_left(self._market_batch_times, feed_start_ns)
+        first_decision_end = bisect_right(
+            self._market_batch_times, episode_rows[0].decision_ts_ns,
+        )
+        initial = tuple(batch for _timestamp, batch in batches[first_batch:first_decision_end])
+        following = self._market_batch_groups_by_row[
+            start_offset + 1:start_offset + len(episode_rows)
+        ]
+        if len(following) != len(episode_rows) - 1:
+            raise DataError("cached visible-batch rows do not cover the Episode window")
+        return (initial, *following)
+
+    def _cached_barrier_frames(self) -> tuple[BarrierFrame, ...]:
+        """Build immutable observation/event frames once for this frozen factory."""
+        if self._barrier_frames_by_row is not None:
+            return self._barrier_frames_by_row
+        self._visible_market_batch_index()
+        frames = []
+        for row, batches in zip(self.rows, self._market_batch_groups_by_row, strict=True):
+            market_features = visible_market_features(
+                row, self.features, self.schema, instrument=self.instrument,
+                decision_ts_ns=row.decision_ts_ns,
+            )
+            if self.feature_profile == "causal_mtf_v3":
+                known_schedule = self.coverage.known_schedule_times_ns
+                if known_schedule is None:
+                    raise DataError("causal_mtf_v3 requires a source-declared future funding calendar")
+                time_features = scheduled_funding_time_features(
+                    row.decision_ts_ns, known_schedule[self.instrument],
+                )
+            else:
+                time_features = {}
+            frames.append(BarrierFrame(row.decision_ts_ns, batches,
+                                       market_features, time_features))
+        self._barrier_frames_by_row = tuple(frames)
+        return self._barrier_frames_by_row
+
+    def _episode_barrier_frames(self, *, start_offset: int,
+                                episode_rows: tuple[Any, ...],
+                                feed_start_ns: int) -> tuple[BarrierFrame, ...]:
+        """Reuse cached frames, rebuilding only a shifted Episode's warmup frame."""
+        cached_frames = self._cached_barrier_frames()
+        stop = start_offset + len(episode_rows)
+        selected = cached_frames[start_offset:stop]
+        if len(selected) != len(episode_rows):
+            raise DataError("cached barrier frames do not cover the Episode window")
+        if start_offset == 0:
+            return selected
+        first_batches = self._episode_market_batch_groups(
+            start_offset=start_offset, episode_rows=episode_rows[:1],
+            feed_start_ns=feed_start_ns,
+        )[0]
+        first = BarrierFrame(selected[0].timestamp_ns, first_batches,
+                             selected[0].market, selected[0].time_features)
+        return (first, *selected[1:])
 
     def observation_state(self, snapshot) -> dict:
         cash, free = native_balances(snapshot)
@@ -399,6 +533,7 @@ class HistoricalEnvironmentFactory:
             seen_fills: dict[str, dict] = {}
             seen_funding: dict[str, dict] = {}
             seen_liquidations: dict[str, dict] = {}
+            seen_orders: dict[str, dict] = {}
             order_filled: dict[str, Decimal] = {}
             cumulative_submitted = Decimal(0)
             cumulative_filled = Decimal(0)
@@ -435,24 +570,44 @@ class HistoricalEnvironmentFactory:
                         raise DataError("native order fill total regressed or exceeded order size")
                     cumulative_filled += filled - previous
                     order_filled[identity] = filled
+                    prior_order = seen_orders.get(identity)
+                    if prior_order is not None and any(
+                        prior_order.get(field) != order.get(field)
+                        for field in ("instrument_id", "side", "quantity")
+                    ):
+                        raise DataError("native order identity has conflicting immutable facts")
+                    seen_orders[identity] = dict(order)
                 fills = unique_delta(snapshot.fills, seen_fills)
                 funding = unique_delta(snapshot.funding, seen_funding)
                 liquidations = (None if snapshot.liquidation_orders is None else
                                 unique_delta(snapshot.liquidation_orders, seen_liquidations,
                                             "client_order_id"))
                 final_boundary = snapshot.decision_ts_ns >= episode_rows[-2].decision_ts_ns
+                if self.compact_report_snapshots:
+                    # Retain only the native contract scalars needed to verify
+                    # open linear equity. Full Position.to_dict histories can
+                    # grow with every fill and are not required by the report.
+                    position_fields = ("position_id", "side", "quantity", "multiplier", "is_inverse",
+                                       "settlement_currency")
+                    report_positions = tuple({key: row.get(key) for key in position_fields}
+                                              for row in snapshot.positions)
+                else:
+                    report_positions = snapshot.positions
                 compact = SimpleNamespace(
                     equity=snapshot.equity, currency=snapshot.currency,
-                    positions=snapshot.positions, orders=snapshot.orders,
-                    account=snapshot.account,
-                    account_events=snapshot.account_events[-1:],
+                    positions=report_positions,
+                    orders=(snapshot.orders if not self.compact_report_snapshots or final_boundary else ()),
+                    account=(snapshot.account if not self.compact_report_snapshots else {}),
+                    account_events=(snapshot.account_events[-1:] if not self.compact_report_snapshots else ()),
                     fills=tuple(seen_fills.values()) if final_boundary else fills,
                     funding=tuple(seen_funding.values()) if final_boundary else funding,
-                    all_orders=snapshot.all_orders if final_boundary else (),
+                    all_orders=(tuple(seen_orders.values()) if final_boundary else
+                                snapshot.all_orders if not self.compact_report_snapshots else ()),
                     liquidation_orders=(None if snapshot.liquidation_orders is None else
                                         tuple(seen_liquidations.values()) if final_boundary else liquidations),
-                    margins=snapshot.margins,
-                    mark=snapshot.mark, liquidation_capability=snapshot.liquidation_capability,
+                    margins=(snapshot.margins if not self.compact_report_snapshots else ()),
+                    mark=snapshot.mark,
+                    liquidation_capability=snapshot.liquidation_capability,
                     decision_ts_ns=snapshot.decision_ts_ns,
                     cumulative_submitted_qty=cumulative_submitted,
                     cumulative_filled_qty=cumulative_filled,
@@ -476,7 +631,7 @@ class HistoricalEnvironmentFactory:
             soft = SoftRiskTransform(self.soft if not soft_multipliers else self.soft.with_multipliers(soft_multipliers))
             hard = HardRiskGuard(self.hard)
 
-            def plan(target, snapshot, *, terminal=False, force_reduce=False):
+            def plan_with_rounding(target, snapshot, *, terminal=False, force_reduce=False):
                 decision = planner.plan(
                     decision_id=f"{'terminal' if terminal else 'policy'}-{snapshot.decision_ts_ns}",
                     instrument=rules, target_exposure=target, risk_budget_notional=self.budget,
@@ -484,7 +639,17 @@ class HistoricalEnvironmentFactory:
                     pending=tuple(PendingOrder(o["client_order_id"], Decimal(o["leaves_qty"]) * (-1 if o["side"] == "SELL" else 1), o["status"])
                                   for o in snapshot.orders), terminal=terminal, force_reduce=force_reduce,
                 )
-                return to_contract_plan(decision, ExecutionPlan, latency_model_id=self.execution.latency(self.mode).model_id, quantity_unit="ETH")
+                contract_plan = to_contract_plan(
+                    decision, ExecutionPlan, latency_model_id=self.execution.latency(self.mode).model_id,
+                    quantity_unit="ETH",
+                )
+                rounded_exposure = (decision.target_qty * snapshot.mark * rules.contract_multiplier
+                                    / self.budget)
+                return contract_plan, rounded_exposure
+
+            def plan(target, snapshot, *, terminal=False, force_reduce=False):
+                return plan_with_rounding(target, snapshot, terminal=terminal,
+                                          force_reduce=force_reduce)[0]
 
             def plan_action(action, snapshot, drawdown):
                 current = signed_quantity(snapshot) * snapshot.mark / self.budget
@@ -495,37 +660,31 @@ class HistoricalEnvironmentFactory:
                                       free_margin=native_balances(snapshot)[1], current_notional=current * self.budget,
                                       mark_available=True, funding_available=rate is not None,
                                       liquidation_capability=True, data_quality_grade=self.quality.grade.value)
+                contract_plan, rounded_exposure = plan_with_rounding(
+                    adjusted.adjusted, snapshot, force_reduce=adjusted.force_reduce,
+                )
                 return RiskActionReview(
-                    plan(adjusted.adjusted, snapshot, force_reduce=adjusted.force_reduce), abs(action - adjusted.adjusted),
+                    contract_plan, abs(action - adjusted.adjusted),
                     softened.intervened_fraction, adjusted.intervened_fraction, True,
-                    softened.adjusted, adjusted.adjusted,
+                    softened.adjusted, adjusted.adjusted, rounded_exposure,
                 )
 
-            groups: dict[int, list] = defaultdict(list)
-            for e in self.store.events:
-                if e.kind in {"instrument_rule", "funding_update"} or e.available_at_ns is None:
-                    continue
-                groups[e.available_at_ns].append(to_market_event(e, quality_grade=DataQualityGrade(self.quality.grade.value)))
-            batches = [(ts, VisibleBatch(ts, tuple(items), True)) for ts, items in sorted(groups.items())]
-            frames = []
-            frame_batch_groups = _visible_batches_by_decision(
-                tuple(batches), tuple(row.decision_ts_ns for row in self.rows),
+            warmup_minutes = max(
+                (field.lookback_bars * field.timeframe_minutes
+                 for field in self.features.fields if field.source_kind == "ohlcv_1m"),
+                default=1,
+            ) + 2
+            feed_start_ns = max(0, episode_rows[0].decision_ts_ns - warmup_minutes * MINUTE_NS)
+            frames = self._episode_barrier_frames(
+                start_offset=start_offset, episode_rows=episode_rows,
+                feed_start_ns=feed_start_ns,
             )
-            selected_groups = frame_batch_groups[start_offset:start_offset + selected_steps + 3]
-            for row, frame_batches in zip(episode_rows, selected_groups, strict=True):
-                frames.append(BarrierFrame(row.decision_ts_ns, frame_batches,
-                                          visible_market_features(row, self.features, self.schema, instrument=self.instrument,
-                                                                  decision_ts_ns=row.decision_ts_ns),
-                                          scheduled_funding_time_features(
-                                              row.decision_ts_ns,
-                                              self.coverage.known_schedule_times_ns[self.instrument],
-                                          ) if self.feature_profile == "causal_mtf_v3" else {}))
             episode = BarrierEpisode(
                 native_session=session,
                 native_identity={"dataset_hash": self.store.snapshot_hash,
                                  "fold_hash": episode_fold_hash,
                                  "config_hash": self.config_hash},
-                transition_hash=transition, frames=tuple(frames), scoring_frames=len(frames) - 2,
+                transition_hash=transition, frames=frames, scoring_frames=len(frames) - 2,
                 plan_action=plan_action, plan_terminal=lambda s: plan(Decimal(0), s, terminal=True),
                 executed_exposure=lambda s: signed_quantity(s) * s.mark / self.budget,
                 reward_config=self.reward_config, replay=current_replay,
@@ -571,5 +730,11 @@ def make_historical_es_env(*, env_config: dict, candidate_context: dict,
         raise DataError("ES may evaluate only the frozen Train-inner window")
     raw = dict(env_config["scaler"])
     raw["mean"], raw["std"] = tuple(raw["mean"]), tuple(raw["std"])
-    factory = HistoricalEnvironmentFactory(**{**env_config["recipe"], "fit_scaler": False, "scaler": Scaler(**raw)})
+    prepared_store = env_config.get("prepared_store")
+    if prepared_store is not None and not isinstance(prepared_store, CuratedStore):
+        raise DataError("ES worker prepared history must be a validated CuratedStore")
+    factory = HistoricalEnvironmentFactory(**{
+        **env_config["recipe"], "fit_scaler": False, "scaler": Scaler(**raw),
+        "prepared_store": prepared_store,
+    })
     return factory.make_env(env_config["transition_hash"], soft_multipliers=soft_risk_multipliers)

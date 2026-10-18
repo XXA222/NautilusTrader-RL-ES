@@ -1,4 +1,5 @@
 # Local environments, caches, and generated build outputs
+.codex-remote-attachments/
 .venv*/
 .uv-cache/
 .rles-python/
