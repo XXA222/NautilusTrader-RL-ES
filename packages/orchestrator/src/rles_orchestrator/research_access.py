@@ -17,9 +17,14 @@ DATA_FAMILY = "perpetual-market-v1"
 
 def project_registry() -> ProjectResearchRegistry:
     # Source checkout identity is stable even if the CLI's cwd/output changes.
-    source = Path(__file__).resolve().parents[4]
-    candidates = (source, *Path.cwd().resolve().parents, Path.cwd().resolve())
+    module_path = Path(__file__).resolve()
+    working_directory = Path.cwd().resolve()
+    candidates = (*module_path.parents, *working_directory.parents, working_directory)
+    seen: set[Path] = set()
     for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
         metadata = candidate / "pyproject.toml"
         if metadata.is_file() and "[tool.uv.workspace]" in metadata.read_text(encoding="utf-8"):
             registry = ProjectResearchRegistry(candidate / ".artifacts" / "research-access.sqlite")
