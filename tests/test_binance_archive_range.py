@@ -273,18 +273,25 @@ def test_funding_api_events_reject_unsorted_or_non_minute_settlement_gaps():
             )
 
 
-def test_funding_api_events_reject_single_settlement_without_interval_evidence():
+def test_funding_api_events_accept_single_explicit_settlement_without_interval():
     import json
 
     content = json.dumps([{
         "symbol": "ETHUSDT", "fundingTime": 1_800_000_000_000,
         "fundingRate": "0.0001", "markPrice": "2000", "rateType": "Regular",
     }]).encode("utf-8")
-    with pytest.raises(ValueError, match="at least two settlements"):
-        binance_archive.funding_api_events(
-            content, symbol="ETHUSDT", instrument="ETHUSDT-PERP.SIM", source_url="fixture",
-            expected_sha256=sha256(content).hexdigest(), delay_ns=1_000_000,
-        )
+    events = binance_archive.funding_api_events(
+        content, symbol="ETHUSDT", instrument="ETHUSDT-PERP.SIM", source_url="fixture",
+        expected_sha256=sha256(content).hexdigest(), delay_ns=1_000_000,
+    )
+
+    settlement, update = events
+    assert settlement.kind == "funding_settlement"
+    assert settlement.payload["settlement_ns"] == 1_800_000_000_000_000_000
+    assert "interval_minutes" not in settlement.payload
+    assert update.kind == "funding_update"
+    assert update.payload["rate_semantics"] == "last_settled_rate"
+    assert "interval_minutes" not in update.payload
 
 
 def test_import_range_uses_rest_only_for_missing_current_month_funding(tmp_path, monkeypatch):

@@ -368,9 +368,6 @@ def funding_api_events(content: bytes, *, symbol: str, instrument: str, source_u
         normalized.append((ts_ms * 1_000_000, rate, mark_price))
     if any(current[0] <= previous[0] for previous, current in zip(normalized, normalized[1:])):
         raise DataError("funding API settlement timestamps must be strictly ascending")
-    if len(normalized) < 2:
-        raise DataError("funding API interval inference requires at least two settlements")
-
     result: list[Event] = []
     for index, (ts, rate, mark_price) in enumerate(normalized):
         interval_minutes = None

@@ -52,3 +52,5 @@ REST funding 导入再补了单行边界：只有一条结算时，接口数据�
 资金更新语义继续加固：数据 schema 和 native decoder 都拒绝未知的显式 `rate_semantics`，并校验 funding interval 与 future settlement timestamp；`last_settled_rate` 不能携带未来结算时间。现有未标语义且明确给了 future boundary 的预测更新保持兼容。定向 72 passed；最终全量 **804 passed、5 skipped、53 warnings、466.08s**；全仓 Ruff 和 MyPy 105 files 通过。最终 wheel 构建、manifest 和本地备份本轮收尾。
 
 2026-10-21 REST funding cadence审计：首条 API 结算记录此前错误借用后续结算间隔；当频率切换时会将未来间隔误标给过去。现在首条记录不附推断 interval，后续只按前序可观察记录计算，last-settled feature 也不再携带/预测付款周期。针对 8h→4h 切换的回归通过。全量 **808 passed、5 CUDA-only skipped、53 warnings**；Ruff、MyPy 105 files、11 wheels/11 sdists 及 11 包/5 入口隔离 smoke 通过。此证据仍是代码回归，不认证账户现金流或账户专属资金规则。
+
+单条 REST 窄窗修复：单条结果已经携带明确结算时间、费率和 mark；无需推测 interval。已移除旧的“至少两条才能导入”拒绝，并用无 interval 的 delayed native settlement 验证仍按精确 mark 只扣一次。定向 6 passed，更新后的全量 **808 passed、5 CUDA-only skipped、53 warnings**；Ruff/MyPy 105 files、11 wheels/11 sdists 和 11 包/5 入口 smoke 通过。

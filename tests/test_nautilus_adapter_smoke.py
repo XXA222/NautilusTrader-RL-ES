@@ -931,11 +931,11 @@ def test_delayed_rest_funding_settlement_is_charged_once_at_settlement_mark(
         delay_ns = 1_000_000
         source_batch = _perpetual_batch(480, ("funding_settlement", {
             "instrument": str(instrument.id), "rate": "0.001",
-            "interval_minutes": 480, "settlement_ns": settlement_ns,
+            "settlement_ns": settlement_ns,
             "settlement_mark_price": "2000.123",
         }), ("funding_update", {
             "instrument": str(instrument.id), "rate": "0.001",
-            "interval_minutes": 480, "rate_semantics": "last_settled_rate",
+            "rate_semantics": "last_settled_rate",
         }))
         delayed_events = tuple(replace(
             event, ts_init_ns=settlement_ns + delay_ns,
