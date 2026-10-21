@@ -62,3 +62,5 @@ REST funding 导入再补了单行边界：只有一条结算时，接口数据�
 off-barrier transfer 收益也加了默认防线：`native_report()` 默认拒绝将归属到后续屏障的转账作为精确单期收益；调用者必须明确传 `allow_cashflow_barrier_attribution=True` 才能生成标记为 approximation 的报告。累计线性权益对账不依赖区间内发生时点，仍可单独执行。最新全量 **812 passed、5 CUDA-only skipped、53 warnings**；Ruff/MyPy、11 wheels/11 sdists 与 11 包/5 入口 smoke 通过。精确 TWR 仍需真实事件时点的账户权益样本和类型化授权来源。
 
 2026-10-21 增加精确 sample-barrier 转账回归：导入器保留的源时点与采样屏障一致时，native report 默认路径接受该现金流并给出零归因延迟及 `exact_sample_boundary` 模式；测试覆盖现金流剔除后的 TWR。定向现金流组 **16 passed**，目标 Ruff 通过。off-barrier 精确 TWR 和真实账户来源仍未认证。
+
+2026-10-21 为盘中转账实现精确 TWR 输入契约：`cashflow_equity_points` 要求每个非屏障转账时点提供同币种、带来源身份/哈希的转账后权益；收益在真实现金流时点前后分段链式计算，再汇总回固定屏障周期，保持既有年化频率。缺失、重复、错时或非正权益点失败关闭；缺少完整事实时仍需显式选择屏障近似。Cashflow/account-metrics **104 passed**；全量 **814 passed、5 CUDA-only skipped、53 warnings**；全仓 Ruff、MyPy 105 files、11 wheels/11 sdists、wheel manifest 和 11 包/5 入口隔离 smoke 通过。`net_return` 用盘中链式 TWR，波动率、Sharpe/Sortino 与回撤仍按采样周期聚合，不能显示周期内风险极值。真实账户事实和来源完整性尚未验证。

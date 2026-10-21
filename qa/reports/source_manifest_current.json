@@ -1,7 +1,7 @@
 {
   "schema": "rles.source-manifest.v1",
-  "generated_at_utc": "2026-10-21T04:09:51.341418+00:00",
-  "source_identity_sha256": "0d5c14ad47832879660c4903d450cb3b15c48fadcc30ba9de84ceccc3e549564",
+  "generated_at_utc": "2026-10-21T04:21:26.475446+00:00",
+  "source_identity_sha256": "8a79d09ecf6b02b3e7ad4d9dee6221cd13cd58dd64a84ca9a47017a4c95e787f",
   "scope": {
     "included": [
       ".gitattributes",
@@ -341,12 +341,17 @@
   },
   "workspace_git": {
     "path": ".",
-    "commit": "e69e8da715f58d56969d776391e21e534bd311e3",
+    "commit": "f20961f5378fce16b2cca163d1d95a8a453bd553",
     "tracked_worktree_clean": false,
     "status_entries": [
-      " M docs/DEVELOPMENT_PLAN_20261017.md"
+      " M docs/DEVELOPMENT_GOALS_REVIEW_20261017.md",
+      " M docs/DEVELOPMENT_GOAL_CURRENT.md",
+      " M docs/DEVELOPMENT_PLAN_20261017.md",
+      " M packages/research/src/rles_research/metrics.py",
+      " M packages/research/src/rles_research/native_metrics.py",
+      " M tests/test_binance_cashflows.py"
     ],
-    "tracked_diff_sha256": "5b5a4e8228936dc38760e8839a21ce6f367293ac573412674239046e8b92cef8"
+    "tracked_diff_sha256": "c79f1fbafcd1eb57974620909914e9cbe15f5626dc5b29fe2b5f97b84c0b6ac9"
   },
   "files": [
     {
@@ -991,13 +996,13 @@
     },
     {
       "path": "packages/research/src/rles_research/metrics.py",
-      "size_bytes": 7770,
-      "sha256": "1cbbe00868a4cd0aa8b9de89411bef2277d347a995d38b81633a93fa899aed97"
+      "size_bytes": 8072,
+      "sha256": "4f59b750b4966b87c2fbaf8c3c416a102898a29691ba56620bf3b6576fb2d0b4"
     },
     {
       "path": "packages/research/src/rles_research/native_metrics.py",
-      "size_bytes": 29884,
-      "sha256": "06b304bd3b9ce63a569b11b7b6a4a69350f95e0731d45cf2bb92247f96506a03"
+      "size_bytes": 36172,
+      "sha256": "9601d56b5e24fa437ab9c6e17488cec5a8d0e2b3f98d59bb6c61f6a020ff26b4"
     },
     {
       "path": "packages/research/src/rles_research/numeric.py",
@@ -1551,8 +1556,8 @@
     },
     {
       "path": "tests/test_binance_cashflows.py",
-      "size_bytes": 9799,
-      "sha256": "0f58f74ded8c7d501b549257243e09828a5f19a7463015f1637fdae1612ac073"
+      "size_bytes": 12681,
+      "sha256": "29091d1ade20ac9c7f695a5840666c45afe3154d86f305685da5f11516bdec11"
     },
     {
       "path": "tests/test_compute_device.py",

@@ -1,6 +1,7 @@
 """Map detached native snapshots into regular economic metric increments."""
 from __future__ import annotations
 
+from bisect import bisect_left
 from decimal import Decimal, InvalidOperation
 from collections.abc import Iterator, Sequence as SequenceABC
 from itertools import groupby
@@ -213,6 +214,102 @@ def _cashflow_timing(facts: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         "exact_sample_boundary_timing": exact,
         "return_timing_mode": mode,
     }
+
+
+def _cashflow_period_returns(
+        snapshots: Sequence[Any], facts: Sequence[Mapping[str, Any]],
+        equity_points: Sequence[Mapping[str, Any]]) -> dict[int, float]:
+    """Calculate regular-period TWR from exact post-transfer event-time equity facts."""
+    if (not isinstance(equity_points, SequenceABC)
+            or isinstance(equity_points, (str, bytes, bytearray))):
+        raise MetricsError("cashflow event equity points must be a sequence")
+    ordered = _ordered_snapshots(snapshots)
+    barriers = list(dict.fromkeys(item.decision_ts_ns for item in ordered))
+    if len(barriers) < 3:
+        raise MetricsError("regular native barriers required for cashflow time-weighted returns")
+    currency = ordered[0].currency
+    grouped_flows: dict[int, Decimal] = {}
+    signed_flows_by_barrier: dict[int, Decimal] = {}
+    event_times_by_barrier: dict[int, list[int]] = {}
+    off_barrier_times: set[int] = set()
+    for fact in facts:
+        source_time = fact.get("source_event_time_ns")
+        if type(source_time) is not int:
+            raise MetricsError("exact cashflow TWR requires source event time for every flow")
+        flow_time = fact["decision_ts_ns"]
+        assigned_index = bisect_left(barriers, source_time)
+        if (assigned_index >= len(barriers)
+                or barriers[assigned_index] != flow_time):
+            raise MetricsError("cashflow event is not assigned to its first following barrier")
+        amount = _decimal(fact["amount"], "external cashflow amount")
+        signed = amount if fact["kind"] == "DEPOSIT" else -amount
+        grouped_flows[source_time] = grouped_flows.get(source_time, Decimal(0)) + signed
+        if source_time != flow_time:
+            off_barrier_times.add(source_time)
+            event_times_by_barrier.setdefault(flow_time, []).append(source_time)
+        else:
+            signed_flows_by_barrier[flow_time] = (
+                signed_flows_by_barrier.get(flow_time, Decimal(0)) + signed
+            )
+
+    points: dict[int, Decimal] = {}
+    for raw in equity_points:
+        if not isinstance(raw, Mapping):
+            raise MetricsError("cashflow event equity point must be a sourced mapping")
+        timestamp = raw.get("decision_ts_ns")
+        if type(timestamp) is not int or timestamp not in off_barrier_times:
+            raise MetricsError("cashflow event equity point must match an off-barrier flow time")
+        if timestamp in points:
+            raise MetricsError("duplicate cashflow event equity point")
+        if raw.get("currency") != currency:
+            raise MetricsError("cashflow event equity currency differs from native account")
+        if not isinstance(raw.get("source_id"), str) or not raw["source_id"].strip():
+            raise MetricsError("cashflow event equity source identity required")
+        source_hash = raw.get("source_sha256")
+        if (not isinstance(source_hash, str) or len(source_hash) != 64
+                or any(character not in "0123456789abcdef" for character in source_hash)):
+            raise MetricsError("cashflow event equity source SHA-256 required")
+        equity = _decimal(raw.get("equity_after_cashflow"), "event equity after cashflow")
+        if equity <= 0:
+            raise MetricsError("cashflow event equity after cashflow must be positive")
+        points[timestamp] = equity
+    if set(points) != off_barrier_times:
+        raise MetricsError("every off-barrier flow requires exact post-cashflow event equity")
+
+    barrier_equity = {
+        timestamp: _decimal(tuple(group)[-1].equity, "equity")
+        for timestamp, group in groupby(ordered, key=lambda item: item.decision_ts_ns)
+    }
+    returns: dict[int, float] = {}
+    for previous_barrier, barrier in zip(barriers, barriers[1:]):
+        state = barrier_equity[previous_barrier]
+        if state <= 0:
+            raise MetricsError("cashflow TWR requires positive native barrier equity")
+        growth = Decimal(1)
+        for event_time in sorted(event_times_by_barrier.get(barrier, ())):
+            flow = grouped_flows[event_time]
+            equity_after = points[event_time]
+            equity_before = equity_after - flow
+            if equity_before <= 0:
+                raise MetricsError("cashflow event equity before transfer must be positive")
+            growth *= equity_before / state
+            state = equity_after
+        barrier_flow = signed_flows_by_barrier.get(barrier, Decimal(0))
+        ending_equity = barrier_equity[barrier]
+        if ending_equity <= 0:
+            raise MetricsError("cashflow TWR requires positive native barrier equity")
+        if barrier_flow:
+            equity_before_barrier_flow = ending_equity - barrier_flow
+            if equity_before_barrier_flow <= 0:
+                raise MetricsError("barrier equity before transfer must be positive")
+            growth *= equity_before_barrier_flow / state
+        else:
+            growth *= ending_equity / state
+        period_return = growth - Decimal(1)
+        if period_return <= -1:
+            raise MetricsError("cashflow-adjusted period return <= -100%")
+        returns[barrier] = float(period_return)
+    return returns
 
 
 def _fill_values(fill: dict) -> tuple[Decimal, Decimal]:
@@ -462,19 +559,37 @@ def native_report(snapshots: Sequence[Any], *, fill_references: Mapping[str, Dec
                   sample_interval_ns: int, allow_price_improvement: bool = False,
                   include_account_rows: bool = True,
                   external_cashflows: Sequence[Mapping[str, Any]] = (),
+                  cashflow_equity_points: Sequence[Mapping[str, Any]] = (),
                   allow_cashflow_barrier_attribution: bool = False,
                   linear_equity_rounding: Decimal | None = None) -> dict:
-    """Build native economic metrics without inferring external account flows."""
+    """Build native metrics with source-synchronous equity for exact intraperiod cashflows."""
     if (type(include_account_rows) is not bool
-            or type(allow_cashflow_barrier_attribution) is not bool):
-        raise MetricsError("account-row and cashflow-attribution flags must be Boolean")
+            or type(allow_cashflow_barrier_attribution) is not bool
+            or not isinstance(cashflow_equity_points, SequenceABC)
+            or isinstance(cashflow_equity_points, (str, bytes, bytearray))):
+        raise MetricsError("report flags must be Boolean and event equity points a sequence")
     ordered = _ordered_snapshots(snapshots)
     _, cashflow_facts = _external_cashflows_by_time(external_cashflows, ordered)
     cashflow_timing = _cashflow_timing(cashflow_facts)
+    period_returns: dict[int, float] = {}
+    if cashflow_equity_points:
+        period_returns = _cashflow_period_returns(
+            ordered, cashflow_facts, cashflow_equity_points,
+        )
+        cashflow_return_timing = {
+            "mode": "exact_event_time_equity",
+            "event_equity_point_count": len(cashflow_equity_points),
+        }
+    else:
+        cashflow_return_timing = {
+            "mode": cashflow_timing["return_timing_mode"],
+            "event_equity_point_count": 0,
+        }
     if (cashflow_timing["return_timing_mode"] == "sample_barrier_attribution_only"
-            and not allow_cashflow_barrier_attribution):
+            and not period_returns and not allow_cashflow_barrier_attribution):
         raise MetricsError(
-            "off-barrier cashflows require explicit sample-barrier attribution opt-in",
+            "off-barrier cashflows require source-synchronous event equity or explicit "
+            "sample-barrier attribution opt-in",
         )
     for item in ordered:
         _snapshot_records(item, "positions", "position")
@@ -485,6 +600,8 @@ def native_report(snapshots: Sequence[Any], *, fill_references: Mapping[str, Dec
     for row in iter_account_rows(ordered, fill_references=fill_references,
                                  external_cashflows=external_cashflows,
                                  allow_price_improvement=allow_price_improvement):
+        if row["ts_ns"] in period_returns:
+            row["cashflow_adjusted_return"] = period_returns[row["ts_ns"]]
         accumulator.add(row)
         if rows is not None:
             rows.append(row)
@@ -516,7 +633,9 @@ def native_report(snapshots: Sequence[Any], *, fill_references: Mapping[str, Dec
             "funding": list(funding_facts.values()),
             "terminal_flat": not final_positions and not final_orders,
             "external_cashflows": cashflow_facts,
+            "cashflow_equity_points": [dict(point) for point in cashflow_equity_points],
             "cashflow_timing": cashflow_timing,
+            "cashflow_return_timing": cashflow_return_timing,
             "liquidations": len(liquidation_orders) if observed else None,
             "liquidations_observed": observed,
             "liquidation_orders": list(liquidation_orders.values()) if observed else None,

@@ -106,6 +106,68 @@ def test_binance_transfer_exactly_on_sample_barrier_uses_default_twr_path() -> N
     assert report["metrics"]["net_return"] == pytest.approx(0.0)
 
 
+def test_binance_off_barrier_transfer_uses_synchronous_equity_for_exact_twr() -> None:
+    payload = json.dumps([{
+        "incomeType": "TRANSFER", "income": "100", "asset": "USDT",
+        "time": 15, "tranId": 9004,
+    }], separators=(",", ":"))
+    imported = import_binance_usdm_transfer_income(
+        payload, account_scope_id="subaccount-7", currency="USDT",
+        sample_barriers_ns=(10_000_000, 20_000_000, 30_000_000),
+    )
+    base = dict(currency="USDT", fills=(), funding=(), positions=(), orders=(),
+                liquidation_capability=True, liquidation_orders=())
+    snapshots = tuple(
+        SimpleNamespace(decision_ts_ns=timestamp, equity=Decimal(equity), **base)
+        for timestamp, equity in ((10_000_000, "1000"), (20_000_000, "1060"),
+                                  (30_000_000, "1100"))
+    )
+    point = {
+        "decision_ts_ns": 15_000_000,
+        "equity_after_cashflow": "1050",
+        "currency": "USDT",
+        "source_id": "account-equity-at-transfer",
+        "source_sha256": "e" * 64,
+    }
+    with pytest.raises(MetricsError, match="source-synchronous event equity"):
+        native_report(
+            snapshots, fill_references={}, sample_interval_ns=10_000_000,
+            external_cashflows=imported.facts,
+        )
+    with pytest.raises(MetricsError, match="event equity points a sequence"):
+        native_report(
+            snapshots, fill_references={}, sample_interval_ns=10_000_000,
+            external_cashflows=imported.facts, cashflow_equity_points=None,  # type: ignore[arg-type]
+        )
+    with pytest.raises(MetricsError, match="must match an off-barrier flow time"):
+        native_report(
+            snapshots, fill_references={}, sample_interval_ns=10_000_000,
+            external_cashflows=imported.facts,
+            cashflow_equity_points=({**point, "decision_ts_ns": 16_000_000},),
+        )
+    report = native_report(
+        snapshots, fill_references={}, sample_interval_ns=10_000_000,
+        external_cashflows=imported.facts, cashflow_equity_points=(point,),
+    )
+
+    expected_first_period = (Decimal("950") / Decimal("1000")
+                             * Decimal("1060") / Decimal("1050") - 1)
+    expected_total = (Decimal("950") / Decimal("1000")
+                      * Decimal("1060") / Decimal("1050")
+                      * Decimal("1100") / Decimal("1060") - 1)
+    assert report["cashflow_return_timing"] == {
+        "mode": "exact_event_time_equity", "event_equity_point_count": 1,
+    }
+    assert report["account_rows"][1]["cashflow_adjusted_return"] == pytest.approx(
+        float(expected_first_period),
+    )
+    assert report["metrics"]["net_return"] == pytest.approx(float(expected_total))
+    assert report["metrics"]["net_return"] != pytest.approx(
+        float(Decimal("960") / Decimal("1000")
+              * Decimal("1100") / Decimal("1060") - 1),
+    )
+
+
 @pytest.mark.parametrize("payload", [
     b"{bad json",
     b"{}",

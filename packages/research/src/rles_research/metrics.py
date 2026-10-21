@@ -109,7 +109,12 @@ class AccountFactsAccumulator:
         if self.previous is None:
             self.first_equity = row['equity']
         else:
-            adjusted = (row['equity'] - row['external_cashflow']) / self.previous['equity'] - 1
+            override = fact.get('cashflow_adjusted_return')
+            adjusted = (_number(override, 'cashflow-adjusted period return')
+                        if override is not None else
+                        (row['equity'] - row['external_cashflow']) / self.previous['equity'] - 1)
+            if adjusted <= -1:
+                raise MetricsError('cashflow-adjusted period return <= -100%')
             if not math.isfinite(adjusted):
                 raise MetricsError('cashflow-adjusted period return nonfinite')
             self.returns.append(adjusted)
