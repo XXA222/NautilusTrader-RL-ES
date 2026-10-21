@@ -18,6 +18,7 @@ from rles_compute_runtime.allocation import ComputeAllocation
 from rles_compute_runtime.recovery import inspect_quota, main
 from rles_compute_runtime.resources import Lease, ResourceQuota
 from rles_compute_runtime.workers import CPUWorkerPool
+from rles_compute_runtime import windows_recovery
 
 pytestmark = [pytest.mark.artifact_restore]
 WINDOWS = pytest.mark.skipif(os.name != 'nt', reason='Windows owner and Job lifetime APIs required')
@@ -42,6 +43,15 @@ class Session:
 
 def make_session(config):
     return Session(config)
+
+
+def test_owner_ancestry_stops_before_reused_parent_pid(monkeypatch):
+    created = {1: 30, 2: 10, 3: 20}
+    monkeypatch.setattr(windows_recovery, "_process_created", created.get)
+
+    # PID 1 is a reused ID: process 3 was created after process 2, so it
+    # cannot be process 2's parent even though Toolhelp reports that edge.
+    assert windows_recovery._owner_ancestors(1, {1: 2, 2: 3, 3: 1}) == (2,)
 
 
 def _controller(database, ready, stop, descendant):

@@ -41,6 +41,16 @@ class NativeMarketEventDecoder:
             raise EngineBoundaryError(f"native event has non-finite {name}")
         return result
 
+    @staticmethod
+    def _market_price(value: Decimal) -> Any:
+        """Preserve published mark/index precision independently of order tick size."""
+        from nautilus_trader.model import Price
+
+        try:
+            return Price.from_str(format(value, "f"))
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise EngineBoundaryError("market price exceeds native price precision") from exc
+
     def __call__(self, event: MarketEvent) -> Any:
         from nautilus_trader.model import (
             Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, QuoteTick,
@@ -81,9 +91,9 @@ class NativeMarketEventDecoder:
                 raise EngineBoundaryError("native mark/index price must be positive")
             update = MarkPriceUpdate if kind == "mark" else IndexPriceUpdate
             try:
-                return update(self.instrument.id, self.instrument.make_price(price), ts_event, ts_init)
+                return update(self.instrument.id, self._market_price(price), ts_event, ts_init)
             except (TypeError, ValueError, OverflowError) as exc:
-                raise EngineBoundaryError("mark/index value exceeds native instrument precision") from exc
+                raise EngineBoundaryError("mark/index value violates native event constraints") from exc
         if kind == "best_quote":
             bid = self._decimal(payload, "bid_price")
             ask = self._decimal(payload, "ask_price")
@@ -161,7 +171,7 @@ class NativeMarketEventDecoder:
                     raise EngineBoundaryError("native settlement mark price must be positive")
                 try:
                     mark_update = MarkPriceUpdate(
-                        self.instrument.id, self.instrument.make_price(mark_price), ts_event, ts_init,
+                        self.instrument.id, self._market_price(mark_price), ts_event, ts_init,
                     )
                 except (TypeError, ValueError, OverflowError) as exc:
                     raise EngineBoundaryError(

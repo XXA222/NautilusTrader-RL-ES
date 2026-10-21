@@ -37,6 +37,20 @@ def _created(handle) -> int:
     return int(created.dwHighDateTime) << 32 | int(created.dwLowDateTime)
 
 
+def _process_created(pid: int) -> int | None:
+    """Read a live PID's creation time so reused parent IDs cannot forge ancestry."""
+    kernel = _kernel()
+    process = kernel.OpenProcess(0x1000 | 0x100000, False, pid)
+    if not process:
+        return None
+    try:
+        return _created(process)
+    except ComputeError:
+        return None
+    finally:
+        kernel.CloseHandle(process)
+
+
 def owner_identity() -> dict:
     kernel = _kernel()
     pid = os.getpid()
@@ -159,15 +173,26 @@ def _owner_ancestors(owner_pid: int, parents: dict[int, int]) -> tuple[int, ...]
     ancestors: list[int] = []
     seen = {owner_pid}
     current = owner_pid
+    current_created = _process_created(owner_pid)
+    if current_created is None:
+        raise ComputeError("cannot establish Windows owner creation time")
     for _ in range(1024):
         parent = parents.get(current)
         if parent is None or parent == 0:
             return tuple(ancestors)
         if parent in seen:
-            raise ComputeError("Windows process ancestry contains a cycle")
+            # Windows retains a parent PID after that process exits. If the PID
+            # is reused by a descendant, Toolhelp can present a false cycle.
+            # The caller only accepts Job members present in this proven prefix.
+            return tuple(ancestors)
+        parent_created = _process_created(parent)
+        if parent_created is None or parent_created > current_created:
+            # A parent created after its child is a reused PID, not an ancestor.
+            return tuple(ancestors)
         ancestors.append(parent)
         seen.add(parent)
         current = parent
+        current_created = parent_created
     raise ComputeError("Windows process ancestry exceeds the supported depth")
 
 

@@ -932,7 +932,7 @@ def test_delayed_rest_funding_settlement_is_charged_once_at_settlement_mark(
         source_batch = _perpetual_batch(480, ("funding_settlement", {
             "instrument": str(instrument.id), "rate": "0.001",
             "interval_minutes": 480, "settlement_ns": settlement_ns,
-            "settlement_mark_price": "2000.00",
+            "settlement_mark_price": "2000.123",
         }), ("funding_update", {
             "instrument": str(instrument.id), "rate": "0.001",
             "interval_minutes": 480, "rate_semantics": "last_settled_rate",
@@ -957,11 +957,11 @@ def test_delayed_rest_funding_settlement_is_charged_once_at_settlement_mark(
             batches=(_perpetual_batch(481),),
             next_decision_ts_ns=481 * 60 * 1_000_000_000,
         )
-        assert settled.mark == Decimal("2000.00")
+        assert settled.mark == Decimal("2000.123")
         assert len(settled.funding) == 1
-        assert Money.from_str(settled.funding[0]["pnl_change"]).as_decimal() == Decimal("-2.00")
-        assert settled.equity == (initial.equity + Decimal("1000.00")
-                                  - Decimal("1.00") - Decimal("2.00"))
+        assert Money.from_str(settled.funding[0]["pnl_change"]).as_decimal() == Decimal("-2.000123")
+        assert settled.equity == (initial.equity + Decimal("1000.123")
+                                  - Decimal("1.00") - Decimal("2.000123"))
     finally:
         session.close()
 

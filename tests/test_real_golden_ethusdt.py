@@ -94,14 +94,14 @@ def test_real_ethusdt_native_account_trace_matches_scenario_golden():
         assert factory.quality.grade.value == "DQ-B"
         assert factory.rule.provenance == "scenario-only:fixture-assumptions-not-historical-evidence"
         assert final.decision_ts_ns == 1704096180001000000
-        assert str(final.equity) == "9998.21338803"
+        assert str(final.equity) == "9998.21338824"
         assert len(report["fills"]) == 3
         assert metrics["observations"] == 478
         assert metrics["gross_return_before_reported_costs"] == pytest.approx(-0.00010322299999992852)
         assert metrics["total_fee"] == pytest.approx(0.49911263)
         assert metrics["total_slippage_cost"] == pytest.approx(0.10028)
-        assert metrics["total_funding"] == pytest.approx(-0.15498934)
-        assert metrics["net_return"] == pytest.approx(-0.000178661197001162)
+        assert metrics["total_funding"] == pytest.approx(-0.15498913)
+        assert metrics["net_return"] == pytest.approx(-0.000178661175999)
         # The per-step economic reward must reconcile to the final native
         # account equity after actual fee, slippage and funding adjustments.
         assert economic_reward_sum == pytest.approx(log(float(final.equity) / 10000.0), abs=1e-12)
