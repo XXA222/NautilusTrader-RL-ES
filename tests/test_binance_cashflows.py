@@ -35,6 +35,7 @@ def test_binance_transfer_export_maps_to_native_cashflow_facts_and_reconciles() 
     assert [fact["kind"] for fact in imported.facts] == ["DEPOSIT", "WITHDRAWAL"]
     assert [fact["amount"] for fact in imported.facts] == ["125.50", "25.25"]
     assert [fact["decision_ts_ns"] for fact in imported.facts] == [20_000_000, 30_000_000]
+    assert [fact["source_event_time_ns"] for fact in imported.facts] == [15_000_000, 25_000_000]
     assert imported.event_time_range_ns == (15_000_000, 25_000_000)
 
     base = dict(currency="USDT", fills=(), funding=(), positions=(), orders=(),
@@ -50,6 +51,17 @@ def test_binance_transfer_export_maps_to_native_cashflow_facts_and_reconciles() 
     )
     assert report["equity_reconciliation"]["net_external_cashflow"] == "100.25"
     assert report["equity_reconciliation"]["max_abs_residual"] == "0"
+    expected_timing = {
+        "source_event_time_count": 2,
+        "source_event_time_complete": True,
+        "source_event_time_exact_barrier_count": 0,
+        "max_attribution_lag_ns": 5_000_000,
+        "exact_sample_boundary_timing": False,
+        "return_timing_mode": "sample_barrier_attribution_only",
+    }
+    assert report["cashflow_timing"] == expected_timing
+    assert report["equity_reconciliation"]["cashflow_timing"] == expected_timing
+    assert any("not exact time-weighted" in item for item in imported.limitations)
 
 
 @pytest.mark.parametrize("payload", [
@@ -119,6 +131,7 @@ def test_binance_paged_import_binds_exact_pages_and_contiguous_query_scope() -> 
     }
     assert all(fact["source_sha256"] == imported.source_sha256 for fact in imported.facts)
     assert [fact["kind"] for fact in imported.facts] == ["DEPOSIT", "WITHDRAWAL"]
+    assert [fact["source_event_time_ns"] for fact in imported.facts] == [15_000_000, 25_000_000]
     assert imported.source_id.endswith(imported.source_sha256)
     assert any("do not authenticate" in item for item in imported.limitations)
 

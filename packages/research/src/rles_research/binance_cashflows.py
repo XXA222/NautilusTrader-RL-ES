@@ -113,6 +113,7 @@ def import_binance_usdm_transfer_income(
         fact = {
             "event_id": event_id,
             "decision_ts_ns": barriers[barrier_index],
+            "source_event_time_ns": event_time_ns,
             "currency": currency,
             "kind": "DEPOSIT" if amount > 0 else "WITHDRAWAL",
             "amount": str(abs(amount)),
@@ -139,6 +140,7 @@ def import_binance_usdm_transfer_income(
             "A response payload hash identifies bytes but does not authenticate its origin or prove query completeness.",
             "The caller must verify the signed query scope, pagination/window coverage, and account identity.",
             "Events are attributed to the first sample barrier at or after the exchange event time.",
+            "When event time precedes that barrier, sample-period returns use barrier attribution, not exact time-weighted cashflow timing.",
         ),
     )
 

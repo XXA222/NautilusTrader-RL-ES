@@ -172,6 +172,11 @@ def _external_cashflows_by_time(cashflows: Sequence[Mapping[str, Any]],
             raise MetricsError("external cashflow must align to a sample after the initial barrier")
         if times[timestamp] != 1:
             raise MetricsError("external cashflow cannot align to duplicate native barriers")
+        source_timestamp = fact.get("source_event_time_ns")
+        if source_timestamp is not None and (
+                type(source_timestamp) is not int
+                or source_timestamp <= first_time or source_timestamp > timestamp):
+            raise MetricsError("external cashflow source time must precede or equal its assigned barrier")
         if fact.get("currency") != currency:
             raise MetricsError("external cashflow currency differs from native account")
         if not isinstance(kind, str) or kind not in {"DEPOSIT", "WITHDRAWAL"}:
@@ -190,6 +195,24 @@ def _external_cashflows_by_time(cashflows: Sequence[Mapping[str, Any]],
         by_time[timestamp] = by_time.get(timestamp, Decimal(0)) + signed
         unique.append(fact)
     return by_time, unique
+
+
+def _cashflow_timing(facts: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Expose source-time-to-account-barrier attribution without implying exact TWR."""
+    timed = [fact for fact in facts if "source_event_time_ns" in fact]
+    lags = [fact["decision_ts_ns"] - fact["source_event_time_ns"] for fact in timed]
+    exact = None if not facts or len(timed) != len(facts) else all(lag == 0 for lag in lags)
+    mode = ("no_external_flows" if not facts else
+            "source_event_time_unknown" if exact is None else
+            "exact_sample_boundary" if exact else "sample_barrier_attribution_only")
+    return {
+        "source_event_time_count": len(timed),
+        "source_event_time_complete": len(timed) == len(facts),
+        "source_event_time_exact_barrier_count": sum(lag == 0 for lag in lags),
+        "max_attribution_lag_ns": max(lags) if lags else None,
+        "exact_sample_boundary_timing": exact,
+        "return_timing_mode": mode,
+    }
 
 
 def _fill_values(fill: dict) -> tuple[Decimal, Decimal]:
@@ -428,7 +451,8 @@ def reconcile_linear_equity(snapshots: Sequence[Any], *,
               "rounding_per_event": str(rounding_per_event),
               "unique_fills": len(fills), "unique_funding": len(adjustments),
               "unique_external_cashflows": len(cashflow_facts),
-              "net_external_cashflow": str(external_cashflow)}
+              "net_external_cashflow": str(external_cashflow),
+              "cashflow_timing": _cashflow_timing(cashflow_facts)}
     if include_rows:
         result["rows"] = rows
     return result
@@ -484,6 +508,7 @@ def native_report(snapshots: Sequence[Any], *, fill_references: Mapping[str, Dec
             "funding": list(funding_facts.values()),
             "terminal_flat": not final_positions and not final_orders,
             "external_cashflows": cashflow_facts,
+            "cashflow_timing": _cashflow_timing(cashflow_facts),
             "liquidations": len(liquidation_orders) if observed else None,
             "liquidations_observed": observed,
             "liquidation_orders": list(liquidation_orders.values()) if observed else None,

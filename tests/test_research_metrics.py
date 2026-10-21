@@ -413,6 +413,24 @@ def test_native_ledger_rejects_unverifiable_or_ambiguous_external_cashflow_facts
         account_rows(duplicate_timestamp, fill_references={}, external_cashflows=(flow,))
 
 
+@pytest.mark.parametrize("source_time", [True, 0, 12, "10"])
+def test_native_ledger_rejects_invalid_external_cashflow_source_time(source_time: object) -> None:
+    base = dict(currency="USDT", fills=(), funding=(), positions=(), orders=(),
+                liquidation_capability=True, liquidation_orders=())
+    snapshots = (
+        SimpleNamespace(decision_ts_ns=1, equity=Decimal("1000"), **base),
+        SimpleNamespace(decision_ts_ns=11, equity=Decimal("1100"), **base),
+        SimpleNamespace(decision_ts_ns=21, equity=Decimal("1100"), **base),
+    )
+    flow = {"event_id": "transfer-1", "decision_ts_ns": 11,
+            "source_event_time_ns": source_time, "currency": "USDT",
+            "kind": "DEPOSIT", "amount": "100", "source_id": "statement",
+            "source_sha256": "b" * 64}
+
+    with pytest.raises(MetricsError, match="source time must precede or equal"):
+        account_rows(snapshots, fill_references={}, external_cashflows=(flow,))
+
+
 @pytest.mark.parametrize("kind", [[], {}, None, 1, "TRANSFER"])
 def test_native_ledger_rejects_invalid_external_cashflow_kind(kind: object) -> None:
     base = dict(currency="USDT", fills=(), funding=(), positions=(), orders=(),
