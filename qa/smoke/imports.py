@@ -19,9 +19,15 @@ expected = {
     "gymnasium": "1.3.0",
     "pyarrow": "25.0.1",
 }
+actual_versions = {}
 for distribution, wanted in expected.items():
     actual = version(distribution)
-    assert actual == wanted, f"{distribution}: expected {wanted}, got {actual}"
+    # CUDA wheels have a PEP 440 local build label, for example
+    # ``2.14.1+cu130``. The CPU lock uses ``2.14.1+cpu``. Both share the
+    # pinned upstream version; accelerator capability is checked separately.
+    upstream = actual.split("+", 1)[0]
+    assert upstream == wanted, f"{distribution}: expected {wanted}, got {actual}"
+    actual_versions[distribution] = actual
 
 modules = (
     "rles_contracts",
@@ -40,6 +46,6 @@ for module in modules:
     importlib.import_module(module)
 
 print(f"PYTHON={sys.version.split()[0]}")
-print("VERSIONS=" + ",".join(f"{name}=={value}" for name, value in expected.items()))
+print("VERSIONS=" + ",".join(f"{name}=={value}" for name, value in actual_versions.items()))
 print(f"TORCH_CUDA={torch.version.cuda}; CUDA_AVAILABLE={torch.cuda.is_available()}")
 print("IMPORT_OK=" + ",".join(modules))

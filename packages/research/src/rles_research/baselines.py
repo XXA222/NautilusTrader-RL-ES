@@ -14,7 +14,8 @@ class BaselineSpec:
     momentum_lookback: int = 20
 
     def __post_init__(self):
-        if self.name not in {'B0_no_trade','B1_always_long','B2_simple_momentum','B3_random_action'}:
+        if self.name not in {'B0_no_trade','B1_always_long','B2_simple_momentum','B3_random_action',
+                             'B4_always_short', 'B5_simple_reversal'}:
             raise ValueError('unknown baseline')
         if (type(self.seed) is not int or type(self.momentum_lookback) is not int
             or not finite_real(self.target_long)
@@ -35,7 +36,9 @@ class BaselinePolicy:
         name=self.spec.name
         if name=='B0_no_trade':return 0.0
         if name=='B1_always_long':return self.spec.target_long
+        if name=='B4_always_short':return -self.spec.target_long
         if name=='B3_random_action':return self._rng.uniform(-1,1)
         n=self.spec.momentum_lookback
         if len(closes)<n+1:return 0.0
-        return self.spec.target_long if closes[-1]>closes[-n-1] else -self.spec.target_long if closes[-1]<closes[-n-1] else 0.0
+        direction = 1 if closes[-1]>closes[-n-1] else -1 if closes[-1]<closes[-n-1] else 0
+        return direction * self.spec.target_long * (-1 if name == 'B5_simple_reversal' else 1)

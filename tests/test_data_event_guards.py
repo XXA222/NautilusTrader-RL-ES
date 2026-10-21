@@ -32,6 +32,25 @@ def test_funding_settlement_requires_integer_native_timestamp() -> None:
         )
 
 
+def test_funding_update_rejects_unknown_semantics_and_invalid_schedule() -> None:
+    base = {"instrument": "ETHUSDT", "rate": "0.001"}
+    with pytest.raises(DataError, match="unsupported funding_update rate_semantics"):
+        validate_payload("funding_update", {**base, "rate_semantics": "last-settled-rate"}, 10)
+    with pytest.raises(DataError, match="last settled funding rate cannot schedule"):
+        validate_payload(
+            "funding_update", {**base, "rate_semantics": "last_settled_rate", "next_funding_ns": 20}, 10,
+        )
+    with pytest.raises(DataError, match="interval_minutes must be a positive integer"):
+        validate_payload("funding_update", {**base, "interval_minutes": 480.0}, 10)
+
+
+def test_funding_update_accepts_explicit_future_schedule_without_unknown_semantics() -> None:
+    validate_payload(
+        "funding_update", {"instrument": "ETHUSDT", "rate": "0.001",
+                           "interval_minutes": 480, "next_funding_ns": 20}, 10,
+    )
+
+
 def test_instrument_rule_rejects_noninteger_effective_timestamp() -> None:
     rule = {
         "instrument": "ETHUSDT",
@@ -67,3 +86,103 @@ def test_instrument_rule_requires_boolean_reduce_only_min_notional_capability() 
     }
     with pytest.raises(DataError, match="reduce_only_min_notional_exempt must be bool"):
         validate_payload("instrument_rule", rule, 60_000_000_000)
+
+
+def test_instrument_rule_accepts_signed_fee_rebates() -> None:
+    rule = {
+        "instrument": "ETHUSDT",
+        "tick_size": "0.01",
+        "step_size": "0.001",
+        "min_notional": "5",
+        "min_qty": "0.001",
+        "maker_fee": "-0.0001",
+        "taker_fee": "0.0005",
+        "initial_margin_rate": "1",
+        "maintenance_margin_rate": "0.004",
+        "effective_ns": 60_000_000_000,
+        "rule_version": "v1",
+    }
+
+    validate_payload("instrument_rule", rule, 60_000_000_000)
+
+
+@pytest.mark.parametrize(
+    "field", ["margin_tiers", "leverageBrackets", "brackets", "notionalCap", "maintMarginRatio",
+              "maxLeverage", "unrecognized_metadata"],
+)
+def test_instrument_rule_rejects_unsupported_tiered_margin_facts(field: str) -> None:
+    rule = {
+        "instrument": "ETHUSDT",
+        "tick_size": "0.01",
+        "step_size": "0.001",
+        "min_notional": "5",
+        "min_qty": "0.001",
+        "maker_fee": "0.0002",
+        "taker_fee": "0.0005",
+        "initial_margin_rate": "1",
+        "maintenance_margin_rate": "0.004",
+        "effective_ns": 60_000_000_000,
+        "rule_version": "v1",
+        field: [{"notional_cap": "50000", "maintenance_rate": "0.01"}],
+    }
+
+    with pytest.raises(DataError, match="instrument_rule contains fields not consumed"):
+        validate_payload("instrument_rule", rule, 60_000_000_000)
+
+
+def test_latest_rule_index_matches_visible_filter_sort_and_conflict_semantics() -> None:
+    instrument = "ETHUSDT"
+
+    def rule(event_id: str, effective_minute: int, available_minute: int,
+             *, maker_fee: str = "0.0002", valid_until_minute: int | None = None) -> Event:
+        effective = effective_minute * MINUTE_NS
+        payload = {
+            "instrument": instrument, "tick_size": "0.01", "step_size": "0.001",
+            "min_notional": "5", "min_qty": "0.001", "maker_fee": maker_fee,
+            "taker_fee": "0.0005", "initial_margin_rate": "0.1",
+            "maintenance_margin_rate": "0.05", "effective_ns": effective,
+            "rule_version": event_id,
+        }
+        if valid_until_minute is not None:
+            payload["valid_until_ns"] = valid_until_minute * MINUTE_NS
+        available = available_minute * MINUTE_NS
+        event_time = min(effective, available)
+        return Event(event_id, "instrument_rule", event_time, event_time, available,
+                     Availability.NATIVE, "a" * 64, payload, "test-source")
+
+    store = CuratedStore((
+        rule("base", 1, 1),
+        rule("late-older", 10, 20),
+        rule("early-newer", 15, 15),
+        rule("expiring", 30, 25, valid_until_minute=40),
+        rule("same-effective-conflict", 30, 35, maker_fee="0.0003"),
+    ))
+
+    def reference(decision_ns: int) -> str:
+        matches = [event for event in store.visible(decision_ns, "instrument_rule")
+                   if event.payload.get("instrument") == instrument
+                   and event.payload.get("effective_ns", event.ts_event_ns) <= decision_ns]
+        if not matches:
+            raise DataError("instrument rule unavailable at this decision time")
+        matches.sort(key=lambda event: (event.payload.get("effective_ns", event.ts_event_ns),
+                                        event.available_at_ns, event.event_id))
+        latest = matches[-1]
+        if (latest.payload.get("valid_until_ns") is not None
+                and decision_ns >= latest.payload["valid_until_ns"]):
+            raise DataError("latest known rule has expired; fallback to older version forbidden")
+        same = [event for event in matches if event.payload.get("effective_ns", event.ts_event_ns)
+                == latest.payload.get("effective_ns", latest.ts_event_ns)]
+        if len({digest(event.payload) for event in same}) > 1:
+            raise DataError("conflicting instrument rules at decision time")
+        return latest.event_id
+
+    def outcome(query) -> tuple[str, str]:
+        try:
+            return ("value", query())
+        except DataError as exc:
+            return ("error", str(exc))
+
+    for minute in range(0, 45):
+        decision_ns = minute * MINUTE_NS
+        assert outcome(lambda: reference(decision_ns)) == outcome(
+            lambda: store.latest_rule(decision_ns, instrument).event_id)

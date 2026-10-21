@@ -67,6 +67,10 @@ class SyntheticSession:
                 "step_log_returns": [score / 10_000], "drawdowns": [0.0],
                 "risk_intervention_count": 0, "risk_intervention_steps": 1,
                 "risk_intervention_rate": 0.0,
+                "insolvency": False,
+                "margin_facts_known": True,
+                "maintenance_margin_breach": False,
+                "native_liquidation_detected": False,
             })
         return output
 
@@ -535,18 +539,23 @@ def test_worker_dispatcher_transmits_and_reconciles_account_context() -> None:
     class EchoLane:
         runtime_signature = "f" * 64
 
-        def __init__(self, *, wrong_account: bool):
+        def __init__(self, *, wrong_account: bool, final_equity: float = 101.0):
             self.wrong_account = wrong_account
+            self.final_equity = final_equity
             self.payload = None
 
         def evaluate(self, candidates):
             key, self.payload = candidates[0]
             context = self.payload["rles_context"]
             return {key["candidate_id"]: {
-                "initial_equity": 100.0, "final_equity": 101.0,
-                "step_log_returns": [0.01], "drawdowns": [0.0],
+                "initial_equity": 100.0, "final_equity": self.final_equity,
+                "step_log_returns": ([0.01] if self.final_equity > 0 else [-1.0]),
+                "drawdowns": ([0.0] if self.final_equity > 0 else [1.0]),
                 "risk_intervention_count": 0, "risk_intervention_steps": 1,
-                "risk_intervention_rate": 0.0, "evidence_hash": "a" * 64,
+                "risk_intervention_rate": 0.0, "insolvency": self.final_equity <= 0,
+                "margin_facts_known": True, "maintenance_margin_breach": False,
+                "native_liquidation_detected": False,
+                "evidence_hash": "a" * 64,
                 "request_hash": context["request_hash"],
                 "account_isolation_id": ("other-account" if self.wrong_account
                                           else context["account_isolation_id"]),
@@ -562,6 +571,26 @@ def test_worker_dispatcher_transmits_and_reconciles_account_context() -> None:
     assert context["genome"] == list(request.genome)
     assert context["account_isolation_id"] == request.account_isolation_id
     assert result[0].request_hash == request.request_hash
+
+    from rles_es_evotorch.fitness import (ConstraintPriorityFitnessSpec,
+                                          FeasibilityFirstFitnessSpec)
+
+    insolvent_lane = EchoLane(wrong_account=False, final_equity=0.0)
+    constraint_dispatcher = WorkerLaneDispatcher(
+        insolvent_lane, lambda _request: {"native_arg": 1},
+        payload_builder_id=payload_id, fitness_spec=ConstraintPriorityFitnessSpec(), tail_fraction=0.1,
+    )
+    rejected = constraint_dispatcher((request,))[0]
+    assert rejected.fitness == -2.0
+    assert rejected.feasible is False
+    assert rejected.rejection_reason == "episode_insolvency_detected"
+    assert rejected.evidence_hash != "a" * 64
+    v2_dispatcher = WorkerLaneDispatcher(
+        EchoLane(wrong_account=False, final_equity=0.0), lambda _request: {"native_arg": 1},
+        payload_builder_id=payload_id, fitness_spec=FeasibilityFirstFitnessSpec(), tail_fraction=0.1,
+    )
+    assert v2_dispatcher.signature != constraint_dispatcher.signature
+    assert v2_dispatcher((request,))[0].rejection_reason == "episode_insolvency_detected"
 
     bad_lane = EchoLane(wrong_account=True)
     bad_dispatcher = WorkerLaneDispatcher(bad_lane, lambda _request: {"native_arg": 1},
@@ -608,6 +637,176 @@ def test_e1_generation_keeps_genome_schema_separate_from_r1_actor_signature() ->
     assert {request.actor_signature for request in requests_seen} == {r1_actor_signature}
     assert {request.candidate_schema_hash for request in requests_seen} == {spec.signature}
     assert evaluator.signature != spec.signature
+
+
+def test_e2_neutral_baseline_is_paired_budgeted_and_checkpointed() -> None:
+    spec = SoftRiskSpace((
+        SoftRiskDimension("exposure_multiplier", 0.1, 1.0),
+        SoftRiskDimension("drawdown_throttle", 0.2, 1.0),
+    ))
+    requests_seen: list[CandidateRequest] = []
+
+    def dispatch(requests: tuple[CandidateRequest, ...]) -> tuple[CandidateResult, ...]:
+        requests_seen.extend(requests)
+        return tuple(CandidateResult(
+            request.run_id, request.attempt_id, request.generation,
+            request.candidate_id, request.episode_id, request.seed,
+            request.request_hash, request.account_isolation_id,
+            10.0 if request.genome == (1.0, 1.0) else 1.0, "b" * 64,
+        ) for request in requests)
+
+    def create_evaluator() -> tuple[GenerationLaneEvaluator, EvaluationBudget]:
+        budget = EvaluationBudget(10)
+        evaluator = GenerationLaneEvaluator(
+            run_id="e2-neutral-run", attempt_id="e2-neutral-attempt", fold_id="train-inner",
+            root_seed=19, episode_ids=("window-a", "window-b"), candidate_spec=spec,
+            dispatch=dispatch, budget=budget, dispatch_id=sha256(b"e2-neutral-v1").hexdigest(),
+            actor_signature="f" * 64, include_neutral_baseline=True,
+        )
+        return evaluator, budget
+
+    evaluator, budget = create_evaluator()
+    scores = evaluator(np.full((4, 2), 0.5, dtype=np.float32), generation=0)
+    assert np.array_equal(scores, np.ones(4, dtype=np.float32))
+    assert budget.consumed == 10
+    assert len(requests_seen) == 10
+    assert len({request.seed for request in requests_seen if request.episode_id == "window-a"}) == 1
+    assert sum(request.genome == (1.0, 1.0) for request in requests_seen) == 2
+    baseline = evaluator.best_neutral_baseline
+    assert baseline is not None and baseline[:2] == (10.0, 0) and len(baseline[2]) == 64
+
+    restored, restored_budget = create_evaluator()
+    restored.restore_checkpoint_state(evaluator.checkpoint_state())
+    assert restored_budget.consumed == 10
+    assert restored.best_neutral_baseline == evaluator.best_neutral_baseline
+    assert restored.evidence_hash == evaluator.evidence_hash
+
+
+def test_constraint_rejections_are_reported_and_checkpointed_with_e2_neutral_protocol() -> None:
+    spec = SoftRiskSpace((
+        SoftRiskDimension("exposure_multiplier", 0.1, 1.0),
+        SoftRiskDimension("drawdown_throttle", 0.2, 1.0),
+    ))
+
+    def dispatch(requests: tuple[CandidateRequest, ...]) -> tuple[CandidateResult, ...]:
+        output = []
+        for request in requests:
+            insolvent = request.candidate_id.endswith("c00000000") and request.episode_id == "window-a"
+            output.append(CandidateResult(
+                request.run_id, request.attempt_id, request.generation,
+                request.candidate_id, request.episode_id, request.seed,
+                request.request_hash, request.account_isolation_id,
+                -2.0 if insolvent else 0.5, "c" * 64,
+                feasible=not insolvent,
+                rejection_reason="episode_insolvency_detected" if insolvent else None,
+            ))
+        return tuple(output)
+
+    def create_evaluator() -> tuple[GenerationLaneEvaluator, EvaluationBudget]:
+        budget = EvaluationBudget(6)
+        evaluator = GenerationLaneEvaluator(
+            run_id="constraint-run", attempt_id="constraint-attempt", fold_id="train-inner",
+            root_seed=19, episode_ids=("window-a", "window-b"), candidate_spec=spec,
+            dispatch=dispatch, budget=budget, dispatch_id=sha256(b"constraint-v1").hexdigest(),
+            actor_signature="f" * 64, include_neutral_baseline=True,
+            include_constraint_evidence=True,
+        )
+        return evaluator, budget
+
+    evaluator, budget = create_evaluator()
+    scores = evaluator(np.full((2, 2), 0.5, dtype=np.float32), generation=0)
+    assert scores[1] > scores[0]
+    assert budget.consumed == 6
+    evidence = evaluator.constraint_evidence
+    first = evidence[0]["candidates"]
+    assert isinstance(first, tuple)
+    rejected = next(row for row in first if row["candidate_id"] == "g00000000-c00000000")
+    assert isinstance(rejected["mean_fitness"], float)
+    assert rejected["infeasible_episodes"] == 1
+    assert rejected["rejection_reasons"] == ("episode_insolvency_detected",)
+
+    restored, restored_budget = create_evaluator()
+    restored.restore_checkpoint_state(evaluator.checkpoint_state())
+    assert restored_budget.consumed == 6
+    assert restored.constraint_evidence == evaluator.constraint_evidence
+
+
+def test_v2_candidate_feasibility_is_lexicographic_across_scenarios() -> None:
+    spec = SoftRiskSpace((
+        SoftRiskDimension("exposure_multiplier", 0.1, 1.0),
+        SoftRiskDimension("drawdown_throttle", 0.2, 1.0),
+    ))
+
+    def dispatch(requests: tuple[CandidateRequest, ...]) -> tuple[CandidateResult, ...]:
+        results = []
+        for request in requests:
+            rejected = (request.candidate_id.endswith("c00000000")
+                        and request.episode_id == "window-a")
+            score = -2.0 if rejected else (0.9 if request.candidate_id.endswith("c00000000") else -0.5)
+            results.append(CandidateResult(
+                request.run_id, request.attempt_id, request.generation,
+                request.candidate_id, request.episode_id, request.seed,
+                request.request_hash, request.account_isolation_id, score, "e" * 64,
+                feasible=not rejected,
+                rejection_reason="native_liquidation_detected" if rejected else None,
+            ))
+        return tuple(results)
+
+    evaluator = GenerationLaneEvaluator(
+        run_id="constraint-v2", attempt_id="attempt", fold_id="train-inner",
+        root_seed=7, episode_ids=("window-a", "window-b", "window-c", "window-d"),
+        candidate_spec=spec, dispatch=dispatch, budget=EvaluationBudget(8),
+        dispatch_id=sha256(b"constraint-v2").hexdigest(), actor_signature="f" * 64,
+        include_constraint_evidence=True, feasibility_first=True,
+    )
+    scores = evaluator(np.full((2, 2), 0.5, dtype=np.float32), generation=0)
+    assert scores[0] == -2.0
+    assert scores[1] == pytest.approx(-0.5)
+    rows = evaluator.constraint_evidence[0]["candidates"]
+    rejected = next(row for row in rows if row["candidate_id"] == "g00000000-c00000000")
+    assert rejected["mean_fitness"] == pytest.approx(0.175)
+    assert rejected["selection_fitness"] == -2.0
+    assert rejected["infeasible_episodes"] == 1
+
+
+@pytest.mark.parametrize("feasible_fitness", (-2.5, 1.0))
+def test_v2_dispatch_rejects_feasible_fitness_outside_strict_selection_bounds(
+        feasible_fitness: float) -> None:
+    candidate_spec = SoftRiskSpace((SoftRiskDimension("exposure_multiplier", 0.1, 1.0),))
+    requests = tuple(
+        CandidateRequest(
+            run_id="bounded-selection", attempt_id="attempt", generation=0,
+            candidate_id=candidate_id, episode_id="scenario-0", seed=11,
+            genome=(0.5,), actor_signature="f" * 64, candidate_kind="soft_risk",
+            candidate_schema_hash=candidate_spec.signature,
+            account_isolation_id=f"account-{candidate_id}",
+        )
+        for candidate_id in ("feasible-candidate", "liquidated-candidate")
+    )
+
+    def dispatch(batch: tuple[CandidateRequest, ...]) -> tuple[CandidateResult, ...]:
+        return tuple(
+            CandidateResult(
+                run_id=request.run_id, attempt_id=request.attempt_id,
+                generation=request.generation, candidate_id=request.candidate_id,
+                episode_id=request.episode_id, seed=request.seed,
+                request_hash=request.request_hash,
+                account_isolation_id=request.account_isolation_id,
+                fitness=feasible_fitness if request.candidate_id == "feasible-candidate" else -2.0,
+                evidence_hash="e" * 64,
+                feasible=request.candidate_id == "feasible-candidate",
+                rejection_reason=(None if request.candidate_id == "feasible-candidate"
+                                  else "native_liquidation_detected"),
+            )
+            for request in batch
+        )
+
+    with pytest.raises(ValueError, match="strictly bounded in \\(-1, 1\\)"):
+        dispatch_generation(
+            requests, dispatch=dispatch, budget=EvaluationBudget(2),
+            candidate_spec=candidate_spec, actor_signature="f" * 64,
+            feasibility_first=True,
+        )
 
 
 @pytest.mark.parametrize("candidate_kind", ["actor", "soft_risk"])

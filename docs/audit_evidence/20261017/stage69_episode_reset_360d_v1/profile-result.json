@@ -1,0 +1,120 @@
+{
+  "cases": [
+    {
+      "available_memory_after_bytes": 14345175040,
+      "cached_barrier_frame_count": 86400,
+      "cached_row_frame_count": 86400,
+      "cached_visible_batch_count": 86437,
+      "cold_reset_seconds": 3.1786962000187486,
+      "data_quality_grade": "DQ-B",
+      "days": 60,
+      "decision_rows": 86400,
+      "factory_build_seconds": 6.300643800001126,
+      "factory_rss_peak_bytes": 3442851840,
+      "factory_rss_peak_delta_bytes": 21143552,
+      "factory_rss_start_bytes": 3421708288,
+      "initial_state_fingerprint": {
+        "decision_ts_ns": 1733011200001000000,
+        "episode_window": {
+          "decision_steps": 86397,
+          "end_ns": 1738195020001000000,
+          "episode_index": 0,
+          "start_ns": 1733011200001000000,
+          "start_offset": 0
+        },
+        "initial_equity": "10000.00000000",
+        "native_equity": "10000.00000000",
+        "observation_sha256": "435448e33c9eaeb81340ad0687d1692ec76e86efc5aa322723b50d433ef02092",
+        "open_order_count": 0,
+        "position_count": 0,
+        "snapshot_count_after_reset": 1
+      },
+      "make_env_seconds": 0.00016070000128820539,
+      "reset_rss_peak_bytes": 3430318080,
+      "reset_rss_peak_delta_bytes": 4755456,
+      "reset_rss_start_bytes": 3425562624,
+      "rule_provenance": "scenario-only; see hashed assumption file",
+      "same_seed_initial_state_reproducible": true,
+      "store_event_count": 1907767,
+      "store_snapshot_hash": "6101711145c1de45737062cc5cc7da8932de09ff8c062234c09b5b79eae85cf1",
+      "warm_reset_seconds": 0.009803200024180114,
+      "warm_reset_speedup": 324.25087646669715
+    },
+    {
+      "available_memory_after_bytes": 13250097152,
+      "cached_barrier_frame_count": 518400,
+      "cached_row_frame_count": 518400,
+      "cached_visible_batch_count": 518839,
+      "cold_reset_seconds": 21.53831200004788,
+      "data_quality_grade": "DQ-B",
+      "days": 360,
+      "decision_rows": 518400,
+      "factory_build_seconds": 38.36083459999645,
+      "factory_rss_peak_bytes": 3381436416,
+      "factory_rss_peak_delta_bytes": 364154880,
+      "factory_rss_start_bytes": 3017281536,
+      "initial_state_fingerprint": {
+        "decision_ts_ns": 1733011200001000000,
+        "episode_window": {
+          "decision_steps": 518397,
+          "end_ns": 1764115020001000000,
+          "episode_index": 0,
+          "start_ns": 1733011200001000000,
+          "start_offset": 0
+        },
+        "initial_equity": "10000.00000000",
+        "native_equity": "10000.00000000",
+        "observation_sha256": "435448e33c9eaeb81340ad0687d1692ec76e86efc5aa322723b50d433ef02092",
+        "open_order_count": 0,
+        "position_count": 0,
+        "snapshot_count_after_reset": 1
+      },
+      "make_env_seconds": 0.00044739997247233987,
+      "reset_rss_peak_bytes": 4519305216,
+      "reset_rss_peak_delta_bytes": 1283215360,
+      "reset_rss_start_bytes": 3236089856,
+      "rule_provenance": "scenario-only; see hashed assumption file",
+      "same_seed_initial_state_reproducible": true,
+      "store_event_count": 1907767,
+      "store_snapshot_hash": "6101711145c1de45737062cc5cc7da8932de09ff8c062234c09b5b79eae85cf1",
+      "warm_reset_seconds": 0.08376850001513958,
+      "warm_reset_speedup": 257.1170785695725
+    }
+  ],
+  "config_sha256": "93aeefcb1d9d89e76b18ed59d1c091a9a161f2e911a15f0260f2b7af2ef61bda",
+  "formal_evaluation_queries": 0,
+  "initial_available_memory_bytes": 17524826112,
+  "interpretation": [
+    "Only the preregistered physically isolated Train snapshots were decoded.",
+    "The same Train-fitted scaler and first economic timestamp were used for both windows.",
+    "Cold/warm timings measure Episode Reset and visible-batch/frame construction, not training.",
+    "Rule assumptions are scenario-only; no PnL or strategy claim is made."
+  ],
+  "minimum_available_memory_bytes_observed": 13250097152,
+  "minimum_available_memory_stop_line_bytes": 2147483648,
+  "preregistration_sha256": "fcb7275c69864e14ddb40469102468ecd590e3f8b426998c262a9dd4dba68f87",
+  "purpose": "Train-inner cold/warm Reset and cache-construction engineering measurements",
+  "schema": "rles.stage69.episode-reset-profile.v1",
+  "source_code_sha256": {
+    "docs/audit_evidence/20261017/stage69_episode_reset_360d_v1/preflight.py": "4a081a465ff67ebf89353d5ba50476446abe249d030b2790eecd3c625097b37e",
+    "packages/data/src/rles_data/core.py": "570a3ec96864c1545ee5e225d1b8da212c0ca289bba8770569523fcaf470e1b5",
+    "packages/data/src/rles_data/io.py": "0f4152f175a2246ace32f17d2927db907d6c7de65303dad7bdd6604b66eb7dd1",
+    "packages/gym_bridge/src/rles_gym_bridge/env.py": "72d8aeccf1e82ec3fcb4d0ea883323cc9f3c7efd9f36050a1ba728626b94e8db",
+    "packages/gym_bridge/src/rles_gym_bridge/historical.py": "f718d7cb7d5f3a0139f48b5fc9a8f6419a6e28974ca31e4a9e42914247420ec0",
+    "packages/orchestrator/src/rles_orchestrator/research_access.py": "aa92bf29d552f7984921bfe7c235af2ce43657ccea3e2dd3fddc0f71060ceaf4",
+    "packages/research/src/rles_research/access.py": "84401be438960204f9368c0a502270652bae20a938d2a3b9d8a88bebd88675fa",
+    "qa/profile_native_history_growth_20261016.py": "1b86efa24575794f045550307d961ce0f20c220cafa78b4c1393ef67dd73019a",
+    "qa/profile_stage69_episode_reset_20261017.py": "b034ba05d496b3356ea0f95f3f6328f61201e06dfc5ca0b5138c8f46ca0f6221"
+  },
+  "source_labels": [
+    "train-stage69-reset-360d-segment-a-v1",
+    "train-stage69-reset-360d-segment-b-v1"
+  ],
+  "source_load_seconds": 53.51560929999687,
+  "status": "PASS",
+  "window": {
+    "days": 360,
+    "end_ns": 1764115200000000000,
+    "start_ns": 1733011200000000000
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "schema": "rles.audit-m0-1-linear-liquidation-cross-check.v1",
+  "task": "M0.1 / A08",
+  "status": "passed_with_scope_limit",
+  "test": "tests/test_research_metrics.py::test_linear_liquidation_facts_and_terminal_equity_reconcile_together",
+  "fixture_type": "deterministic synthetic native-fact DTO; not an Engine-generated linear liquidation",
+  "facts": {
+    "starting_equity": "1000 USDT",
+    "open_fill": "BUY 1 @ 100; fee 0.1 USDT",
+    "open_mark": "80 USDT; native equity 979.9 USDT",
+    "liquidation_fill": "SELL 1 @ 75; fee 0.075 USDT",
+    "funding": "+0.2 USDT",
+    "liquidation_order_id": "LIQUIDATION-BINANCE-1",
+    "terminal_equity": "975.025 USDT"
+  },
+  "verification": {
+    "open_barriers_checked": 1,
+    "open_barriers_unchecked": 0,
+    "terminal_flat": true,
+    "native_liquidation_fact_count": 1,
+    "total_fees": 0.175,
+    "total_funding": 0.2,
+    "slippage_cost_attribution_only": 5.0,
+    "equity_reconciliation_max_abs_residual": "0",
+    "test_result": "1 passed"
+  },
+  "limits": [
+    "Combines the report's liquidation identity reader and linear cash-flow reconciliation over deterministic facts.",
+    "Does not prove that the current Nautilus linear venue emits the tested forced-liquidation event sequence.",
+    "Existing real Engine liquidation test covers an inverse BTC instrument's liquidation identity only."
+  ]
+}

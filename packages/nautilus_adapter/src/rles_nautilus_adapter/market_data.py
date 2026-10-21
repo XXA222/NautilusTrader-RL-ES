@@ -41,6 +41,16 @@ class NativeMarketEventDecoder:
             raise EngineBoundaryError(f"native event has non-finite {name}")
         return result
 
+    @staticmethod
+    def _market_price(value: Decimal) -> Any:
+        """Preserve published mark/index precision independently of order tick size."""
+        from nautilus_trader.model import Price
+
+        try:
+            return Price.from_str(format(value, "f"))
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise EngineBoundaryError("market price exceeds native price precision") from exc
+
     def __call__(self, event: MarketEvent) -> Any:
         from nautilus_trader.model import (
             Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, QuoteTick,
@@ -81,9 +91,9 @@ class NativeMarketEventDecoder:
                 raise EngineBoundaryError("native mark/index price must be positive")
             update = MarkPriceUpdate if kind == "mark" else IndexPriceUpdate
             try:
-                return update(self.instrument.id, self.instrument.make_price(price), ts_event, ts_init)
+                return update(self.instrument.id, self._market_price(price), ts_event, ts_init)
             except (TypeError, ValueError, OverflowError) as exc:
-                raise EngineBoundaryError("mark/index value exceeds native instrument precision") from exc
+                raise EngineBoundaryError("mark/index value violates native event constraints") from exc
         if kind == "best_quote":
             bid = self._decimal(payload, "bid_price")
             ask = self._decimal(payload, "ask_price")
@@ -107,12 +117,23 @@ class NativeMarketEventDecoder:
         if kind in {"funding_update", "funding_settlement"}:
             rate = self._decimal(payload, "rate")
             if kind == "funding_update":
+                semantics = payload.get("rate_semantics")
+                if semantics is not None and semantics != "last_settled_rate":
+                    raise EngineBoundaryError("unsupported native funding rate semantics")
                 boundary = payload.get("next_funding_ns")
                 interval = payload.get("interval_minutes")
                 if boundary is not None and (type(boundary) is not int or boundary <= ts_event):
                     raise EngineBoundaryError("funding update next_funding_ns must follow the update")
                 if interval is not None and (type(interval) is not int or interval <= 0):
                     raise EngineBoundaryError("funding interval_minutes must be positive integer")
+                if payload.get("rate_semantics") == "last_settled_rate":
+                    if boundary is not None:
+                        raise EngineBoundaryError("last settled funding rate cannot schedule a future payment")
+                    # REST history carries both a realized settlement fact and
+                    # a last-settled feature update. Passing its interval to
+                    # Nautilus would infer another payment when ts_event lies
+                    # on an interval boundary, duplicating the settlement row.
+                    interval = None
             else:
                 boundary = payload.get("settlement_ns")
                 interval = payload.get("interval_minutes")
@@ -143,8 +164,23 @@ class NativeMarketEventDecoder:
                 )
             except (TypeError, ValueError, OverflowError) as exc:
                 raise EngineBoundaryError("funding rate fields violate native event constraints") from exc
+            mark_update = None
+            if kind == "funding_settlement" and "settlement_mark_price" in payload:
+                mark_price = self._decimal(payload, "settlement_mark_price")
+                if mark_price <= 0:
+                    raise EngineBoundaryError("native settlement mark price must be positive")
+                try:
+                    mark_update = MarkPriceUpdate(
+                        self.instrument.id, self._market_price(mark_price), ts_event, ts_init,
+                    )
+                except (TypeError, ValueError, OverflowError) as exc:
+                    raise EngineBoundaryError(
+                        "funding settlement mark exceeds native instrument precision"
+                    ) from exc
             if scheduled_key is not None:
                 self._scheduled_rates[scheduled_key] = rate
+            if mark_update is not None:
+                return mark_update, result
             return result
         if kind == "instrument_rule":
             raise EngineBoundaryError("instrument_rule belongs to frozen execution config, not market replay")

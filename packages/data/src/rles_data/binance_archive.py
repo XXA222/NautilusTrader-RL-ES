@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 from datetime import date, datetime, timezone
+from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 import io
 import json
@@ -19,17 +20,17 @@ from urllib.request import urlopen
 from uuid import uuid4
 from zipfile import ZipFile
 
-from .core import Availability, CuratedStore, DataError, Event, DAY_NS, MINUTE_NS
+from .core import Availability, CuratedStore, DataError, Event, MINUTE_NS
 from .io import write_curated, write_fact_json
 
 BASE = "https://data.binance.vision/data/futures/um/"
 
 
-def _read_with_curl(url: str, *, limit: int) -> bytes:
+def _read_with_curl(url: str, *, limit: int, temp_parent: Path | None = None) -> bytes:
     executable = shutil.which("curl")
     if executable is None:
         raise DataError("curl fallback unavailable")
-    with tempfile.TemporaryDirectory(prefix="rles-binance-download-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="rles-binance-download-", dir=temp_parent) as temporary:
         destination = Path(temporary) / "response.bin"
         result = subprocess.run(
             [executable, "--fail", "--location", "--silent", "--show-error",
@@ -47,7 +48,7 @@ def _read_with_curl(url: str, *, limit: int) -> bytes:
         return content
 
 
-def _read_remote(url: str, *, limit: int) -> bytes:
+def _read_remote(url: str, *, limit: int, temp_parent: Path | None = None) -> bytes:
     """Retry short-lived archive transport failures without weakening checks."""
     last_error: Exception | None = None
     # Historical imports can require hundreds of sequential archive/checksum
@@ -67,7 +68,7 @@ def _read_remote(url: str, *, limit: int) -> bytes:
         if attempt < 4:
             time.sleep(0.25 * (2 ** attempt))
     if last_error is not None and shutil.which("curl") is not None:
-        return _read_with_curl(url, limit=limit)
+        return _read_with_curl(url, limit=limit, temp_parent=temp_parent)
     if last_error is not None:
         raise last_error
     raise DataError("archive download retry loop ended unexpectedly")
@@ -93,7 +94,9 @@ def fetch_archive(relative_url: str, destination: Path) -> dict:
                 or not isinstance(saved["sha256"], str)
                 or re.fullmatch(r"[0-9a-f]{64}", saved["sha256"]) is None):
             raise DataError("cached archive source receipt identity is invalid")
-        size_limit = 128 * 1024 * 1024 if "/bookTicker/" in relative_url else 64 * 1024 * 1024
+        size_limit = (128 * 1024 * 1024 if any(stream in relative_url
+                                               for stream in ("/bookTicker/", "/aggTrades/"))
+                      else 64 * 1024 * 1024)
         if destination.stat().st_size > size_limit:
             raise DataError("cached archive exceeds bounded importer size")
         content_hash = sha256(destination.read_bytes()).hexdigest()
@@ -101,16 +104,19 @@ def fetch_archive(relative_url: str, destination: Path) -> dict:
             raise DataError("cached archive differs from its verified source receipt")
         return {"path": str(destination.resolve()), "url": url, "sha256": content_hash}
 
-    checksum = _read_remote(url + ".CHECKSUM", limit=1024).decode("ascii").split()
+    checksum = _read_remote(url + ".CHECKSUM", limit=1024,
+                            temp_parent=destination.parent).decode("ascii").split()
     if len(checksum) != 2 or re.fullmatch(r"[0-9a-f]{64}", checksum[0]) is None:
         raise DataError("invalid Binance archive checksum")
     if checksum[1].lstrip("*") != relative_url.rsplit("/", 1)[-1]:
         raise DataError("Binance checksum names a different archive")
-    size_limit = 128 * 1024 * 1024 if "/bookTicker/" in relative_url else 64 * 1024 * 1024
+    size_limit = (128 * 1024 * 1024 if any(stream in relative_url
+                                           for stream in ("/bookTicker/", "/aggTrades/"))
+                  else 64 * 1024 * 1024)
     if destination.exists():
         content = destination.read_bytes()
     else:
-        content = _read_remote(url, limit=size_limit)
+        content = _read_remote(url, limit=size_limit, temp_parent=destination.parent)
         if len(content) > size_limit:
             raise DataError("archive exceeds bounded importer size")
     if sha256(content).hexdigest() != checksum[0]:
@@ -155,7 +161,8 @@ def archive_events(path: Path, *, stream: str, instrument: str, source_url: str,
     """
     if type(delay_ns) is not int or delay_ns <= 0:
         raise DataError("archive ingress requires an explicit positive availability delay")
-    if stream not in {"klines", "markPriceKlines", "indexPriceKlines", "fundingRate", "bookTicker"}:
+    if stream not in {"klines", "markPriceKlines", "indexPriceKlines", "fundingRate",
+                      "bookTicker", "aggTrades"}:
         raise DataError("unsupported Binance USD-M stream")
     content = path.read_bytes()
     if sha256(content).hexdigest() != expected_sha256:
@@ -163,7 +170,7 @@ def archive_events(path: Path, *, stream: str, instrument: str, source_url: str,
     result = []
     with ZipFile(io.BytesIO(content)) as archive:
         members = archive.infolist()
-        member_limit = 1024 * 1024 * 1024 if stream == "bookTicker" else 128 * 1024 * 1024
+        member_limit = 1024 * 1024 * 1024 if stream in {"bookTicker", "aggTrades"} else 128 * 1024 * 1024
         if len(members) != 1 or not members[0].filename.endswith(".csv") or members[0].file_size > member_limit:
             raise DataError("expected one bounded CSV archive member")
         with archive.open(members[0]) as source:
@@ -213,6 +220,80 @@ def archive_events(path: Path, *, stream: str, instrument: str, source_url: str,
                 if selected is not None:
                     result.append(emit_quote(selected, number))
                 return tuple(result)
+            if stream == "aggTrades":
+                # Preserve exact one-second aggressor-flow aggregates instead of
+                # retaining millions of individual Event objects in memory.
+                bucket_ns = 1_000_000_000
+                current_bucket: int | None = None
+                aggregate: dict[str, Any] | None = None
+                previous_event_ms = -1
+                previous_trade_id = -1
+
+                def emit_flow(bucket: int, values: dict[str, Any]) -> Event:
+                    payload = {
+                        "instrument": instrument,
+                        "aggressor_buy_qty": str(values["buy_qty"]),
+                        "aggressor_sell_qty": str(values["sell_qty"]),
+                        "aggressor_buy_notional": str(values["buy_notional"]),
+                        "aggressor_sell_notional": str(values["sell_notional"]),
+                        "trade_count": values["count"],
+                        "first_trade_id": values["first_trade_id"],
+                        "last_trade_id": values["last_trade_id"],
+                        "first_price": str(values["first_price"]),
+                        "last_price": str(values["last_price"]),
+                        "high_price": str(values["high_price"]),
+                        "low_price": str(values["low_price"]),
+                    }
+                    ts = (bucket + 1) * bucket_ns
+                    return Event(
+                        f"binance:{expected_sha256[:16]}:trade_flow_1s:{bucket}",
+                        "trade_flow_1s", ts, ts + delay_ns, ts + delay_ns,
+                        Availability.DERIVED, expected_sha256, payload,
+                        source_url + "#one-second-aggressor-flow",
+                    )
+
+                for number, row in enumerate(csv.reader(io.TextIOWrapper(source, encoding="utf-8"))):
+                    if number == 0 and row and row[0] == "agg_trade_id":
+                        continue
+                    if len(row) != 7:
+                        raise DataError("unexpected USD-M aggTrades archive columns")
+                    try:
+                        trade_id, price, quantity = int(row[0]), Decimal(row[1]), Decimal(row[2])
+                        first_id, last_id, event_ms = int(row[3]), int(row[4]), int(row[5])
+                    except (ValueError, InvalidOperation) as exc:
+                        raise DataError("invalid USD-M aggTrades identity, price, or quantity") from exc
+                    maker_flag = row[6].strip().lower()
+                    if (maker_flag not in {"true", "false"} or trade_id < 0 or first_id < 0
+                            or last_id < first_id or price <= 0 or quantity <= 0
+                            or event_ms < previous_event_ms or trade_id <= previous_trade_id):
+                        raise DataError("USD-M aggTrades identity, order, or value is invalid")
+                    previous_event_ms, previous_trade_id = event_ms, trade_id
+                    bucket = event_ms * 1_000_000 // bucket_ns
+                    if current_bucket is not None and bucket != current_bucket:
+                        if aggregate is None or bucket <= current_bucket:
+                            raise DataError("USD-M aggTrades timestamps are not strictly bucket ordered")
+                        result.append(emit_flow(current_bucket, aggregate))
+                        aggregate = None
+                    if aggregate is None:
+                        aggregate = {
+                            "buy_qty": Decimal(0), "sell_qty": Decimal(0),
+                            "buy_notional": Decimal(0), "sell_notional": Decimal(0),
+                            "count": 0, "first_trade_id": first_id, "last_trade_id": last_id,
+                            "first_price": price, "last_price": price,
+                            "high_price": price, "low_price": price,
+                        }
+                        current_bucket = bucket
+                    side = "sell" if maker_flag == "true" else "buy"
+                    aggregate[f"{side}_qty"] += quantity
+                    aggregate[f"{side}_notional"] += price * quantity
+                    aggregate["count"] += 1
+                    aggregate["last_trade_id"] = last_id
+                    aggregate["last_price"] = price
+                    aggregate["high_price"] = max(aggregate["high_price"], price)
+                    aggregate["low_price"] = min(aggregate["low_price"], price)
+                if current_bucket is not None and aggregate is not None:
+                    result.append(emit_flow(current_bucket, aggregate))
+                return tuple(result)
             for number, row in enumerate(csv.reader(io.TextIOWrapper(source, encoding="utf-8"))):
                 if number == 0 and row and row[0] in {"open_time", "calc_time"}:
                     continue
@@ -251,10 +332,11 @@ def funding_api_events(content: bytes, *, symbol: str, instrument: str, source_u
                        expected_sha256: str, delay_ns: int) -> tuple[Event, ...]:
     """Normalize official REST funding history without claiming archive checksums.
 
-    Funding interval is derived from adjacent observed settlement timestamps because
-    the REST response does not publish a historical interval field. A single row
-    therefore uses the next row's observed gap; settlement timestamps may carry
-    millisecond jitter, so only gaps within one second of a whole minute pass.
+    Funding interval is derived from the previous observed settlement timestamp
+    because the REST response does not publish a historical interval field. The
+    first row has no preceding observation and therefore carries no interval.
+    Settlement timestamps may carry millisecond jitter, so only observed gaps
+    within one second of a whole minute pass.
     """
     if type(delay_ns) is not int or delay_ns <= 0:
         raise DataError("funding API ingress requires an explicit positive availability delay")
@@ -266,32 +348,42 @@ def funding_api_events(content: bytes, *, symbol: str, instrument: str, source_u
         raise DataError("funding API response is not valid JSON") from exc
     if not isinstance(rows, list) or not rows:
         raise DataError("funding API response must contain at least one settlement")
-    normalized: list[tuple[int, str]] = []
+    normalized: list[tuple[int, str, str]] = []
     for row in rows:
         if not isinstance(row, dict) or row.get("symbol") != symbol:
             raise DataError("funding API response contains an unexpected symbol or row")
-        ts_ms, rate = row.get("fundingTime"), row.get("fundingRate")
-        if type(ts_ms) is not int or ts_ms < 0 or not isinstance(rate, str):
-            raise DataError("funding API row has invalid timestamp or rate")
+        ts_ms, rate, mark_price = (row.get("fundingTime"), row.get("fundingRate"),
+                                   row.get("markPrice"))
+        if (type(ts_ms) is not int or ts_ms < 0 or not isinstance(rate, str)
+                or not isinstance(mark_price, str)):
+            raise DataError("funding API row has invalid timestamp, rate, or settlement mark")
+        try:
+            settlement_mark = Decimal(mark_price)
+        except InvalidOperation as exc:
+            raise DataError("funding API settlement mark is invalid") from exc
+        if not settlement_mark.is_finite() or settlement_mark <= 0:
+            raise DataError("funding API settlement mark must be finite and positive")
         if row.get("rateType") not in {"Regular", "Special"}:
             raise DataError("funding API row has an unknown rate type")
-        normalized.append((ts_ms * 1_000_000, rate))
+        normalized.append((ts_ms * 1_000_000, rate, mark_price))
     if any(current[0] <= previous[0] for previous, current in zip(normalized, normalized[1:])):
         raise DataError("funding API settlement timestamps must be strictly ascending")
-
     result: list[Event] = []
-    for index, (ts, rate) in enumerate(normalized):
-        neighbor = normalized[index - 1][0] if index else normalized[index + 1][0]
-        gap_ns = abs(ts - neighbor)
-        minute_ns = 60 * 1_000_000_000
-        interval_minutes = round(gap_ns / minute_ns)
-        if interval_minutes <= 0 or abs(gap_ns - interval_minutes * minute_ns) > 1_000_000_000:
-            raise DataError("funding API settlement gap must be within one second of whole minutes")
+    for index, (ts, rate, mark_price) in enumerate(normalized):
+        interval_minutes = None
+        if index:
+            gap_ns = ts - normalized[index - 1][0]
+            minute_ns = 60 * 1_000_000_000
+            interval_minutes = round(gap_ns / minute_ns)
+            if interval_minutes <= 0 or abs(gap_ns - interval_minutes * minute_ns) > 1_000_000_000:
+                raise DataError("funding API settlement gap must be within one second of whole minutes")
+        settlement_payload = {"rate": rate, "settlement_ns": ts,
+                              "settlement_mark_price": mark_price}
+        if interval_minutes is not None:
+            settlement_payload["interval_minutes"] = interval_minutes
         for kind, payload in (
-            ("funding_settlement", {"rate": rate, "settlement_ns": ts,
-                                    "interval_minutes": interval_minutes}),
-            ("funding_update", {"rate": rate, "rate_semantics": "last_settled_rate",
-                                "interval_minutes": interval_minutes}),
+            ("funding_settlement", settlement_payload),
+            ("funding_update", {"rate": rate, "rate_semantics": "last_settled_rate"}),
         ):
             result.append(Event(
                 f"binance-api:{expected_sha256[:16]}:{kind}:{ts}", kind, ts,
@@ -324,7 +416,7 @@ def fetch_funding_api(symbol: str, month: date, end_day: date, raw: Path) -> tup
             raise DataError("cached funding API response differs from its source receipt")
         return {"path": str(destination.resolve()), "url": url, "sha256": digest,
                 "verification": "captured_response_sha256"}, content
-    content = _read_remote(url, limit=8 * 1024 * 1024)
+    content = _read_remote(url, limit=8 * 1024 * 1024, temp_parent=raw)
     if len(content) > 8 * 1024 * 1024:
         raise DataError("funding API response exceeds bounded download size")
     digest = sha256(content).hexdigest()
@@ -340,7 +432,8 @@ def fetch_funding_api(symbol: str, month: date, end_day: date, raw: Path) -> tup
 
 
 def import_day(*, symbol: str, day: str, output: str | Path, delay_ns: int,
-               instrument: str | None = None, include_bookticker: bool = False) -> dict:
+               instrument: str | None = None, include_bookticker: bool = False,
+               include_agg_trades: bool = False) -> dict:
     if re.fullmatch(r"[A-Z0-9]{3,24}", symbol) is None:
         raise DataError("invalid Binance symbol")
     parsed_day = date.fromisoformat(day)
@@ -348,6 +441,8 @@ def import_day(*, symbol: str, day: str, output: str | Path, delay_ns: int,
         raise DataError("day must be YYYY-MM-DD")
     if type(include_bookticker) is not bool:
         raise DataError("include_bookticker must be an explicit boolean")
+    if type(include_agg_trades) is not bool:
+        raise DataError("include_agg_trades must be an explicit boolean")
     target = Path(output).resolve()
     if target.exists() and not (
         (target / "IMPORT_FAILED.json").is_file()
@@ -363,10 +458,14 @@ def import_day(*, symbol: str, day: str, output: str | Path, delay_ns: int,
         streams = ["klines", "markPriceKlines", "indexPriceKlines", "fundingRate"]
         if include_bookticker:
             streams.append("bookTicker")
+        if include_agg_trades:
+            streams.append("aggTrades")
         for stream in streams:
             if stream == "fundingRate":
                 relative = f"monthly/{stream}/{symbol}/{symbol}-fundingRate-{day[:7]}.zip"
             elif stream == "bookTicker":
+                relative = f"daily/{stream}/{symbol}/{symbol}-{stream}-{day}.zip"
+            elif stream == "aggTrades":
                 relative = f"daily/{stream}/{symbol}/{symbol}-{stream}-{day}.zip"
             else:
                 relative = f"daily/{stream}/{symbol}/1m/{symbol}-1m-{day}.zip"
@@ -389,7 +488,9 @@ def import_day(*, symbol: str, day: str, output: str | Path, delay_ns: int,
                     "start_ns": min(bars), "end_ns": max(bars) + MINUTE_NS,
                     "instrument_rules_supplied": False,
                     "bookticker_included": include_bookticker,
-                    "bookticker_sampling": "last_event_time_quote_per_second" if include_bookticker else None}
+                    "bookticker_sampling": "last_event_time_quote_per_second" if include_bookticker else None,
+                    "agg_trades_included": include_agg_trades,
+                    "agg_trades_sampling": "one_second_aggressor_flow" if include_agg_trades else None}
         write_fact_json(target / "import.json", metadata)
         (target / "IMPORT_FAILED.json").unlink(missing_ok=True)
         return metadata
@@ -401,7 +502,9 @@ def import_day(*, symbol: str, day: str, output: str | Path, delay_ns: int,
 
 def import_range(*, symbol: str, start_day: str, end_day: str,
                  output: str | Path, delay_ns: int,
-                 instrument: str | None = None, include_bookticker: bool = False) -> dict:
+                 instrument: str | None = None, include_bookticker: bool = False,
+                 include_agg_trades: bool = False,
+                 archive_interval: str = "daily") -> dict:
     """Import a closed inclusive date range from Binance's checksum archives.
 
     Daily OHLCV/mark/index files are retained individually; monthly funding
@@ -415,8 +518,14 @@ def import_range(*, symbol: str, start_day: str, end_day: str,
         raise DataError("range must use ordered YYYY-MM-DD start/end dates")
     if type(include_bookticker) is not bool:
         raise DataError("include_bookticker must be an explicit boolean")
-    if include_bookticker and first != last:
-        raise DataError("bookTicker import is limited to one UTC day to bound curated event memory")
+    if type(include_agg_trades) is not bool:
+        raise DataError("include_agg_trades must be an explicit boolean")
+    if type(archive_interval) is not str or archive_interval not in {"daily", "monthly"}:
+        raise DataError("archive_interval must be daily or monthly")
+    if (include_bookticker or include_agg_trades) and first != last:
+        raise DataError("bookTicker/aggTrades import is limited to one UTC day to bound curated event memory")
+    if include_agg_trades and archive_interval != "daily":
+        raise DataError("aggTrades are available only from the daily archive importer")
     if type(delay_ns) is not int or delay_ns <= 0:
         raise DataError("archive ingress requires an explicit positive availability delay")
     target = Path(output).resolve()
@@ -433,27 +542,55 @@ def import_range(*, symbol: str, start_day: str, end_day: str,
     sources: list[dict] = []
     events: list[Event] = []
     try:
-        current = first
-        while current <= last:
-            day = current.isoformat()
-            for stream in ("klines", "markPriceKlines", "indexPriceKlines"):
-                relative = f"daily/{stream}/{symbol}/1m/{symbol}-1m-{day}.zip"
-                source = fetch_archive(relative, raw / f"{stream}-{day}.zip")
-                sources.append(source)
-                events.extend(archive_events(
-                    Path(source["path"]), stream=stream, instrument=instrument or f"{symbol}-PERP.SIM",
-                    source_url=source["url"], expected_sha256=source["sha256"], delay_ns=delay_ns,
-                ))
-            if include_bookticker:
-                stream = "bookTicker"
-                relative = f"daily/{stream}/{symbol}/{symbol}-{stream}-{day}.zip"
-                source = fetch_archive(relative, raw / f"{stream}-{day}.zip")
-                sources.append(source)
-                events.extend(archive_events(
-                    Path(source["path"]), stream=stream, instrument=instrument or f"{symbol}-PERP.SIM",
-                    source_url=source["url"], expected_sha256=source["sha256"], delay_ns=delay_ns,
-                ))
-            current = date.fromordinal(current.toordinal() + 1)
+        if archive_interval == "daily":
+            current = first
+            while current <= last:
+                day = current.isoformat()
+                for stream in ("klines", "markPriceKlines", "indexPriceKlines"):
+                    relative = f"daily/{stream}/{symbol}/1m/{symbol}-1m-{day}.zip"
+                    source = fetch_archive(relative, raw / f"{stream}-{day}.zip")
+                    sources.append(source)
+                    events.extend(archive_events(
+                        Path(source["path"]), stream=stream, instrument=instrument or f"{symbol}-PERP.SIM",
+                        source_url=source["url"], expected_sha256=source["sha256"], delay_ns=delay_ns,
+                    ))
+                if include_bookticker:
+                    stream = "bookTicker"
+                    relative = f"daily/{stream}/{symbol}/{symbol}-{stream}-{day}.zip"
+                    source = fetch_archive(relative, raw / f"{stream}-{day}.zip")
+                    sources.append(source)
+                    events.extend(archive_events(
+                        Path(source["path"]), stream=stream, instrument=instrument or f"{symbol}-PERP.SIM",
+                        source_url=source["url"], expected_sha256=source["sha256"], delay_ns=delay_ns,
+                    ))
+                if include_agg_trades:
+                    stream = "aggTrades"
+                    relative = f"daily/{stream}/{symbol}/{symbol}-{stream}-{day}.zip"
+                    source = fetch_archive(relative, raw / f"{stream}-{day}.zip")
+                    sources.append(source)
+                    events.extend(archive_events(
+                        Path(source["path"]), stream=stream, instrument=instrument or f"{symbol}-PERP.SIM",
+                        source_url=source["url"], expected_sha256=source["sha256"], delay_ns=delay_ns,
+                    ))
+                current = date.fromordinal(current.toordinal() + 1)
+        else:
+            # Binance publishes monthly USD-M klines, mark and index archives.
+            # Use these to reduce hundreds of daily checksum/download round trips;
+            # exact requested dates are still clipped below and audited downstream.
+            month = date(first.year, first.month, 1)
+            final_month = date(last.year, last.month, 1)
+            while month <= final_month:
+                month_key = month.strftime("%Y-%m")
+                for stream in ("klines", "markPriceKlines", "indexPriceKlines"):
+                    relative = (f"monthly/{stream}/{symbol}/1m/"
+                                f"{symbol}-1m-{month_key}.zip")
+                    source = fetch_archive(relative, raw / f"{stream}-{month_key}.zip")
+                    sources.append(source)
+                    events.extend(archive_events(
+                        Path(source["path"]), stream=stream, instrument=instrument or f"{symbol}-PERP.SIM",
+                        source_url=source["url"], expected_sha256=source["sha256"], delay_ns=delay_ns,
+                    ))
+                month = date(month.year + (month.month == 12), month.month % 12 + 1, 1)
 
         month = date(first.year, first.month, 1)
         final_month = date(last.year, last.month, 1)
@@ -483,17 +620,23 @@ def import_range(*, symbol: str, start_day: str, end_day: str,
         bars = [event.ts_event_ns for event in events if event.kind == "ohlcv_1m"]
         if not bars:
             raise DataError("Binance archive range contains no one-minute bars")
-        first_bar, last_bar = min(bars), max(bars)
-        # Kline event timestamps are candle close times, so the first bar of a
-        # UTC day is normally 00:01. Funding can settle at 00:00 and is already
-        # visible by that first close; clipping it to first_bar silently loses
-        # a real account event and makes multi-day settlement coverage fail.
-        funding_start = first_bar - (first_bar % DAY_NS)
+        # Kline event timestamps are candle closes. Include the final close at
+        # 00:00 UTC after the inclusive end date; funding stays inside dates.
+        requested_start_ns = int(datetime.combine(first, datetime.min.time(), tzinfo=timezone.utc).timestamp() * 1e9)
+        requested_end_ns = int(datetime.combine(
+            date.fromordinal(last.toordinal() + 1), datetime.min.time(), tzinfo=timezone.utc,
+        ).timestamp() * 1e9)
+        # The prior settlement remains available from any adjacent warm-up archive.
         events = [
             event for event in events
-            if (funding_start if event.kind in {"funding_update", "funding_settlement"}
-                else first_bar) <= event.ts_event_ns <= last_bar
+            if (requested_start_ns <= event.ts_event_ns < requested_end_ns
+                if event.kind in {"funding_update", "funding_settlement"}
+                else requested_start_ns < event.ts_event_ns < requested_end_ns + MINUTE_NS)
         ]
+        clipped_bars = [event.ts_event_ns for event in events if event.kind == "ohlcv_1m"]
+        if not clipped_bars:
+            raise DataError("Binance archives contain no bars inside the requested date range")
+        first_bar, last_bar = min(clipped_bars), max(clipped_bars)
         store = CuratedStore(events)
         write_curated(target / "market.parquet", store)
         metadata = {
@@ -501,6 +644,9 @@ def import_range(*, symbol: str, start_day: str, end_day: str,
             "start_day": start_day, "end_day": end_day,
             "instrument": instrument or f"{symbol}-PERP.SIM", "sources": sources,
             "availability": "derived", "availability_delay_ns": delay_ns,
+            "archive_interval": archive_interval,
+            "agg_trades_included": include_agg_trades,
+            "agg_trades_sampling": "one_second_aggressor_flow" if include_agg_trades else None,
             "funding_feature": "last_settled_rate", "event_count": len(store.events),
             "start_ns": first_bar, "end_ns": last_bar + MINUTE_NS,
             "instrument_rules_supplied": False,
@@ -527,16 +673,23 @@ def main() -> int:
     parser.add_argument("--end-day")
     parser.add_argument("--output", required=True)
     parser.add_argument("--delay-ns", type=int, required=True)
+    parser.add_argument("--archive-interval", choices=("daily", "monthly"), default="daily",
+                        help="use daily archives (default) or checksum-verified monthly kline archives")
     parser.add_argument("--include-bookticker", action="store_true",
                         help="import Binance best bid/ask sampled at one-second event-time cadence")
+    parser.add_argument("--include-agg-trades", action="store_true",
+                        help="import USD-M aggTrades as checksum-verified one-second aggressor-flow events")
     args = parser.parse_args()
     if args.day is not None and args.start_day is None and args.end_day is None:
         result = import_day(symbol=args.symbol, day=args.day, output=args.output, delay_ns=args.delay_ns,
-                            include_bookticker=args.include_bookticker)
+                            include_bookticker=args.include_bookticker,
+                            include_agg_trades=args.include_agg_trades)
     elif args.day is None and args.start_day is not None and args.end_day is not None:
         result = import_range(symbol=args.symbol, start_day=args.start_day, end_day=args.end_day,
                               output=args.output, delay_ns=args.delay_ns,
-                              include_bookticker=args.include_bookticker)
+                              archive_interval=args.archive_interval,
+                              include_bookticker=args.include_bookticker,
+                              include_agg_trades=args.include_agg_trades)
     else:
         parser.error("provide either --day or both --start-day and --end-day")
     print(json.dumps(result, indent=2))

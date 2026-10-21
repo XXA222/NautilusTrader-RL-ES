@@ -229,9 +229,9 @@ class _NativeESSession:
                 step_log_returns.append(float(last_info["r_econ"]))
                 drawdowns.append(float(last_info["drawdown"]))
                 risk_interventions += int(last_info["risk_hard_adjustment"] > 0)
-                if terminated:
+                if terminated and not last_info.get("terminal_settled"):
                     raise RuntimeError("native candidate episode terminated unexpectedly")
-            if not truncated or not last_info.get("terminal_settled"):
+            if not (terminated or truncated) or not last_info.get("terminal_settled"):
                 raise RuntimeError("native candidate episode lacks terminal settlement")
             evidence_hash = sha256(repr((
                 rles_context["request_hash"], rles_context["account_isolation_id"],
@@ -246,6 +246,10 @@ class _NativeESSession:
                 "risk_intervention_count": risk_interventions,
                 "risk_intervention_steps": len(step_log_returns),
                 "risk_intervention_rate": risk_interventions / len(step_log_returns),
+                "insolvency": False,
+                "margin_facts_known": True,
+                "maintenance_margin_breach": False,
+                "native_liquidation_detected": False,
                 "evidence_hash": evidence_hash,
                 "request_hash": rles_context["request_hash"],
                 "account_isolation_id": rles_context["account_isolation_id"],
@@ -282,7 +286,7 @@ def test_native_gym_pipeline_uses_risk_capped_fills_and_terminal_costs() -> None
         assert env.rles_transition_hash == "d" * 64  # Available to SB3 before reset.
         env.reset(seed=1)
         observation, reward, terminated, truncated, info = env.step(np.array([1], dtype=np.float32))
-        assert not terminated and truncated and info["terminal_settled"]
+        assert terminated and not truncated and info["terminal_settled"]
         assert info["executed_action"] == 0.5  # Hard cap, rather than the raw action 1.
         assert info["native_equity"] == "99999.90"  # Both actual native commissions.
         assert observation[-1] == 0  # Forced terminal flatten.
@@ -290,6 +294,10 @@ def test_native_gym_pipeline_uses_risk_capped_fills_and_terminal_costs() -> None
         # The terminal drain advances the account to minute 3; only the minute
         # 2 policy barrier counts as an RL decision sample.
         assert info["decision_ts_ns"] == 120_000_000_000
+        assert info["episode_window"]["decision_steps"] == 7
+        assert info["episode_window"]["start_ns"] == 60_000_000_000
+        assert "close" in info["market_features"]
+        assert np.isfinite(info["net_exposure"])
     finally:
         env.close()
 
@@ -316,8 +324,18 @@ def test_native_episode_replay_restores_account_observation_reward_and_step_budg
             actual = restored.step(action)
             assert np.array_equal(expected[0], actual[0])
             assert expected[1:4] == actual[1:4]
-            assert expected[4] == actual[4]
-        assert actual[3] is True  # Restoring does not reset the max_steps budget.
+            def without_random_event_ids(value):
+                if isinstance(value, dict):
+                    return {key: without_random_event_ids(item) for key, item in value.items()
+                            if key != "event_id"}
+                if isinstance(value, tuple):
+                    return tuple(without_random_event_ids(item) for item in value)
+                if isinstance(value, list):
+                    return [without_random_event_ids(item) for item in value]
+                return value
+
+            assert without_random_event_ids(expected[4]) == without_random_event_ids(actual[4])
+        assert actual[2] is True and actual[3] is False  # Settled end retains the restored budget.
     finally:
         continuous.close()
         if restored is not None:
@@ -370,6 +388,20 @@ def test_independent_rl_provider_trains_on_actual_native_episode(algorithm: str)
         ]).all()
         assert 0 <= diagnostics.submit_fraction <= 1
         assert 0 <= diagnostics.guard_intervention_fraction <= 1
+        action_bins = diagnostics.requested_action_economic_bins
+        assert [item[0] for item in action_bins] == [
+            "abs_lt_0.05", "abs_0.05_0.15", "abs_0.15_0.30",
+            "abs_0.30_0.60", "abs_0.60_1.00",
+        ]
+        assert sum(item[1] for item in action_bins) == diagnostics.samples
+        assert sum(item[2] for item in action_bins) == pytest.approx(diagnostics.r_econ_sum)
+        assert sum(item[4] for item in action_bins) == pytest.approx(diagnostics.r_shape_sum)
+        assert all(0 <= item[5] <= 1 and 0 <= item[6] <= 1 for item in action_bins)
+        assert sum(count for _, count in diagnostics.position_state_counts) == diagnostics.samples
+        assert dict(diagnostics.position_state_counts)["flat"] == diagnostics.samples
+        assert diagnostics.market_feature_summaries
+        assert all(count == diagnostics.samples for _, count, *_ in diagnostics.market_feature_summaries)
+        assert diagnostics.episode_window_overlap_pairs == 0
         assert all(name.startswith("train/") and np.isfinite(value)
                    for name, value in diagnostics.optimizer_metrics)
         from rles_orchestrator.workflow import StageUsage
@@ -377,6 +409,56 @@ def test_independent_rl_provider_trains_on_actual_native_episode(algorithm: str)
         assert provider.vec.get_attr("rles_transition_hash") == [fingerprint.hash]
     finally:
         provider.close()
+
+
+def test_train_market_regime_diagnostics_report_cutpoints_and_economic_sums() -> None:
+    from array import array
+    from rles_rl_sb3.provider import _market_regime_bins
+
+    summaries = _market_regime_bins({
+        "volatility": ("volatility_5m", array("d", [0.00025, 0.0005, 0.001, 0.002]),
+                       array("d", [-0.1, 0.2, 0.3, -0.4])),
+        "trend": ("return_15m", array("d", [-0.1, 0.0, 0.2]),
+                  array("d", [0.1, 0.2, -0.3])),
+        "funding": ("last_settled_funding", array("d", [-0.01, 0.0, 0.02]),
+                    array("d", [0.3, -0.1, -0.2])),
+    })
+    assert sum(row[6] for row in summaries if row[0] == "volatility") == 4
+    assert [row[6] for row in summaries if row[0] == "volatility"] == [1, 1, 1, 1]
+    assert sum(row[7] for row in summaries if row[0] == "volatility") == pytest.approx(0.0)
+    assert {row[2] for row in summaries if row[0] == "volatility"} == {
+        "fixed_absolute_volatility_upper_closed_v1",
+    }
+    assert [(row[3], row[4], row[5]) for row in summaries if row[0] == "volatility"] == [
+        ("le_0.00025", None, 0.00025),
+        ("0.00025_to_0.0005", 0.00025, 0.0005),
+        ("0.0005_to_0.001", 0.0005, 0.001),
+        ("gt_0.001", 0.001, None),
+    ]
+    assert [(row[3], row[6]) for row in summaries if row[0] == "trend"] == [
+        ("negative", 1), ("zero", 1), ("positive", 1),
+    ]
+    assert [(row[3], row[7]) for row in summaries if row[0] == "funding"] == [
+        ("negative", 0.3), ("zero", -0.1), ("positive", -0.2),
+    ]
+
+    another_window = _market_regime_bins({
+        "volatility": ("volatility_5m", array("d", [0.0002, 0.0004, 0.0008, 0.0012]),
+                       array("d", [0.0, 0.0, 0.0, 0.0])),
+    })
+    assert [(row[2], row[4], row[5]) for row in another_window] == [
+        (row[2], row[4], row[5]) for row in summaries if row[0] == "volatility"
+    ]
+
+
+def test_episode_window_overlap_count_handles_inclusive_boundaries_and_large_sets() -> None:
+    from rles_rl_sb3.provider import _count_episode_window_overlap_pairs
+
+    # These decision windows include both endpoint timestamps. The first and
+    # third therefore intersect at timestamp 10, and all three pairs overlap.
+    assert _count_episode_window_overlap_pairs(((0, 10), (5, 15), (10, 20), (21, 30))) == 3
+    disjoint = ((index * 2, index * 2) for index in range(20_000))
+    assert _count_episode_window_overlap_pairs(disjoint) == 0
 
 
 def test_sb3_vecenv_trains_multiple_isolated_native_engines_with_staggered_resets() -> None:
@@ -401,6 +483,8 @@ def test_sb3_vecenv_trains_multiple_isolated_native_engines_with_staggered_reset
         assert performance.diagnostics is not None
         assert performance.diagnostics.samples == 8
         assert performance.diagnostics.episodes_completed >= 2
+        assert performance.diagnostics.episode_window_overlap_pairs >= 1
+        assert sum(count for _, count in performance.diagnostics.position_state_counts) == 8
         assert provider.vec.num_envs == 2
         assert provider.vec.get_attr("rles_transition_hash") == [fingerprint.hash] * 2
         assert all(provider.vec.get_attr("rles_boundary_token"))
@@ -421,13 +505,57 @@ def test_independent_es_actor_evaluates_on_same_native_episode() -> None:
         observation, _info = env.reset(seed=1)
         for _ in range(2):
             action = act(spec, genome, observation[None, :])[0]
-            observation, reward, _terminated, truncated, info = env.step(action)
+            observation, reward, terminated, truncated, info = env.step(action)
             assert np.isfinite(reward)
-        assert truncated and info["terminal_settled"]
+        assert terminated and not truncated and info["terminal_settled"]
         assert info["executed_action"] == 0.5
         assert info["native_equity"] == "99999.90"
     finally:
         env.close()
+
+
+@pytest.mark.parametrize("num_envs", [1, 2])
+def test_settled_terminal_has_zero_bootstrap_even_with_constant_nonzero_critic(num_envs):
+    import torch
+    from stable_baselines3 import PPO
+    from stable_baselines3.common.callbacks import BaseCallback
+    from rles_rl_sb3.config import PolicySpec
+    from rles_rl_sb3.envs import make_sync_env
+
+    class Capture(BaseCallback):
+        def __init__(self):
+            super().__init__()
+            self.steps = []
+
+        def _on_step(self):
+            self.steps.append([dict(info) for info in self.locals["infos"]])
+            return True
+
+    torch.set_num_threads(1)
+    spec = PolicySpec(observation_dim=6, observation_schema_hash=_SCHEMA.hash,
+                      action_schema_hash="a" * 64, hidden_layers=(8,), value_layers=(8,))
+    vec = make_sync_env(lambda _rank, _seed, _phase: _env(max_steps=2),
+                        tuple(range(32, 32 + num_envs)), "train", spec, timeout_s=60)
+    capture = Capture()
+    try:
+        model = PPO("MlpPolicy", vec, n_steps=2, batch_size=2 * num_envs,
+                    n_epochs=1, gamma=0.9, gae_lambda=1.0, learning_rate=0,
+                    policy_kwargs={"net_arch": [8]}, seed=31, device="cpu")
+        model.policy.predict_values = lambda obs: torch.full((len(obs), 1), 7.0, device=obs.device)
+        model.learn(2 * num_envs, callback=capture)
+        for rank, info in enumerate(capture.steps[-1]):
+            assert info["terminal_settled"]
+            assert info["terminal_value_semantics"] == "finite_settlement_no_bootstrap_v1"
+            assert info["TimeLimit.truncated"] is False
+            assert model.rollout_buffer.rewards[-1, rank] == pytest.approx(info["r_train"])
+            # PPO.train flattens returns in env-major order after collection.
+            assert model.rollout_buffer.returns.reshape(num_envs, 2)[rank, -1] == pytest.approx(info["r_train"], abs=1e-6)
+            previous = float(capture.steps[-2][rank]["native_equity"])
+            assert info["r_econ"] == pytest.approx(np.log(float(info["native_equity"]) / previous))
+            terminal_obs = info["terminal_observation"]
+            assert terminal_obs[_SCHEMA.names.index("account.equity")] == pytest.approx(float(info["native_equity"]))
+    finally:
+        vec.close()
 
 
 @pytest.mark.parametrize("algorithm", ("PPO", "SAC"))
@@ -504,10 +632,10 @@ def test_independent_es_provider_evolves_using_native_episode_fitness(algorithm:
             for _ in range(2):
                 action = (act(actor, candidate, observation[None, :])[0] if algorithm == "pgpe"
                           else np.array([1], dtype=np.float32))
-                observation, reward, _terminated, truncated, info = env.step(action)
+                observation, reward, terminated, truncated, info = env.step(action)
                 total_reward += reward
                 assert abs(info["executed_action"]) <= 0.5  # Immutable hard guard remains effective.
-            assert truncated and info["terminal_settled"]
+            assert terminated and not truncated and info["terminal_settled"]
             results.append(info["native_equity"])
             return total_reward
         finally:
@@ -614,6 +742,77 @@ def test_installed_native_es_worker_rejects_forged_request_before_engine_creatio
     changed_r1["frozen_actor_hash"] = "0" * 64
     with pytest.raises(ValueError, match="frozen R1 actor weights differ"):
         make_installed_session(changed_r1)
+
+
+def test_installed_native_es_worker_preserves_negative_equity_for_constraint_rejection(monkeypatch) -> None:
+    from rles_es_evotorch.evaluation import CandidateRequest
+    from rles_orchestrator import native_es_worker
+
+    config = _installed_worker_config("actor")
+    config["worker_index"] = 0
+
+    class FakeEnv:
+        terminal_equity = -5.0
+        rles_transition_hash = config["transition_hash"]
+
+        class _Schema:
+            names = _ES_ACTOR_SPEC.observation_names
+
+        observation_schema = _Schema()
+
+        def reset(self, *, seed):
+            return np.zeros(len(self.observation_schema.names), dtype=np.float32), {
+                "initial_equity": 100.0,
+            }
+
+        def step(self, _action):
+            return np.zeros(len(self.observation_schema.names), dtype=np.float32), 0.0, True, False, {
+                "evidence_hash": "a" * 64,
+                "risk_intervention_components_known": True,
+                "insolvency": self.terminal_equity <= 0,
+                "margin_facts_known": True,
+                "maintenance_margin_breach": False,
+                "native_liquidation_detected": self.terminal_equity <= 0,
+                "r_econ": -1.0 if self.terminal_equity <= 0 else 0.0,
+                "drawdown": 1.0,
+                "risk_hard_adjustment": 0.0,
+                "terminal_settled": True,
+                "native_equity": self.terminal_equity,
+            }
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(native_es_worker, "_factory", lambda _ref: lambda **_kwargs: FakeEnv())
+    monkeypatch.setattr(native_es_worker, "NautilusBarrierEnv", FakeEnv)
+    session = native_es_worker.make_native_es_session(config)
+    request = CandidateRequest(
+        run_id="negative-equity", attempt_id="attempt-1", generation=0,
+        candidate_id="candidate-0", episode_id="episode-0", seed=71,
+        genome=(0.0,) * _ES_ACTOR_SPEC.size,
+        actor_signature=_ES_ACTOR_SPEC.signature, candidate_kind="actor",
+        candidate_schema_hash=_ES_ACTOR_SPEC.signature,
+        account_isolation_id="isolated-account-0",
+    )
+    context = {
+        "version": 1, "request_hash": request.request_hash, "run_id": request.run_id,
+        "attempt_id": request.attempt_id, "generation": request.generation,
+        "candidate_id": request.candidate_id, "episode_id": request.episode_id,
+        "seed": request.seed, "genome": list(request.genome),
+        "actor_signature": request.actor_signature, "candidate_kind": request.candidate_kind,
+        "candidate_schema_hash": request.candidate_schema_hash,
+        "account_isolation_id": request.account_isolation_id, "split": request.split,
+    }
+
+    response = session.evaluate(rles_context=context)
+
+    assert response["final_equity"] == -5.0
+    assert response["insolvency"] is True
+    assert response["native_liquidation_detected"] is True
+
+    FakeEnv.terminal_equity = 90.0
+    with pytest.raises(ValueError, match="log returns do not reconcile to endpoint equity"):
+        session.evaluate(rles_context=context)
 
 
 @pytest.mark.artifact_restore
@@ -864,8 +1063,8 @@ def test_a4_provider_backed_workflow_runs_real_es_rl_es_and_l6_ledger(tmp_path, 
         "E1": StageBudget(max_population=4, max_generations=1, max_evaluations=4,
                           max_lane_requests=8),
         "R1": StageBudget(max_rl_steps=4),
-        "E2": StageBudget(max_population=4, max_generations=1, max_evaluations=4,
-                          max_lane_requests=8),
+        "E2": StageBudget(max_population=4, max_generations=1, max_evaluations=5,
+                          max_lane_requests=10),
     }
     base_spec = RunSpec(
         run_id="native-a4-run", attempt_id="native-a4-attempt", route=Route.A4,
@@ -879,7 +1078,7 @@ def test_a4_provider_backed_workflow_runs_real_es_rl_es_and_l6_ledger(tmp_path, 
     )
     research = ResearchLedger(tmp_path / "a4-research.sqlite")
     research.create("native-a4-protocol", base_spec.run_id, validation_budget=1,
-                    hpo_budget=8, es_evaluation_budget=16)
+                    hpo_budget=8, es_evaluation_budget=18)
     selection = SelectionLedger(research, "native-a4-protocol")
     state: dict[str, object] = {}
 
@@ -904,6 +1103,7 @@ def test_a4_provider_backed_workflow_runs_real_es_rl_es_and_l6_ledger(tmp_path, 
             checkpoint_dir=tmp_path / f"{stage.lower()}-checkpoint",
             workers=1, lease_owner=f"{stage.lower()}-a4", ram_bytes_per_worker=1024,
             startup_timeout_s=30, timeout_s=30,
+            include_neutral_baseline=(stage == "E2"),
         )
 
     def execute_e1(context: StageContext) -> ProviderStageOutput:
@@ -957,6 +1157,7 @@ def test_a4_provider_backed_workflow_runs_real_es_rl_es_and_l6_ledger(tmp_path, 
         assert research.evidence_summary("native-a4-protocol")["es_lane_request_count"] == 8
         output = es_executor("E2", risk_space, factory_config)(context)
         assert state["e2_quota"].active() == []
+        state["e2_result"] = output.evolution_result
         return output
 
     runners = {
@@ -973,6 +1174,13 @@ def test_a4_provider_backed_workflow_runs_real_es_rl_es_and_l6_ledger(tmp_path, 
     assert lineage[1].transfer_evidence.method == "DISTILLATION_NOT_WEIGHT_INHERITANCE"
     assert lineage_hash(lineage)
     assert all(len(lineage[index].metadata["lane_evidence_hash"]) == 64 for index in (0, 2))
+    assert lineage[2].metadata["neutral_baseline_protocol"] == "paired_generation_neutral_r1_v1"
+    assert lineage[2].metadata["selected_candidate_kind"] in {"optimizer", "neutral_r1"}
+    assert lineage[2].usage.evaluations == 5
+    if lineage[2].metadata["selected_candidate_kind"] == "neutral_r1":
+        assert state["e2_result"].risk_parameters == tuple(
+            sorted((dimension.name, 1.0) for dimension in risk_space.dimensions)
+        )
     e1_payload = sha256(
         state["e1_genome"].tobytes(order="C")
         + bytes.fromhex(lineage[0].metadata["lane_evidence_hash"]),
@@ -991,10 +1199,10 @@ def test_a4_provider_backed_workflow_runs_real_es_rl_es_and_l6_ledger(tmp_path, 
     assert receipt_payloads["E2"] == lineage[2].payload_hash
     usage_by_stage = {item["stage"]: json.loads(item["usage_json"]) for item in receipts}
     assert usage_by_stage["E1"]["lane_requests"] == 8
-    assert usage_by_stage["E2"]["lane_requests"] == 8
+    assert usage_by_stage["E2"]["lane_requests"] == 10
     assert usage_by_stage["E1"]["evaluations"] == 4
-    assert usage_by_stage["E2"]["evaluations"] == 4
-    assert research.evidence_summary("native-a4-protocol")["es_lane_request_count"] == 16
+    assert usage_by_stage["E2"]["evaluations"] == 5
+    assert research.evidence_summary("native-a4-protocol")["es_lane_request_count"] == 18
     assert research.verify_audit_chain()
     assert all(item.usage.check(item.stage, base_spec.stage_budget[item.stage]) is None for item in lineage)
 
@@ -1009,3 +1217,40 @@ def test_soft_risk_allows_reducing_native_exposure_after_market_drift(current: s
     decision = SoftRiskTransform(reduced).apply(Decimal(target), current_exposure=Decimal(current),
                                                drawdown=Decimal("0.2"), funding_abs=None)
     assert abs(decision.adjusted) <= abs(base_decision.adjusted) < abs(Decimal(current))
+
+
+def test_e2_exact_neutral_multiplier_preserves_native_episode_trace() -> None:
+    baseline = SoftRiskParams(Decimal("0.8"), Decimal(1), Decimal("0.2"), Decimal(0))
+    neutral = baseline.with_multipliers({
+        "exposure_multiplier": 1.0, "drawdown_throttle": 1.0,
+    })
+    assert neutral == baseline
+
+    def replay(soft_params: SoftRiskParams):
+        episodes = []
+        env = _env(max_steps=4, episodes=episodes, soft_params=soft_params)
+        observation, _ = env.reset(seed=812)
+        trace = []
+        for _ in range(4):
+            action = act(_ES_ACTOR_SPEC, _ES_FROZEN_R1_GENOME, observation[None, :])[0]
+            observation, _reward, terminated, truncated, info = env.step(action)
+            trace.append(tuple(info[key] for key in (
+                "requested_action", "risk_soft_target", "risk_adjusted_target",
+                "execution_plan_action", "execution_plan_reason", "executed_action",
+                "native_equity", "r_econ", "drawdown",
+            )))
+            if terminated or truncated:
+                break
+        snapshot = episodes[0]._snapshot
+        fills = tuple(tuple(fill[key] for key in (
+            "client_order_id", "venue_order_id", "order_side", "last_qty", "last_px",
+            "commission", "ts_event",
+        )) for fill in snapshot.fills)
+        env.close()
+        return tuple(trace), fills, getattr(snapshot, "funding_adjustments", None), snapshot.equity
+
+    baseline_trace = replay(baseline)
+    neutral_trace = replay(neutral)
+    assert neutral_trace == baseline_trace
+    assert baseline_trace[1]  # Native order fills, including fees, are present in this fixture.
+    assert baseline_trace[2] is None  # This spot fixture has no Funding stream.

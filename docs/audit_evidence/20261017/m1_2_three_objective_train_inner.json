@@ -1,0 +1,459 @@
+{
+  "arms": [
+    {
+      "actor_hash": "216a7d5017f802873b67c557bb77dc5d05ebdb073c6edbd4b2feb00bc1bb6b69",
+      "arm": "legacy_weighted",
+      "bundle_sha256": "06cb121a75e737fad13bb7fda82a7c0c72a4fabd906c1c4430923399072f28ff",
+      "fitness_config": {
+        "protocol": "legacy_weighted_v1"
+      },
+      "fitness_protocol": "legacy_weighted_v1",
+      "fitness_spec": {
+        "drawdown_weight": 1.0,
+        "return_weight": 1.0,
+        "risk_intervention_weight": 0.05,
+        "tail_weight": 1.0
+      },
+      "generation_candidate_scores": [
+        {
+          "g00000000-c00000000": {
+            "evidence_hash": "b8a441bd402f5f4226002e0438892b742de6a6cf08d2a4099e2643c6baabf53b",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.004410697954474108,
+            "rejection_reasons": []
+          },
+          "g00000000-c00000001": {
+            "evidence_hash": "ac80e338d326ef34b988205da3036ebadce1a5ee2c71dde5520445785aab323b",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.004188022631492413,
+            "rejection_reasons": []
+          },
+          "g00000000-c00000002": {
+            "evidence_hash": "01324d5d6fadd7749889feb97cec1a515ad005f03a711ab4d667213bdd207d2d",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.0042437240247002505,
+            "rejection_reasons": []
+          },
+          "g00000000-c00000003": {
+            "evidence_hash": "f9a6e64780ba2e608946d44855652bc1af4dfe242146bb42673ec61af4c3e186",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.004261553944864302,
+            "rejection_reasons": []
+          },
+          "neutral-r1": {
+            "evidence_hash": "b917b6fccd45bf7961d339f50c8899867f4b3b201d983b74cdb9262731f115f6",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.005659613113477532,
+            "rejection_reasons": []
+          }
+        },
+        {
+          "g00000001-c00000000": {
+            "evidence_hash": "01fe44a52140231486139cb8fbd3ea9b92faf387d16b01f4b688d626426b6f03",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.004113175136244359,
+            "rejection_reasons": []
+          },
+          "g00000001-c00000001": {
+            "evidence_hash": "cc6aa93ae4dacfd2074432443cde939dde4d2ea2bbed5d4fce63847ab4848d89",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.004212509982559232,
+            "rejection_reasons": []
+          },
+          "g00000001-c00000002": {
+            "evidence_hash": "2e90656c9f138406ea5ac95d8a8b6afa08f3ad4ae3cbf33988efaecf34304245",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.004133856443788942,
+            "rejection_reasons": []
+          },
+          "g00000001-c00000003": {
+            "evidence_hash": "fddb819d567db8d80584a12dfeabb4d088d61ff66d9a5a4a6484b7f0fdbc5f73",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.0043915268572212035,
+            "rejection_reasons": []
+          },
+          "neutral-r1": {
+            "evidence_hash": "21d050ee8a3310065aea6a1a6cd15abe8c8ea148fe554a90e8d6e369c7464619",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.005659613113477532,
+            "rejection_reasons": []
+          }
+        }
+      ],
+      "optimizer": {
+        "algorithm": "cmaes",
+        "candidate_evaluations": 8,
+        "e2_lane_requests": 10,
+        "generations": 2,
+        "population": 4
+      },
+      "run_id": "historical-041ac2068eda4df2bb44c0e035f56273",
+      "run_recipe_hash": "c8e3db07731fa3d541f9d7a16743f0a6f52c39fd6a37c89f9b0fae7754b9dd01",
+      "scenario_fold_id": "a02-three-fitness-crn-20261017",
+      "scenario_seeds": [
+        3541484689,
+        2139206537
+      ],
+      "selected_candidate_kind": "optimizer",
+      "selected_candidate_train_inner_native_metrics": {
+        "conditional_value_at_risk": 2.0717900666318106e-05,
+        "gross_return_before_reported_costs": -0.00010151800400005533,
+        "max_drawdown": 0.0015784143450003896,
+        "mean_period_return": -3.304694224918717e-06,
+        "net_return": -0.0015784143450003896,
+        "observations": 478,
+        "sharpe": -303.18437031245236,
+        "sortino": -320.2053933215584,
+        "std_period_return": 7.904981009754832e-06,
+        "total_fee": 12.253584910000002,
+        "total_funding": 0.0160015,
+        "total_slippage_cost": 2.5313800000000004,
+        "turnover_ratio": 2.4527734694545886,
+        "undefined_metrics": [],
+        "value_at_risk": 1.587977381112271e-05
+      },
+      "selected_fitness": -0.0041131749749183655,
+      "selected_soft_multipliers": {
+        "drawdown_throttle": 0.5201050877160468,
+        "exposure_multiplier": 0.5138287266068704
+      },
+      "source_archive": {
+        "event_count": 4326,
+        "rule_provenance": "scenario-only:fixture-assumptions-not-historical-evidence",
+        "schema": "rles.binance-archive-range.v1",
+        "sources": [
+          {
+            "path": "raw/klines-2024-01-04.zip",
+            "sha256": "a945576d147622d91d18278477140712a7237fbd0fc6c785eee51ab9704b67c4",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/ETHUSDT/1m/ETHUSDT-1m-2024-01-04.zip"
+          },
+          {
+            "path": "raw/markPriceKlines-2024-01-04.zip",
+            "sha256": "efb99065f729f41906a34f45e962d8ef1cd162a755d19d2199f525ac5137a91d",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/ETHUSDT/1m/ETHUSDT-1m-2024-01-04.zip"
+          },
+          {
+            "path": "raw/indexPriceKlines-2024-01-04.zip",
+            "sha256": "1300f22e5df43756a4eddd4aebbaddef9c57b54901fb3111719e193bd61e96d1",
+            "url": "https://data.binance.vision/data/futures/um/daily/indexPriceKlines/ETHUSDT/1m/ETHUSDT-1m-2024-01-04.zip"
+          },
+          {
+            "path": "raw/fundingRate-2024-01.zip",
+            "sha256": "5a71469b0b363886df904e784dddefc484dd943334b1fb7454713ce4ed715a4b",
+            "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/ETHUSDT/ETHUSDT-fundingRate-2024-01.zip"
+          }
+        ]
+      },
+      "validation_evaluated": false
+    },
+    {
+      "actor_hash": "216a7d5017f802873b67c557bb77dc5d05ebdb073c6edbd4b2feb00bc1bb6b69",
+      "arm": "zero_intervention_penalty",
+      "bundle_sha256": "e93541cebb6b34ad78a299236f8f25099a70dd4727572af4792285f4f7be355b",
+      "fitness_config": {
+        "protocol": "legacy_weighted_v1",
+        "risk_intervention_weight": 0.0
+      },
+      "fitness_protocol": "legacy_weighted_v1",
+      "fitness_spec": {
+        "drawdown_weight": 1.0,
+        "return_weight": 1.0,
+        "risk_intervention_weight": 0.0,
+        "tail_weight": 1.0
+      },
+      "generation_candidate_scores": [
+        {
+          "g00000000-c00000000": {
+            "evidence_hash": "d3bfcc8fed818bbb40d72c22e73630a53f1ef6a5bb011023b27d11f0a073efdf",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.003152836319253982,
+            "rejection_reasons": []
+          },
+          "g00000000-c00000001": {
+            "evidence_hash": "ff3770b6074f3fb379d2809d26088c629e34635ad5531a3c30a6c85ffd0c315e",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.0031398046021423077,
+            "rejection_reasons": []
+          },
+          "g00000000-c00000002": {
+            "evidence_hash": "cf5286b1fa22ceadae29f89cf4037585dab82e4af89209084bb0e05c2127bbac",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.003405149601220166,
+            "rejection_reasons": []
+          },
+          "g00000000-c00000003": {
+            "evidence_hash": "1f214ae5bf2b433fc157e28ce5dc56f35601e4cda098d1a7dbfb61ef18f55866",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.0034229795213842175,
+            "rejection_reasons": []
+          },
+          "neutral-r1": {
+            "evidence_hash": "774a532e2fa7c7735f37fd9b77a0e169b315aba89bc4d5567f7b49d648dba3c1",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.005345147704672501,
+            "rejection_reasons": []
+          }
+        },
+        {
+          "g00000001-c00000000": {
+            "evidence_hash": "9c7d2c9f8bb47c6c173d47d24f9848df7c406df281a6c39a2929bf91b2cea92f",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.003153448438451756,
+            "rejection_reasons": []
+          },
+          "g00000001-c00000001": {
+            "evidence_hash": "7e10b329fac81784d6b96a6ad43f60b5851578231a3dae7923a1e1e23b83c1b6",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.003423499092554468,
+            "rejection_reasons": []
+          },
+          "g00000001-c00000002": {
+            "evidence_hash": "b31edc33d5fed857e17f6eff6cc0612c0ce7ebbfc1d6a14b34792912e68da163",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.0033019272844611257,
+            "rejection_reasons": []
+          },
+          "g00000001-c00000003": {
+            "evidence_hash": "efe7383e72936c7b32e7423a9cd3863fa49514b2c3d2ca8f23d0f1bdbaf38665",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.0030313406083110283,
+            "rejection_reasons": []
+          },
+          "neutral-r1": {
+            "evidence_hash": "c32c8e909fb507a1f5721a5fb9ba409c765afb8f6cda077b7ed899b2a1698a00",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.005345147704672501,
+            "rejection_reasons": []
+          }
+        }
+      ],
+      "optimizer": {
+        "algorithm": "cmaes",
+        "candidate_evaluations": 8,
+        "e2_lane_requests": 10,
+        "generations": 2,
+        "population": 4
+      },
+      "run_id": "historical-fdfeece4cb0748c8994920463dd9c25d",
+      "run_recipe_hash": "b03043536d1106ba458a153fde4fc6507af4f4799fc63938ea4d5707fff845c2",
+      "scenario_fold_id": "a02-three-fitness-crn-20261017",
+      "scenario_seeds": [
+        3541484689,
+        2139206537
+      ],
+      "selected_candidate_kind": "optimizer",
+      "selected_candidate_train_inner_native_metrics": {
+        "conditional_value_at_risk": 1.924302803531693e-05,
+        "gross_return_before_reported_costs": -0.000131814001999938,
+        "max_drawdown": 0.0015097045530021447,
+        "mean_period_return": -3.160733723456893e-06,
+        "net_return": -0.0015097045530021447,
+        "observations": 478,
+        "sharpe": -320.5314792190882,
+        "sortino": -331.21395970604004,
+        "std_period_return": 7.151441341290352e-06,
+        "total_fee": 11.431933549999997,
+        "total_funding": 0.01466804,
+        "total_slippage_cost": 2.361640000000001,
+        "turnover_ratio": 2.288196078262565,
+        "undefined_metrics": [],
+        "value_at_risk": 1.4798026384821306e-05
+      },
+      "selected_fitness": -0.0030313406605273485,
+      "selected_soft_multipliers": {
+        "drawdown_throttle": 0.517038340871133,
+        "exposure_multiplier": 0.47419330025202333
+      },
+      "source_archive": {
+        "event_count": 4326,
+        "rule_provenance": "scenario-only:fixture-assumptions-not-historical-evidence",
+        "schema": "rles.binance-archive-range.v1",
+        "sources": [
+          {
+            "path": "raw/klines-2024-01-04.zip",
+            "sha256": "a945576d147622d91d18278477140712a7237fbd0fc6c785eee51ab9704b67c4",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/ETHUSDT/1m/ETHUSDT-1m-2024-01-04.zip"
+          },
+          {
+            "path": "raw/markPriceKlines-2024-01-04.zip",
+            "sha256": "efb99065f729f41906a34f45e962d8ef1cd162a755d19d2199f525ac5137a91d",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/ETHUSDT/1m/ETHUSDT-1m-2024-01-04.zip"
+          },
+          {
+            "path": "raw/indexPriceKlines-2024-01-04.zip",
+            "sha256": "1300f22e5df43756a4eddd4aebbaddef9c57b54901fb3111719e193bd61e96d1",
+            "url": "https://data.binance.vision/data/futures/um/daily/indexPriceKlines/ETHUSDT/1m/ETHUSDT-1m-2024-01-04.zip"
+          },
+          {
+            "path": "raw/fundingRate-2024-01.zip",
+            "sha256": "5a71469b0b363886df904e784dddefc484dd943334b1fb7454713ce4ed715a4b",
+            "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/ETHUSDT/ETHUSDT-fundingRate-2024-01.zip"
+          }
+        ]
+      },
+      "validation_evaluated": false
+    },
+    {
+      "actor_hash": "216a7d5017f802873b67c557bb77dc5d05ebdb073c6edbd4b2feb00bc1bb6b69",
+      "arm": "constraint_priority",
+      "bundle_sha256": "d08f5586cf391bba106a116a2734d9e7bba2132a295a291543c81e024549446d",
+      "fitness_config": {
+        "protocol": "constraint_priority_train_inner_v1"
+      },
+      "fitness_protocol": "constraint_priority_train_inner_v1",
+      "fitness_spec": {
+        "drawdown_weight": 1.0,
+        "protocol": "constraint_priority_train_inner_v1",
+        "return_weight": 1.0,
+        "tail_weight": 1.0
+      },
+      "generation_candidate_scores": [
+        {
+          "g00000000-c00000000": {
+            "evidence_hash": "11ef50a5fcfda794291a31940b9bcf0bd3d431825c8ae7b80dbc5b459a27c0ec",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.0031528258725017936,
+            "rejection_reasons": []
+          },
+          "g00000000-c00000001": {
+            "evidence_hash": "01391912be78f137cf9d76d9caedaa587c160fe7d2b5402c83406e619a3cd75b",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.0031397942843947525,
+            "rejection_reasons": []
+          },
+          "g00000000-c00000002": {
+            "evidence_hash": "b2cf01ad39a8ee6431431f593ee5a841ed4a7722d6650d93c493d7192b96da48",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.003405136440328275,
+            "rejection_reasons": []
+          },
+          "g00000000-c00000003": {
+            "evidence_hash": "119222a8b401cfaef8d6debc40f9f63c7ce9220776c199138c7ac525b23ebf68",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.003422966152670829,
+            "rejection_reasons": []
+          },
+          "neutral-r1": {
+            "evidence_hash": "0ea766b73f56eb206b0d1c4908c31f9c50198bb5e9c8e0c6158c782b2fe0950e",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.005345096800554809,
+            "rejection_reasons": []
+          }
+        },
+        {
+          "g00000001-c00000000": {
+            "evidence_hash": "04df8eabfc323397e8305d41549d6c0161cccc40b0cc42b6398c42c139f081ed",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.003153437985613731,
+            "rejection_reasons": []
+          },
+          "g00000001-c00000001": {
+            "evidence_hash": "0bd0d68d158ab1574991df98714922a424697c4e67f42f52f3c1190a198e7981",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.003423485717752497,
+            "rejection_reasons": []
+          },
+          "g00000001-c00000002": {
+            "evidence_hash": "da8370b07f68c2db857bc7301568d81fb012500f3c8a3fceb1829ce5af769e8c",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.003301915284513071,
+            "rejection_reasons": []
+          },
+          "g00000001-c00000003": {
+            "evidence_hash": "363b3ab52c2941301943059770b7f04bb04b6cde392e25974829a2d68638d0df",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.003031331323322719,
+            "rejection_reasons": []
+          },
+          "neutral-r1": {
+            "evidence_hash": "0cc0dd06725c125e8ea0ab5ca07cd92bc43c5e36b2db90978d9e4915de68f356",
+            "infeasible_episodes": 0,
+            "mean_fitness": -0.005345096800554809,
+            "rejection_reasons": []
+          }
+        }
+      ],
+      "optimizer": {
+        "algorithm": "cmaes",
+        "candidate_evaluations": 8,
+        "e2_lane_requests": 10,
+        "generations": 2,
+        "population": 4
+      },
+      "run_id": "historical-6b59bd2403d14139aea4fad8e39c35ca",
+      "run_recipe_hash": "636052bc2dc4e86cb3c0f655438026147050069af3ff58012f207bb249c443ee",
+      "scenario_fold_id": "a02-three-fitness-crn-20261017",
+      "scenario_seeds": [
+        3541484689,
+        2139206537
+      ],
+      "selected_candidate_kind": "optimizer",
+      "selected_candidate_train_inner_native_metrics": {
+        "conditional_value_at_risk": 1.924302803531693e-05,
+        "gross_return_before_reported_costs": -0.000131814001999938,
+        "max_drawdown": 0.0015097045530021447,
+        "mean_period_return": -3.160733723456893e-06,
+        "net_return": -0.0015097045530021447,
+        "observations": 478,
+        "sharpe": -320.5314792190882,
+        "sortino": -331.21395970604004,
+        "std_period_return": 7.151441341290352e-06,
+        "total_fee": 11.431933549999997,
+        "total_funding": 0.01466804,
+        "total_slippage_cost": 2.361640000000001,
+        "turnover_ratio": 2.288196078262565,
+        "undefined_metrics": [],
+        "value_at_risk": 1.4798026384821306e-05
+      },
+      "selected_fitness": -0.0030313313473016024,
+      "selected_soft_multipliers": {
+        "drawdown_throttle": 0.517038340871133,
+        "exposure_multiplier": 0.47419330025202333
+      },
+      "source_archive": {
+        "event_count": 4326,
+        "rule_provenance": "scenario-only:fixture-assumptions-not-historical-evidence",
+        "schema": "rles.binance-archive-range.v1",
+        "sources": [
+          {
+            "path": "raw/klines-2024-01-04.zip",
+            "sha256": "a945576d147622d91d18278477140712a7237fbd0fc6c785eee51ab9704b67c4",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/ETHUSDT/1m/ETHUSDT-1m-2024-01-04.zip"
+          },
+          {
+            "path": "raw/markPriceKlines-2024-01-04.zip",
+            "sha256": "efb99065f729f41906a34f45e962d8ef1cd162a755d19d2199f525ac5137a91d",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/ETHUSDT/1m/ETHUSDT-1m-2024-01-04.zip"
+          },
+          {
+            "path": "raw/indexPriceKlines-2024-01-04.zip",
+            "sha256": "1300f22e5df43756a4eddd4aebbaddef9c57b54901fb3111719e193bd61e96d1",
+            "url": "https://data.binance.vision/data/futures/um/daily/indexPriceKlines/ETHUSDT/1m/ETHUSDT-1m-2024-01-04.zip"
+          },
+          {
+            "path": "raw/fundingRate-2024-01.zip",
+            "sha256": "5a71469b0b363886df904e784dddefc484dd943334b1fb7454713ce4ed715a4b",
+            "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/ETHUSDT/ETHUSDT-fundingRate-2024-01.zip"
+          }
+        ]
+      },
+      "validation_evaluated": false
+    }
+  ],
+  "data_boundary": "checksum-verified ETHUSDT Train-inner archive fixture; no Validation/Test access",
+  "date": "2026-10-17",
+  "experiment": "A02 matched-seed Train-inner A2 objective comparison",
+  "interpretation_limit": "fitness values use protocol-specific scales; compare within-arm candidate ranks and selected economic parameters, not raw scores across protocols. This is Train-inner objective evidence, not Validation performance or profitability certification.",
+  "schema": "rles.es-fitness-comparison.v1",
+  "shared": {
+    "e2_candidate_evaluations_per_arm": 8,
+    "e2_lane_requests_per_arm": 10,
+    "generations": 2,
+    "neutral_r1_included_each_generation": true,
+    "population": 4,
+    "route": "A2",
+    "same_frozen_r1_actor": true,
+    "scenario_fold_id": "a02-three-fitness-crn-20261017",
+    "seed": 31
+  }
+}

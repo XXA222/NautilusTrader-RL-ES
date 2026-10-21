@@ -303,6 +303,60 @@ def _perpetual_batch(number: int, *extra_events: tuple[str, dict]) -> VisibleBat
     return VisibleBatch(timestamp, events, True)
 
 
+def test_native_session_rejects_duplicate_funding_settlement_before_decoding() -> None:
+    instrument = _perpetual_instrument()
+    decoded: list[str] = []
+
+    def decode(event: MarketEvent) -> SimpleNamespace:
+        decoded.append(event.event_id)
+        return SimpleNamespace(ts_init=event.ts_init_ns)
+
+    session = EngineSession(
+        build_native=lambda _episode: None,
+        submit_plan=lambda _engine, _plan: None,
+        decode_event=decode,
+        facts_reader=NativeFactsReader(
+            account_id=AccountId.from_str("SIM-001"), instrument_id=instrument.id,
+            currency="USDT",
+        ),
+        contract_snapshot_factory=lambda **facts: SimpleNamespace(**facts),
+        certified_barrier_protocol=EngineSession.BARRIER_PROTOCOL,
+    )
+    session._engine = object()
+    settlement = {
+        "instrument": str(instrument.id), "rate": "0.001",
+        "settlement_ns": 120_000_000_000,
+    }
+    batch = _perpetual_batch(
+        2, ("funding_settlement", settlement), ("funding_settlement", settlement),
+    )
+
+    with pytest.raises(EngineBoundaryError, match="duplicate native funding settlement boundary"):
+        session._preflight((batch,), end_ts_ns=batch.timestamp_ns)
+
+    assert decoded == []
+
+    class _FakeEngine:
+        def add_data(self, _events: list[SimpleNamespace]) -> None:
+            pass
+
+        def run(self, *, streaming: bool) -> None:
+            assert streaming is True
+
+        def clear_data(self) -> None:
+            pass
+
+    session._engine = _FakeEngine()
+    first_settlement = _perpetual_batch(2, ("funding_settlement", settlement))
+    prepared = session._preflight((first_settlement,), end_ts_ns=first_settlement.timestamp_ns)
+    session._replay(prepared)
+    decoded_after_first = len(decoded)
+    repeated_settlement = _perpetual_batch(3, ("funding_settlement", settlement))
+    with pytest.raises(EngineBoundaryError, match="duplicate native funding settlement boundary"):
+        session._preflight((repeated_settlement,), end_ts_ns=repeated_settlement.timestamp_ns)
+    assert len(decoded) == decoded_after_first
+
+
 def _quote_payload(bid: str, bid_qty: str, ask: str, ask_qty: str) -> tuple[str, dict]:
     return "best_quote", {"instrument": "ETHUSDT-PERP.SIM", "bid_price": bid,
                            "bid_qty": bid_qty, "ask_price": ask, "ask_qty": ask_qty,
@@ -387,6 +441,26 @@ def test_native_hard_risk_rejects_expansion_and_reversal_before_submission(quant
         with pytest.raises(EngineBoundaryError, match="must reduce the owned"):
             submitter(session._engine, replace(_order_plan("bad-reduce", quantity), reason="hard_risk_reduce"))
         assert len(session.snapshot().all_orders) == 1
+    finally:
+        session.close()
+
+
+@pytest.mark.parametrize("sign", [-1, 1])
+def test_native_voluntary_flat_is_a_full_reduce_only_exit(sign):
+    from dataclasses import replace
+    submitter = _submitter()
+    session = _native_order_session(submitter)
+    try:
+        initial = session.bootstrap((_order_batch(1),), decision_ts_ns=60_000_000_000)
+        session.advance(_order_plan("entry", str(sign)), batches=(_order_batch(2),),
+                        next_decision_ts_ns=120_000_000_000)
+        with pytest.raises(EngineBoundaryError, match="quantity differs from native position"):
+            submitter(session._engine, replace(_order_plan("bad-flat", str(-0.5 * sign)), reason="policy_flat"))
+        flat = session.advance(replace(_order_plan("policy-exit", str(-sign)), reason="policy_flat"),
+                               batches=(_order_batch(3),), next_decision_ts_ns=180_000_000_000)
+        assert flat.positions == ()
+        assert flat.equity == initial.equity - Decimal("0.20")
+        assert sum(order["is_reduce_only"] for order in flat.all_orders) == 1
     finally:
         session.close()
 
@@ -509,8 +583,9 @@ def test_native_fills_retain_closed_roundtrip_after_reopening_position() -> None
     [("1.000", Decimal("-1.00"), Decimal("99998.00")),
      ("-1.000", Decimal("1.00"), Decimal("100000.00"))],
 )
+@pytest.mark.parametrize("compact_history", [False, True])
 def test_native_perpetual_funding_rate_settles_once_in_account(
-    quantity: str, funding_change: Decimal, equity: Decimal,
+    quantity: str, funding_change: Decimal, equity: Decimal, compact_history: bool,
 ) -> None:
     from dataclasses import replace
     from nautilus_trader.model import BarType
@@ -528,7 +603,7 @@ def test_native_perpetual_funding_rate_settles_once_in_account(
         decode_event=decoder,
         facts_reader=NativeFactsReader(
             account_id=AccountId.from_str("SIM-001"), instrument_id=instrument.id,
-            currency="USDT",
+            currency="USDT", compact_history=compact_history,
         ),
         contract_snapshot_factory=lambda **facts: SimpleNamespace(**facts),
         certified_barrier_protocol=EngineSession.BARRIER_PROTOCOL,
@@ -558,7 +633,7 @@ def test_native_perpetual_funding_rate_settles_once_in_account(
             "instrument": str(instrument.id), "rate": "0.001",
             "interval_minutes": 480, "settlement_ns": settlement_ns,
         })
-        session.advance(
+        funding_boundary = session.advance(
             replace(wait, decision_id="funding-boundary", plan_id="funding-boundary",
                     idempotency_key="funding-boundary"),
             batches=(_perpetual_batch(4, settlement_event),),
@@ -570,15 +645,67 @@ def test_native_perpetual_funding_rate_settles_once_in_account(
             batches=(_perpetual_batch(5),), next_decision_ts_ns=300_000_000_000,
         )
         assert settled.mark == Decimal("1000.00")
-        assert len(settled.funding) == 1
-        adjustment = settled.funding[0]
+        assert len(funding_boundary.funding) == 1
+        adjustment = funding_boundary.funding[0]
         assert Money.from_str(adjustment["pnl_change"]).as_decimal() == funding_change
         assert settled.equity == initial.equity - Decimal("1.00") + funding_change
         assert settled.equity == equity
         assert adjustment["ts_event"] == settlement_ns
         assert settled.margins == entered.margins
+        if compact_history:
+            assert settled.funding == ()
+            assert session.snapshot().funding == ()
+        else:
+            assert len(settled.funding) == 1
     finally:
         session.close()
+
+
+def test_compact_funding_reader_skips_unchanged_positions_and_emits_only_new_facts() -> None:
+    reader = NativeFactsReader(account_id="SIM-001", instrument_id="ETHUSDT-PERP.SIM",
+                               currency="USDT", compact_history=True)
+    first_record = {"event_id": "funding-1", "ts_init": 10, "ts_event": 10}
+    second_record = {"event_id": "funding-2", "ts_init": 20, "ts_event": 20}
+
+    class Adjustment:
+        adjustment_type = "FUNDING"
+
+        def __init__(self, record):
+            self.record = record
+
+        def to_dict(self):
+            return self.record
+
+    class Position:
+        id = "position-1"
+        instrument_id = "ETHUSDT-PERP.SIM"
+        ts_opened = 1
+
+        def __init__(self, timestamp, adjustments):
+            self.ts_last = timestamp
+            self.records = list(adjustments)
+            self.adjustment_reads = 0
+
+        def adjustments(self):
+            self.adjustment_reads += 1
+            return tuple(Adjustment(record) for record in self.records)
+
+    archived = Position(10, (first_record,))
+    live = Position(10, (first_record,))
+    cache = SimpleNamespace(position_snapshots=lambda **_kwargs: (archived,))
+
+    first = reader._compact_funding_updates((live,), cache, "FUNDING")
+    unchanged = reader._compact_funding_updates((live,), cache, "FUNDING")
+    assert first == (first_record,)
+    assert unchanged == ()
+    assert live.adjustment_reads == 1
+    assert archived.adjustment_reads == 0
+
+    live.ts_last = 20
+    live.records.append(second_record)
+    next_update = reader._compact_funding_updates((live,), cache, "FUNDING")
+    assert next_update == (second_record,)
+    assert live.adjustment_reads == 2
 
 
 def test_native_quote_execution_uses_displayed_book_and_records_submission_reference() -> None:
@@ -634,6 +761,45 @@ def test_native_quote_execution_uses_displayed_book_and_records_submission_refer
         session.close()
 
 
+def test_native_bar_depth_stress_limits_fill_size_to_frozen_synthetic_fraction() -> None:
+    from dataclasses import replace
+    from rles_execution import FillProfile, LatencyProfile, ResolvedExecutionConfig
+    from rles_nautilus_adapter.perpetual import make_perpetual_session
+
+    latency = LatencyProfile("depth-base", 0, 0, 0)
+    stress_latency = LatencyProfile("depth-stress", 0, 0, 0)
+    execution = ResolvedExecutionConfig(
+        "0.4.0", Decimal("0.01"), "wait", "MARKET", "GTC", "force_flatten_with_cost",
+        latency, stress_latency,
+        FillProfile("bar-base", Decimal("1")),
+        FillProfile("bar-limited-depth", Decimal("2"), simulated_depth_fraction=Decimal("0.4")),
+    )
+    rule = {
+        "instrument": "ETHUSDT-PERP.SIM", "tick_size": "0.01", "step_size": "0.001",
+        "min_qty": "0.001", "min_notional": "10", "maker_fee": "0.001",
+        "taker_fee": "0.001", "initial_margin_rate": "0.01",
+        "maintenance_margin_rate": "0.005", "effective_ns": 1,
+    }
+    session = make_perpetual_session(
+        rule=rule, execution=execution, mode="stress", starting_balance=Decimal("100000"),
+    )
+    session.open(SimpleNamespace(dataset_hash="c" * 64, fold_hash="d" * 64,
+                                 config_hash=execution.fingerprint()))
+    try:
+        session.bootstrap((_perpetual_batch(1),), decision_ts_ns=60_000_000_000)
+        plan = replace(_perpetual_plan("partial-depth", "0.500"),
+                       latency_model_id=stress_latency.model_id,
+                       execution_spec_hash=execution.fingerprint())
+        snapshot = session.advance(plan, batches=(_perpetual_batch(2),),
+                                   next_decision_ts_ns=120_000_000_000)
+        filled = sum(Decimal(fill["last_qty"]) for fill in snapshot.fills)
+        assert filled == Decimal("0.200")
+        assert filled / Decimal("0.500") == Decimal("0.4")
+        assert len(snapshot.orders) == 1
+    finally:
+        session.close()
+
+
 def test_native_market_event_decoder_checks_index_quality_scope_and_funding_conflicts() -> None:
     from nautilus_trader.model import BarType, IndexPriceUpdate, QuoteTick
 
@@ -685,16 +851,119 @@ def test_native_market_event_decoder_checks_index_quality_scope_and_funding_conf
     assert decoder(scheduled).next_funding_ns == 200
     late_settlement = market_event("published-settlement", "funding_settlement", 130, {
         "instrument": str(instrument.id), "rate": "0.001", "settlement_ns": 130,
-        "interval_minutes": 480,
+        "interval_minutes": 480, "settlement_mark_price": "2000.00",
     }, available_at=140)
-    decoded_settlement = decoder(late_settlement)
+    decoded_mark, decoded_settlement = decoder(late_settlement)
+    assert decoded_mark.value == instrument.make_price(2000.00)
+    assert decoded_mark.ts_event == 130
+    assert decoded_mark.ts_init == 140
     assert decoded_settlement.ts_event == 130
     assert decoded_settlement.ts_init == 140
     assert decoded_settlement.next_funding_ns == 141
+    settled_feature = decoder(market_event("settled-feature", "funding_update", 480, {
+        "instrument": str(instrument.id), "rate": "0.001",
+        "rate_semantics": "last_settled_rate", "interval_minutes": 480,
+    }, available_at=490))
+    assert settled_feature.interval is None
+    assert settled_feature.next_funding_ns is None
+    with pytest.raises(EngineBoundaryError, match="last settled funding rate cannot schedule"):
+        decoder(market_event("invalid-settled-feature", "funding_update", 500, {
+            "instrument": str(instrument.id), "rate": "0.001",
+            "rate_semantics": "last_settled_rate", "next_funding_ns": 600,
+        }))
+    with pytest.raises(EngineBoundaryError, match="unsupported native funding rate semantics"):
+        decoder(market_event("unknown-rate-semantics", "funding_update", 501, {
+            "instrument": str(instrument.id), "rate": "0.001",
+            "rate_semantics": "settled_last_rate", "interval_minutes": 480,
+        }))
     with pytest.raises(EngineBoundaryError, match="conflicting funding rates"):
         decoder(market_event("settlement-conflict", "funding_settlement", 200, {
             "instrument": str(instrument.id), "rate": "0.002", "settlement_ns": 200,
         }))
+
+
+@pytest.mark.parametrize("compact_history", [False, True])
+def test_delayed_rest_funding_settlement_is_charged_once_at_settlement_mark(
+    compact_history: bool,
+) -> None:
+    from dataclasses import replace
+
+    instrument = _perpetual_instrument()
+    submitter = NativePlanSubmitter(
+        instrument_id=str(instrument.id), quantity_unit="ETH",
+        quantity_increment=Decimal("0.001"), execution_spec_hash="e" * 64,
+        latency_model_id="latency-1",
+    )
+    decoder = NativeMarketEventDecoder(
+        instrument=instrument,
+        bar_type=BarType.from_str(f"{instrument.id}-1-MINUTE-LAST-EXTERNAL"),
+    )
+    session = EngineSession(
+        build_native=_perpetual_builder(submitter), submit_plan=submitter,
+        decode_event=decoder,
+        facts_reader=NativeFactsReader(
+            account_id=AccountId.from_str("SIM-001"), instrument_id=instrument.id,
+            currency="USDT", compact_history=compact_history,
+        ),
+        contract_snapshot_factory=lambda **facts: SimpleNamespace(**facts),
+        certified_barrier_protocol=EngineSession.BARRIER_PROTOCOL,
+    )
+    session.open(SimpleNamespace(dataset_hash="a" * 64, fold_hash="b" * 64,
+                                 config_hash="c" * 64))
+    try:
+        initial = session.bootstrap((_perpetual_batch(1),), decision_ts_ns=60_000_000_000)
+        entered = session.advance(
+            _perpetual_plan("delayed-funding-entry", "1.000"),
+            batches=(_perpetual_batch(2),), next_decision_ts_ns=120_000_000_000,
+        )
+        assert len(entered.positions) == 1
+        wait = replace(_perpetual_plan("delayed-funding-wait", "1.000"),
+                       action="NOOP", delta_qty=Decimal(0))
+        session.advance(
+            wait,
+            batches=(_perpetual_batch(3, ("mark", {
+                "instrument": str(instrument.id), "price": "1000.00",
+            })),),
+            next_decision_ts_ns=180_000_000_000,
+        )
+
+        settlement_ns = 480 * 60 * 1_000_000_000
+        delay_ns = 1_000_000
+        source_batch = _perpetual_batch(480, ("funding_settlement", {
+            "instrument": str(instrument.id), "rate": "0.001",
+            "settlement_ns": settlement_ns,
+            "settlement_mark_price": "2000.123",
+        }), ("funding_update", {
+            "instrument": str(instrument.id), "rate": "0.001",
+            "rate_semantics": "last_settled_rate",
+        }))
+        delayed_events = tuple(replace(
+            event, ts_init_ns=settlement_ns + delay_ns,
+            available_at_ns=settlement_ns + delay_ns,
+        ) for event in source_batch.events)
+        available_ns = settlement_ns + delay_ns
+        pending = session.advance(
+            replace(wait, decision_id="delayed-funding-publish",
+                    plan_id="delayed-funding-publish", idempotency_key="delayed-funding-publish"),
+            batches=(VisibleBatch(available_ns, delayed_events, True),),
+            next_decision_ts_ns=available_ns,
+        )
+        assert pending.funding == ()
+
+        settled = session.advance(
+            replace(wait, decision_id="delayed-funding-post-settlement",
+                    plan_id="delayed-funding-post-settlement",
+                    idempotency_key="delayed-funding-post-settlement"),
+            batches=(_perpetual_batch(481),),
+            next_decision_ts_ns=481 * 60 * 1_000_000_000,
+        )
+        assert settled.mark == Decimal("2000.123")
+        assert len(settled.funding) == 1
+        assert Money.from_str(settled.funding[0]["pnl_change"]).as_decimal() == Decimal("-2.000123")
+        assert settled.equity == (initial.equity + Decimal("1000.123")
+                                  - Decimal("1.00") - Decimal("2.000123"))
+    finally:
+        session.close()
 
 
 def test_native_funding_event_deduplication_rejects_conflicting_records() -> None:

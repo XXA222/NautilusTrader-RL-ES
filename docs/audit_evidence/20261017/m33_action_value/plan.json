@@ -1,0 +1,47 @@
+{
+  "schema": "rles.train-signal-plan.v1",
+  "date": "2026-10-16",
+  "split": "train_inner",
+  "bundle": "D:\\Program Files\\NautilusTrader_RL_ES\\.artifacts\\audit-development-20261016\\models\\candidate-seed-102",
+  "bundle_sha256": "ea2ea516780f25756c7dae35636ee59eca7e3443a24259c6b58526b2536fec68",
+  "source": {
+    "market_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.artifacts\\audit-development-20261016\\data\\market.parquet",
+    "market_sha256": "06323e909997909dee35b4abf1543444ae230f30cbc1f672ded033b3bc41fe70",
+    "rules_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.artifacts\\audit-development-20261016\\data\\scenario-rules.json",
+    "rules_sha256": "690292b508ce722d6ba2f5b9fb745671f56fc396d2026943fd36668e9028c93b"
+  },
+  "windows": [
+    {
+      "start_ns": 1705276800000000000,
+      "end_ns": 1705363200000000000
+    },
+    {
+      "start_ns": 1707955200000000000,
+      "end_ns": 1708041600000000000
+    },
+    {
+      "start_ns": 1710460800000000000,
+      "end_ns": 1710547200000000000
+    }
+  ],
+  "modes": [
+    "base",
+    "stress"
+  ],
+  "seed": 102,
+  "policies": [
+    "B0_no_trade",
+    "B1_always_long",
+    "B4_always_short",
+    "B2_simple_momentum",
+    "B5_simple_reversal",
+    "frozen_rl"
+  ],
+  "target": 1.0,
+  "momentum_lookback": 20,
+  "minimum_start_free_bytes": 10737418240,
+  "stop_free_bytes": 2147483648,
+  "gate": "RL must strictly exceed every fixed baseline in every window and cost mode; screening only",
+  "on_failure": "retain all reports; do not expand current candidate to 100k/300k or formal OOS",
+  "scope": "frozen old RL inference only; no retraining, selection or independent OOS claim"
+}

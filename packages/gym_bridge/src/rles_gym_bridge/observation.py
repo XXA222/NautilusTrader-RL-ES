@@ -20,7 +20,7 @@ class ObservationSchema:
             raise ValueError("observation names and units must be sequences of strings")
         object.__setattr__(self, "names", tuple(self.names))
         object.__setattr__(self, "units", tuple(self.units))
-        if self.schema_version != "0.4.0" or not self.names or len(self.names) != len(self.units):
+        if self.schema_version not in {"0.4.0", "0.5.0", "0.6.0"} or not self.names or len(self.names) != len(self.units):
             raise ValueError("invalid observation schema")
         if (any(type(n) is not str or not n or type(u) is not str or not u
                 for n, u in zip(self.names, self.units))

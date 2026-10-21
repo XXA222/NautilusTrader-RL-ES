@@ -50,6 +50,19 @@ def test_complete_interval_and_schedule_authorize_settlement():
     store.require_usable(report, "settlement")
 
 
+def test_duplicate_funding_settlement_blocks_data_quality_even_when_payload_matches():
+    original = next(event for event in events() if event.kind == "funding_settlement")
+    duplicate = replace(original, event_id="duplicate-funding-settlement")
+    store = CuratedStore((*events(), duplicate))
+
+    report = quality(store, policy())
+
+    assert report.grade == Grade.D
+    assert "duplicate_funding_settlement" in report.findings
+    with pytest.raises(DataError, match="DQ-D blocks all training and evaluation"):
+        store.require_usable(report, "settlement")
+
+
 def test_presence_without_temporal_policy_cannot_authorize_full_capabilities():
     store = CuratedStore(events())
     report = quality(store, None)

@@ -77,8 +77,19 @@ def _write_route_config(tmp_path: Path, route: str, day_offset: int,
 
 
 def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
+    config_path = Path(args[args.index("--config") + 1])
+    # Exercise the real CLI main in a new interpreter while isolating fixture
+    # research accounting from the user's project-level history.
+    bootstrap = (
+        "import sys; from pathlib import Path; "
+        "from rles_research.access import ProjectResearchRegistry; "
+        "from rles_orchestrator import research_access; "
+        "registry_path=Path(sys.argv.pop(1)); "
+        "research_access.project_registry=lambda: ProjectResearchRegistry(registry_path); "
+        "from rles_orchestrator.application import main; sys.exit(main())"
+    )
     return subprocess.run(
-        [sys.executable, "-m", "rles_orchestrator", *args],
+        [sys.executable, "-c", bootstrap, str(config_path.parent / "project-research.sqlite"), *args],
         cwd=Path(__file__).resolve().parents[1],
         capture_output=True,
         text=True,
@@ -100,7 +111,7 @@ def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
         ("A0", 7, ["R1"], "rl", "DDPG"),
     ),
 )
-def test_real_archive_train_bundle_and_independent_test(
+def test_real_archive_train_bundle_and_governed_exploratory_backtest(
     tmp_path, route, day_offset, expected_stages, actor_kind, algorithm,
 ):
     config_path, fixture, day_start_ns = _write_route_config(tmp_path, route, day_offset, algorithm)
@@ -118,11 +129,25 @@ def test_real_archive_train_bundle_and_independent_test(
     assert completed.returncode == 0, completed.stderr[-4000:]
 
     output = tmp_path / f"{route.lower()}-run"
+    run_manifest = json.loads((output / "run.json").read_text(encoding="utf-8"))
+    from rles_research.access import ProjectResearchRegistry
+
+    attempts = ProjectResearchRegistry(tmp_path / "project-research.sqlite").trial_attempt_summary(
+        "standalone-application-training-v1",
+    )
+    assert attempts["protocol_registered_attempt_count"] == 1
+    trial = attempts["attempts"][0]
+    assert trial["candidate_id"] == run_manifest["run_id"]
+    assert len(trial["feature_sha256"]) == 64
+    assert [event["status"] for event in trial["events"]] == [
+        "registered", "started", "completed",
+    ]
     marker = json.loads((output / "COMPLETED.json").read_text(encoding="utf-8"))
     bundle_path = output / "bundle.json"
     report_path = output / "report.json"
     bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
     report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert trial["feature_sha256"] == bundle["preprocessing"]["identities"]["features"]
 
     assert hashlib.sha256(bundle_path.read_bytes()).hexdigest() == marker["bundle_sha256"]
     assert hashlib.sha256(report_path.read_bytes()).hexdigest() == marker["report_sha256"]
@@ -155,6 +180,12 @@ def test_real_archive_train_bundle_and_independent_test(
     test_config_path.write_text(json.dumps(test_config, indent=2), encoding="utf-8")
 
     backtest = _run_cli("backtest", "--config", str(test_config_path), "--bundle", str(output))
+    assert backtest.returncode == 2
+    assert "requires WFO research access" in backtest.stderr
+    assert not Path(test_config["output"]).exists()
+    test_config["evaluation"]["split"] = "validation"
+    test_config_path.write_text(json.dumps(test_config, indent=2), encoding="utf-8")
+    backtest = _run_cli("backtest", "--config", str(test_config_path), "--bundle", str(output))
     assert backtest.returncode == 0, backtest.stderr[-4000:]
     test_output = tmp_path / f"{route.lower()}-test-report"
     test_marker = json.loads((test_output / "COMPLETED.json").read_text(encoding="utf-8"))
@@ -162,6 +193,7 @@ def test_real_archive_train_bundle_and_independent_test(
     assert test_marker["bundle_sha256"] == marker["bundle_sha256"]
     assert hashlib.sha256((test_output / "report.json").read_bytes()).hexdigest() == test_marker["report_sha256"]
     assert test_report["terminal_flat"] is True
+    assert test_report["evaluation_scope"]["formal"] is False
     assert test_report["liquidations"] == 0
     assert test_report["dataset_quality"]["grade"] == "DQ-B"
     assert "funding_settlement" in test_report["dataset_quality"]["verified_coverage"]
@@ -180,6 +212,8 @@ def test_real_archive_a4_recovers_from_durable_stage_checkpoint(tmp_path, monkey
     config = load_config(config_path)
     config["generations"] = 2
     config["population"] = 4
+    config["es_fitness"] = {"protocol": "constraint_priority_train_inner_v1"}
+    config["es_scenario_fold_id"] = "constraint-recovery-test-fold"
     config["checkpoint_interval_steps"] = 32
     config["distillation"] = {"tolerance": 0.12, "epochs": 120, "batch_size": 16,
                               "learning_rate": 0.01}
@@ -232,6 +266,15 @@ def test_real_archive_a4_recovers_from_durable_stage_checkpoint(tmp_path, monkey
         assert checkpoint_manifest["generation"] == 1
         assert (checkpoint / "COMPLETED").is_file()
     assert (output / "FAILED.json").is_file()
+    from rles_research.access import ProjectResearchRegistry
+
+    attempts = ProjectResearchRegistry(tmp_path / "project-research.sqlite").trial_attempt_summary(
+        "standalone-application-training-v1",
+    )
+    assert attempts["protocol_registered_attempt_count"] == 1
+    assert [event["status"] for event in attempts["attempts"][0]["events"]] == [
+        "registered", "started", "failed",
+    ]
 
     if resume_stage in {"E1", "E2"}:
         monkeypatch.setattr(EvoTorchProvider, "continue_evolution", original_continue)
@@ -243,11 +286,26 @@ def test_real_archive_a4_recovers_from_durable_stage_checkpoint(tmp_path, monkey
     assert (output / "COMPLETED.json").is_file()
     assert not (output / "FAILED.json").exists()
     assert list(output.glob("FAILED-*.json"))
+    from rles_orchestrator.research_access import project_registry
+
+    attempts = project_registry().trial_attempt_summary("standalone-application-training-v1")
+    assert attempts["protocol_registered_attempt_count"] == 1
+    assert [event["status"] for event in attempts["attempts"][0]["events"]] == [
+        "registered", "started", "failed", "resumed", "completed",
+    ]
     bundle_path = output / "bundle.json"
     marker = json.loads((output / "COMPLETED.json").read_text(encoding="utf-8"))
     bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
     assert hashlib.sha256(bundle_path.read_bytes()).hexdigest() == marker["bundle_sha256"]
     assert [item["stage"] for item in bundle["lineage"]] == ["E1", "R1", "E2"]
+    e1_lineage = next(item for item in bundle["lineage"] if item["stage"] == "E1")
+    e2_lineage = next(item for item in bundle["lineage"] if item["stage"] == "E2")
+    for stage_lineage in (e1_lineage, e2_lineage):
+        assert stage_lineage["metadata"]["fitness_protocol"] == "constraint_priority_train_inner_v1"
+        assert stage_lineage["metadata"]["scenario_fold_id"] == "constraint-recovery-test-fold"
+        constraint_rows = json.loads(stage_lineage["metadata"]["constraint_evidence_json"])
+        assert len(constraint_rows) == 2
+        assert all("candidates" in row for row in constraint_rows)
     assert (output / "E1" / "generation-00000002" / run_id / "COMPLETED").is_file()
     assert (output / "R1-checkpoints" / "step-000000000064" / "COMPLETED").is_file()
     assert (output / "E2" / "generation-00000002" / run_id / "COMPLETED").is_file()
@@ -266,6 +324,7 @@ def test_real_archive_a4_recovers_from_durable_stage_checkpoint(tmp_path, monkey
         "coverage_policy": test_coverage,
     }
     test_config["output"] = str(tmp_path / "a4-real-resume-test-report")
+    test_config["evaluation"]["split"] = "validation"
     test_report = backtest(load_config(_write_json_config(tmp_path, test_config)), output)
     assert test_report["dataset_quality"]["grade"] == "DQ-B"
     assert test_report["terminal_flat"] is True

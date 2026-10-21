@@ -1,0 +1,80 @@
+{
+  "schema": "rles.discount-half-life-probe.v2",
+  "date": "2026-10-17",
+  "status": "preregistered_before_training",
+  "mechanism": "PPO reward discount half-life",
+  "supersedes": {
+    "plan": "configs/discount_half_life_probe_20261016.json",
+    "reason": "the prior full-range recipe intersected reserved historical Test/Holdout intervals and the project registry rejected it before any training; this plan narrows the training interval and places diagnostics after that interval"
+  },
+  "split": "train_inner",
+  "source_bundle": ".artifacts/audit-development-20261016/models/candidate-seed-102",
+  "source_bundle_sha256": "ea2ea516780f25756c7dae35636ee59eca7e3443a24259c6b58526b2536fec68",
+  "source_market": {
+    "path": ".artifacts/audit-development-20261016/data/market.parquet",
+    "sha256": "06323e909997909dee35b4abf1543444ae230f30cbc1f672ded033b3bc41fe70"
+  },
+  "source_rules": {
+    "path": ".artifacts/audit-development-20261016/data/scenario-rules.json",
+    "sha256": "690292b508ce722d6ba2f5b9fb745671f56fc396d2026943fd36668e9028c93b"
+  },
+  "training_interval": {
+    "start_ns": 1704067260001000000,
+    "end_ns": 1721088000000000000,
+    "meaning": "2024-01-01 00:01 through 2024-07-16 00:00 UTC, half-open; ends at the earliest reserved Holdout boundary"
+  },
+  "seeds": [102, 103, 104],
+  "arms": {
+    "control": {
+      "gamma": 0.99,
+      "discount_half_life_minutes": 68.96756393652842
+    },
+    "six_hour_half_life": {
+      "gamma": 0.9980764435756287,
+      "discount_half_life_minutes": 360.0
+    }
+  },
+  "training": {
+    "algorithm": "PPO",
+    "steps_per_seed_and_arm": 32768,
+    "route": "A0",
+    "hidden_layers": [64, 64],
+    "normalize_observation": true,
+    "reward_scale": 1000.0,
+    "rl_device": "cpu",
+    "rl_num_envs": 1,
+    "rl_episode_steps": 8192,
+    "hyperparameters": {
+      "n_steps": 2048,
+      "batch_size": 512,
+      "n_epochs": 5,
+      "learning_rate": 0.0001,
+      "gae_lambda": 0.9,
+      "clip_range": 0.2,
+      "ent_coef": 0.0,
+      "vf_coef": 1.0,
+      "max_grad_norm": 0.5,
+      "log_std_init": -2.0,
+      "zero_init_action_head": true
+    },
+    "all_fields_except_gamma": "identical within every paired seed; initialized from the archived seed-102 PPO recipe"
+  },
+  "diagnostic_windows": [
+    {"start_ns": 1722470400000000000, "end_ns": 1722556800000000000},
+    {"start_ns": 1738368000000000000, "end_ns": 1738454400000000000},
+    {"start_ns": 1777593600000000000, "end_ns": 1777680000000000000}
+  ],
+  "execution_modes": ["base", "stress"],
+  "minimum_start_free_bytes": 10737418240,
+  "stop_free_bytes": 2147483648,
+  "limits": {
+    "maximum_training_runs": 6,
+    "total_interaction_steps": 196608,
+    "formal_test_or_holdout_queries": 0,
+    "candidate_promotion": false,
+    "budget_expansion": false
+  },
+  "primary_diagnostic": "paired per-seed net-return difference by post-training window and execution mode, compared with contemporaneous no-trade rollouts",
+  "advancement_gate": "all three seed-mean paired deltas must be positive in both execution modes, and treatment seed-mean must exceed contemporaneous no-trade in at least two of three windows in each mode; passing only authorizes a separately preregistered five-seed confirmation",
+  "economic_scope": "scenario-only Train development; no historical economic or independent OOS claim"
+}

@@ -1,0 +1,38 @@
+{
+  "schema": "rles.audit-m0-1-linear-native-liquidation.v1",
+  "task": "M0.1 / A08",
+  "status": "passed",
+  "test": "tests/test_native_liquidation_facts.py::test_native_linear_perpetual_liquidation_reconciles_to_flat_equity",
+  "fixture_type": "NautilusTrader 2.0.0rc6 native streaming BacktestEngine with synthetic stress quotes",
+  "instrument": {
+    "id": "ETHUSDT-PERP.SIM",
+    "inverse": false,
+    "settlement_currency": "USDT",
+    "multiplier": "1",
+    "initial_margin_rate": "0.05",
+    "maintenance_margin_rate": "0.04"
+  },
+  "scenario": {
+    "starting_equity": "10000 USDT",
+    "entry": "BUY 49 ETH at 2000 USDT",
+    "liquidation_mark": "1800 USDT",
+    "engine_liquidation_order": "native client-order ID starts LIQUIDATION-SIM-",
+    "terminal_equity": "13.8 USDT",
+    "terminal_positions": 0
+  },
+  "verification": {
+    "native_fills": 2,
+    "native_liquidation_orders": 1,
+    "checked_open_barriers": 1,
+    "unchecked_open_barriers": 0,
+    "unique_fills_reconciled": 2,
+    "terminal_checked": true,
+    "max_abs_equity_residual": "0",
+    "test_result": "1 passed"
+  },
+  "limits": [
+    "Synthetic marks and quotes test engine liquidation/ledger semantics, not historical exchange rules or costs.",
+    "This fixture has no Funding or external deposit/withdrawal events.",
+    "The 90-day Train-inner run separately verifies native funding in a non-liquidating linear episode."
+  ]
+}

@@ -14,9 +14,11 @@ import time
 import pytest
 
 from rles_compute_runtime.errors import ComputeError, QuotaExceeded
+from rles_compute_runtime.allocation import ComputeAllocation
 from rles_compute_runtime.recovery import inspect_quota, main
 from rles_compute_runtime.resources import Lease, ResourceQuota
 from rles_compute_runtime.workers import CPUWorkerPool
+from rles_compute_runtime import windows_recovery
 
 pytestmark = [pytest.mark.artifact_restore]
 WINDOWS = pytest.mark.skipif(os.name != 'nt', reason='Windows owner and Job lifetime APIs required')
@@ -43,6 +45,15 @@ def make_session(config):
     return Session(config)
 
 
+def test_owner_ancestry_stops_before_reused_parent_pid(monkeypatch):
+    created = {1: 30, 2: 10, 3: 20}
+    monkeypatch.setattr(windows_recovery, "_process_created", created.get)
+
+    # PID 1 is a reused ID: process 3 was created after process 2, so it
+    # cannot be process 2's parent even though Toolhelp reports that edge.
+    assert windows_recovery._owner_ancestors(1, {1: 2, 2: 3, 3: 1}) == (2,)
+
+
 def _controller(database, ready, stop, descendant):
     quota = ResourceQuota(database, cpu_cores=1, ram_bytes=512 * MIB, gpus=0)
     pool = CPUWorkerPool(
@@ -52,7 +63,13 @@ def _controller(database, ready, stop, descendant):
     )
     try:
         pool.start()
-        ready.send({'lease': quota.active()[0], 'jobs': pool.resource_evidence(), 'pid': os.getpid()})
+        try:
+            quota.release(pool._lease)
+            release_probe = 'unexpectedly released'
+        except ComputeError as exc:
+            release_probe = str(exc)
+        ready.send({'lease': quota.active()[0], 'jobs': pool.resource_evidence(),
+                    'pid': os.getpid(), 'release_probe': release_probe})
         stop.recv()
     finally:
         pool.close()
@@ -155,6 +172,110 @@ def test_gpu_and_legacy_lease_recovery_fail_closed(tmp_path):
     quota.release(legacy)
 
 
+@WINDOWS
+def test_supervised_gpu_quota_recovers_only_after_owned_tree_hard_exit(tmp_path, capsys):
+    database = tmp_path / 'quota.sqlite'
+    gpu_directory = tmp_path / 'shared-gpu-locks'
+    owner_state = tmp_path / 'owner.json'
+    supervisor_evidence = tmp_path / 'supervisor.json'
+    program = "\n".join((
+        'import json, os, subprocess, sys, time',
+        'from pathlib import Path',
+        'from rles_compute_runtime.allocation import ComputeAllocation',
+        'from rles_compute_runtime.resources import ResourceQuota',
+        'from rles_compute_runtime.errors import ComputeError',
+        'from rles_compute_runtime.windows_recovery import require_owned_job',
+        'database, gpu_directory, owner_state = sys.argv[1:]',
+        f'quota = ResourceQuota(database, cpu_cores=1, ram_bytes={256 * MIB}, gpus=1)',
+        "allocation = ComputeAllocation(quota=quota, owner='supervised-owner', "
+        "attempt_id='supervised-hard-exit', cpu_cores=1, "
+        f"ram_bytes={256 * MIB}, learner_device='cuda', gpu_lock_directory=gpu_directory)",
+        'lease = allocation.acquire()',
+        "try:\n    quota.release(lease)\n    release_probe = 'unexpectedly released'\n"
+        "except ComputeError as exc:\n    release_probe = str(exc)",
+        'allocation.release()',
+        'normal_release = not quota.active()',
+        "allocation = ComputeAllocation(quota=quota, owner='supervised-owner', "
+        "attempt_id='supervised-hard-exit-recovery', cpu_cores=1, "
+        f"ram_bytes={256 * MIB}, learner_device='cuda', gpu_lock_directory=gpu_directory)",
+        'lease = allocation.acquire()',
+        'descendant = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"], '
+        'stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, '
+        'creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))',
+        'time.sleep(0.1)',
+        'allocation.gpu_lock.release()',
+        "try:\n    quota.release(lease)\n    descendant_probe = 'unexpectedly released'\n"
+        "except ComputeError as exc:\n    descendant_probe = str(exc)",
+        "Path(owner_state).write_text(json.dumps({'pid': os.getpid(), 'token': lease.token, "
+        "'owner': lease.owner, 'cpu': lease.cpu_cores, 'ram': lease.ram_bytes, "
+        "'release_probe': release_probe, 'normal_release': normal_release, "
+        "'descendant_probe': descendant_probe, "
+        "'job_probe': require_owned_job("
+        "os.environ['RLES_SUPERVISION_JOB_NAME'], "
+        "int(os.environ['RLES_SUPERVISION_MEMORY_BYTES']), os.getpid())}), encoding='utf-8')",
+        'time.sleep(120)',
+    ))
+    command = [
+        sys.executable, '-m', 'rles_compute_runtime.supervisor',
+        '--memory-bytes', str(1024 * MIB), '--evidence', str(supervisor_evidence), '--',
+        sys.executable, '-c', program, str(database), str(gpu_directory), str(owner_state),
+    ]
+    supervisor = subprocess.Popen(
+        command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+    )
+    try:
+        deadline = time.monotonic() + 20
+        while not owner_state.exists() and supervisor.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.05)
+        if not owner_state.exists():
+            stdout, stderr = supervisor.communicate(timeout=10)
+            pytest.fail(f'supervised GPU owner did not reach lease acquisition: {stdout} {stderr}')
+        state = json.loads(owner_state.read_text(encoding='utf-8'))
+        assert 'single CUDA learner owner already allocated' in state['release_probe']
+        assert state['normal_release'] is True
+        assert 'supervised application descendants remain active' in state['descendant_probe']
+        assert state['job_probe']['owner_pid'] == state['pid']
+        quota = ResourceQuota(database, cpu_cores=1, ram_bytes=256 * MIB, gpus=1)
+        inspected = inspect_quota(database)
+        assert inspected['leases'][0]['recovery_state'] == 'application_ready'
+        with pytest.raises(ComputeError, match='still alive'):
+            quota.recover_supervised_gpu_lease(
+                Lease(state['token'], 1, state['ram'], 1, state['owner']),
+                reason='must refuse before supervised process exits',
+            )
+        with pytest.raises(ComputeError, match='original owner'):
+            quota.release(Lease(state['token'], 1, state['ram'], 1, state['owner']))
+        assert len(quota.active()) == 1
+
+        os.kill(state['pid'], 9)
+        stdout, stderr = supervisor.communicate(timeout=30)
+        assert supervisor.returncode == 1, (stdout, stderr)
+        evidence = json.loads(supervisor_evidence.read_text(encoding='utf-8'))
+        assert evidence['job_cleanup']['active_processes'] == 0
+
+        args = ['recover-supervised-gpu', '--database', str(database), '--token', state['token'],
+                '--owner', state['owner'], '--cpu-cores', str(state['cpu']),
+                '--ram-bytes', str(state['ram']), '--reason', 'supervised app hard exit']
+        assert main(args) == 0
+        receipt = json.loads(capsys.readouterr().out)
+        assert receipt['schema'] == 'rles.supervised-gpu-lease-recovery.v1'
+        assert receipt['owner_proof']['owner_state'] in {'exited', 'absent'}
+        assert receipt['gpu_lock_probe'] == 'acquired_and_released'
+        assert quota.active() == []
+
+        renewed = ComputeAllocation(
+            quota=quota, owner='resumed-owner', attempt_id='resumed-attempt', cpu_cores=1,
+            ram_bytes=256 * MIB, learner_device='cuda', gpu_lock_directory=gpu_directory,
+        )
+        renewed.acquire()
+        renewed.release()
+    finally:
+        if supervisor.poll() is None:
+            supervisor.kill()
+            supervisor.communicate(timeout=10)
+
+
 def test_old_database_inspection_does_not_migrate_schema(tmp_path):
     path = tmp_path / 'old.sqlite'
     with sqlite3.connect(path) as connection:
@@ -175,12 +296,15 @@ def test_live_owner_and_wrong_descriptor_cannot_release_cpu_quota(tmp_path):
     quota = _quota(database)
     try:
         assert process.pid == state['pid']
+        assert 'active processes' in state['release_probe']
         for descriptor in (replace(lease, owner='foreign'), replace(lease, ram_bytes=1),
                            replace(lease, token='a' * 32)):
             with pytest.raises(ComputeError, match='does not exist or does not belong'):
                 quota.recover_cpu_lease(descriptor, reason='wrong lease')
         with pytest.raises(ComputeError, match='still alive'):
             quota.recover_cpu_lease(lease, reason='owner has not exited')
+        with pytest.raises(ComputeError, match='original owner'):
+            quota.release(lease)
         assert len(quota.active()) == 1
         with pytest.raises(QuotaExceeded):
             quota.acquire('contender', cpu_cores=1, ram_bytes=1024)
@@ -258,7 +382,6 @@ def test_incomplete_startup_and_corrupt_evidence_are_not_reclaimed(tmp_path):
     with pytest.raises(ComputeError, match='invalid owned Job'):
         quota.recover_cpu_lease(lease, reason='corrupt job list')
     assert len(quota.active()) == 1
-    quota.release(lease)
 
 
 @WINDOWS

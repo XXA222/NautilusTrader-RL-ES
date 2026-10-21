@@ -5,7 +5,7 @@ import pytest
 from decimal import Decimal
 from types import SimpleNamespace
 
-from rles_gym_bridge.env import ContractNotReady, NautilusBarrierEnv
+from rles_gym_bridge.env import ContractNotReady, NautilusBarrierEnv, _native_transition_facts
 from rles_gym_bridge.episode import EpisodeReplay
 from rles_nautilus_adapter.session import EngineBoundaryError, VisibleBatch
 
@@ -105,6 +105,21 @@ def test_l3_rejects_episode_without_checkpoint_protocol() -> None:
     env = _env_with_episode(object())
     with pytest.raises(ContractNotReady, match="transition_fingerprint_hash"):
         _ = env.rles_transition_hash
+
+
+def test_l3_preserves_signed_native_commission_rebates() -> None:
+    snapshot = SimpleNamespace(
+        fills=({"event_id": "fill-1", "client_order_id": "order-1", "order_side": "BUY",
+                "last_qty": "1", "last_px": "100", "commission": "-0.1 USDT",
+                "ts_event": 20},),
+        funding=(), currency="USDT", contract_multiplier=Decimal(1),
+        fill_references={"order-1": Decimal(100)},
+    )
+
+    result = _native_transition_facts(snapshot, after_ns=10, settlement_ns=20)
+
+    assert result["fees"] == "-0.1"
+    assert result["fee_currency"] == "USDT"
 
 
 def test_l3_visible_batch_requires_causal_time_and_sha256_provenance() -> None:

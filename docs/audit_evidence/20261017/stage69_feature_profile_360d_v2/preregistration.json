@@ -1,0 +1,61 @@
+{
+  "attempt": "stage69-train-feature-matrix-360d-20261017-v2",
+  "code_sha256": {
+    ".tmp/stage69-train-feature-matrix-360d-20261017/profile_stage69_360d.py": "ccba82c2a19bcbb5194db7a6f2196786a16758962a6c41e9a740f77b992a3245",
+    "packages/data/src/rles_data/core.py": "570a3ec96864c1545ee5e225d1b8da212c0ca289bba8770569523fcaf470e1b5",
+    "packages/data/src/rles_data/features.py": "e68a48119964198a41737d2a7b8433293e274dc55b45e0ec2f4664347a3648c8",
+    "packages/data/src/rles_data/io.py": "0f4152f175a2246ace32f17d2927db907d6c7de65303dad7bdd6604b66eb7dd1",
+    "packages/gym_bridge/src/rles_gym_bridge/historical.py": "f718d7cb7d5f3a0139f48b5fc9a8f6419a6e28974ca31e4a9e42914247420ec0",
+    "packages/orchestrator/src/rles_orchestrator/research_access.py": "aa92bf29d552f7984921bfe7c235af2ce43657ccea3e2dd3fddc0f71060ceaf4",
+    "packages/research/src/rles_research/access.py": "84401be438960204f9368c0a502270652bae20a938d2a3b9d8a88bebd88675fa"
+  },
+  "config_sha256": "962c5e2742692ee90005de175cc0ef9df2a90d5c5c31faef56c60f26b4c3d7fe",
+  "formal_evaluation_queries": 0,
+  "interpretation": "Train-inner engineering diagnostic only. Source rules are scenario-only assumptions; no strategy return or profitability claim.",
+  "purpose": "Train-inner feature construction timing, feature identity and memory profile; no policy training or selection",
+  "rules_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-expanded-market-stage-20261014\\scenario-rules-2024-onwards.json",
+  "rules_sha256": "690292b508ce722d6ba2f5b9fb745671f56fc396d2026943fd36668e9028c93b",
+  "schema": "rles.stage69.train-feature-profile-preregistration.v1",
+  "sources": [
+    {
+      "events": 977676,
+      "import_manifest_sha256": "8513731039523f1071ae8f65cbf8b1a7674172087c008659e579bcd675b10044",
+      "label": "train-stage69-360d-segment-a-v2",
+      "marker_file_sha256": "a628df2e4ea92be045c6d526179fcca37ee95a7652c0a0ff9770da1aaf9a3707",
+      "marker_sha256": "0d5c5a6452980f9b74aa884a3b8c6810732d45be632a8a036e5e91532babf341",
+      "marker_snapshot_hash": "7372c5d91b18d9dc4b014a4cb2403180049c854347b0ea12c1619420c365b4df",
+      "name": "segment-a",
+      "path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-expanded-market-stage-20261014\\segment-a\\source\\market.parquet",
+      "row_groups": 60,
+      "scope": {
+        "end_ns": 1751328000001000001,
+        "start_ns": 1731801600000000000
+      },
+      "source_mode": "whole_snapshot_isolated_v1"
+    },
+    {
+      "events": 930090,
+      "import_manifest_sha256": "8486dc96590d5d47e54f7503ab01a3767874ffe6620671d7bacdd6f70706f0e9",
+      "label": "train-stage69-360d-segment-b-v2",
+      "marker_file_sha256": "e29432d28c5e5e0ede2bc7c610e19e3de29a62d275632476589c2aabd294d993",
+      "marker_sha256": "2eee479b0ade80febf8431e13664ec4bce800c74af7b97a713cdec625b160dd1",
+      "marker_snapshot_hash": "6aed5aaf56a460b7abdcd56ba9d7ce34abd33356b0dda91d4fed74ece109f69d",
+      "name": "segment-b",
+      "path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-expanded-market-stage-20261014\\segment-b\\source\\market.parquet",
+      "row_groups": 57,
+      "scope": {
+        "end_ns": 1769904000001000001,
+        "start_ns": 1751328000007000000
+      },
+      "source_mode": "whole_snapshot_isolated_v1"
+    }
+  ],
+  "stop_line": {
+    "minimum_system_available_memory_bytes": 2147483648
+  },
+  "window": {
+    "days": 360,
+    "end_ns": 1764115200000000000,
+    "start_ns": 1733011200000000000
+  }
+}

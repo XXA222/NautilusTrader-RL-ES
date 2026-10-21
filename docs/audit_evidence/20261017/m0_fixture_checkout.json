@@ -1,0 +1,10 @@
+{
+  "scope": "local Git checkout-filter simulation, not remote CI",
+  "file": "tests/fixtures/real_ethusdt_20240101/SCENARIO_RULE_ASSUMPTIONS.json",
+  "core_autocrlf": true,
+  "expected_sha256": "b73028b1fca697c6dda6196a1b7c9e89d7aed0815ccb7d0facef900b3b67152f",
+  "without_worktree_attributes_sha256": "912b788c045c7a1ec0c28fff759537da9724330938c1f3a9be92dc9749a96f45",
+  "with_worktree_attributes_sha256": "b73028b1fca697c6dda6196a1b7c9e89d7aed0815ccb7d0facef900b3b67152f",
+  "without_worktree_attributes_crlf_lines": 23,
+  "with_worktree_attributes_crlf_lines": 0
+}

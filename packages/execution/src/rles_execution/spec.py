@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields
 from decimal import Decimal
+from functools import lru_cache
 from hashlib import sha256
 import json
 
@@ -38,20 +39,27 @@ class FillProfile:
     slippage_bps: Decimal
     data_granularity: str = "bar"
     fee_multiplier: Decimal = Decimal("1")
+    simulated_depth_fraction: Decimal = Decimal("1")
 
     def __post_init__(self) -> None:
         if not self.model_id or self.data_granularity not in {"bar", "trade", "quote"}:
             raise ValueError("unknown fill model or data granularity")
         slip = dec(self.slippage_bps)
         fee_multiplier = dec(self.fee_multiplier, positive=True)
+        depth_fraction = dec(self.simulated_depth_fraction)
         if slip < 0 or slip > Decimal("10000"):
             raise ValueError("slippage must be in [0, 10000] bps")
         if fee_multiplier < 1:
             raise ValueError("fee multiplier cannot be more optimistic than the historical fee")
+        if not Decimal(0) <= depth_fraction <= Decimal(1):
+            raise ValueError("simulated depth fraction must be in [0, 1]")
         if self.data_granularity == "quote" and slip != 0:
             raise ValueError("quote execution uses native displayed depth and requires zero synthetic slippage")
+        if self.data_granularity == "quote" and depth_fraction != 1:
+            raise ValueError("quote execution must use native displayed depth without a synthetic depth cap")
         object.__setattr__(self, "slippage_bps", slip)
         object.__setattr__(self, "fee_multiplier", fee_multiplier)
+        object.__setattr__(self, "simulated_depth_fraction", depth_fraction)
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +74,7 @@ class ResolvedExecutionConfig:
     stress_latency: LatencyProfile
     base_fill: FillProfile
     stress_fill: FillProfile
+    zero_target_policy: str = "deadband"
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "deadband", dec(self.deadband))
@@ -81,6 +90,8 @@ class ResolvedExecutionConfig:
             raise ValueError("L3 v0.4.0 supports market-like GTC execution with explicit bar or quote data")
         if self.terminal_policy != "force_flatten_with_cost":
             raise ValueError("only cost-bearing terminal flatten supported")
+        if self.zero_target_policy not in {"deadband", "close"}:
+            raise ValueError("zero target policy must be deadband or close")
         if self.base_latency.model_id == self.stress_latency.model_id:
             raise ValueError("stress latency needs distinct model ID")
         if self.base_fill.model_id == self.stress_fill.model_id:
@@ -95,24 +106,29 @@ class ResolvedExecutionConfig:
             raise ValueError("base execution must use the historical instrument fee")
         if self.stress_fill.fee_multiplier < self.base_fill.fee_multiplier:
             raise ValueError("stress fees may not be more optimistic than base")
+        if self.base_fill.simulated_depth_fraction != 1:
+            raise ValueError("bar base execution must retain the legacy sufficient-depth assumption")
+        if self.stress_fill.simulated_depth_fraction > self.base_fill.simulated_depth_fraction:
+            raise ValueError("stress simulated depth may not exceed base")
         if self.base_fill.data_granularity == "bar" and self.base_fill.slippage_bps == 0:
             raise ValueError("bar-only research cannot assume zero baseline slippage")
 
     @classmethod
     def from_dict(cls, data: dict) -> ResolvedExecutionConfig:
         names = set(cls.__dataclass_fields__)
-        if set(data) != names:
+        if not names - {"zero_target_policy"} <= set(data) or set(data) - names:
             raise ValueError(f"execution config fields mismatch: missing={sorted(names-set(data))}, unknown={sorted(set(data)-names)}")
         def profile(t: type[LatencyProfile] | type[FillProfile], value: object) -> LatencyProfile | FillProfile:
             if not isinstance(value, dict):
                 raise ValueError(f"invalid {t.__name__} keys")
             if t is FillProfile:
                 allowed = {field.name for field in fields(t)}
-                required = allowed - {"fee_multiplier"}
+                required = allowed - {"fee_multiplier", "simulated_depth_fraction"}
                 if not required <= set(value) or set(value) - allowed:
                     raise ValueError("invalid FillProfile keys")
                 value = {**value, "slippage_bps": dec(value["slippage_bps"]),
-                         "fee_multiplier": dec(value.get("fee_multiplier", "1"))}
+                         "fee_multiplier": dec(value.get("fee_multiplier", "1")),
+                         "simulated_depth_fraction": dec(value.get("simulated_depth_fraction", "1"))}
             elif set(value) != {field.name for field in fields(t)}:
                 raise ValueError(f"invalid {t.__name__} keys")
             return t(**value)  # type: ignore[call-arg]
@@ -124,15 +140,21 @@ class ResolvedExecutionConfig:
             values[n] = profile(FillProfile, values[n])
         return cls(**values)
 
+    @lru_cache(maxsize=128)
     def fingerprint(self) -> str:
         from dataclasses import asdict
         values = asdict(self)
+        if self.zero_target_policy == "deadband":
+            values.pop("zero_target_policy")
         # Preserve the v0.4.0 identity for legacy recipes whose base and stress
         # fees both resolve to 1. The new field is behaviorally neutral there;
         # any non-default fee stress remains bound into the fingerprint.
         if self.base_fill.fee_multiplier == self.stress_fill.fee_multiplier == 1:
             values["base_fill"].pop("fee_multiplier")
             values["stress_fill"].pop("fee_multiplier")
+        if self.base_fill.simulated_depth_fraction == self.stress_fill.simulated_depth_fraction == 1:
+            values["base_fill"].pop("simulated_depth_fraction")
+            values["stress_fill"].pop("simulated_depth_fraction")
         body = json.dumps(values, sort_keys=True, separators=(",", ":"), default=str)
         return sha256(body.encode()).hexdigest()
 

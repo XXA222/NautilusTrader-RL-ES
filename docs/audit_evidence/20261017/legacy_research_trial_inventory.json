@@ -1,0 +1,743 @@
+{
+  "schema": "rles.legacy-research-trial-inventory.v1",
+  "source_inventory": {
+    "path": "docs/audit_evidence/20261016/legacy_research_access_v2.json",
+    "sha256": "9fb401e76d5fefd611b2e92a484e9e3128cd675a298a38337639417ad6d9b3cc",
+    "database_sources": [
+      {
+        "path": ".tmp/real-ethusdt-scenario/wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1/run/research.sqlite",
+        "sha256": "221cfe0a9527f3f6fc45df85d9a8ad904de104ae46cf7ecf1e4f6567366e2b65"
+      },
+      {
+        "path": ".tmp/real-ethusdt-scenario/wfo-deadband-fresh-2025-05-11-to-2025-08-26-v1/run/research.sqlite",
+        "sha256": "e450f7ed95ad205a695c07e7377ba74dcbc870836c61ff313c6c4230b2af3a5f"
+      },
+      {
+        "path": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2/run/research.sqlite",
+        "sha256": "295160c25333adb4c13ef8aa3b057f351e47b7be3192fc4a00a307a0c5f0db69"
+      },
+      {
+        "path": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3/run/research.sqlite",
+        "sha256": "a5b141adb246d8fa91dd115a0126bb2691a8debfe55172092357a868c5a7be87"
+      },
+      {
+        "path": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1/.tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1/run/research.sqlite",
+        "sha256": "0a827d2ad92e28380fa349e169bc269fa4921aebe667d740594a47574ca5921a"
+      },
+      {
+        "path": ".tmp/real-ethusdt-scenario/wfo-fresh-2025-01-24-to-2025-05-10-v1/run/research.sqlite",
+        "sha256": "99aa6e95cf9aeb1652cb8fb5ac913d0eb79239debece77a6641869b1d2a831d3"
+      },
+      {
+        "path": ".tmp/real-ethusdt-scenario/wfo-real-fullpass-60-15-15-v1/run/research.sqlite",
+        "sha256": "03546eef3a95b2a2da00928d472417c9d84bc7ca09ef25ae6a70706ffa9e796a"
+      },
+      {
+        "path": ".tmp/real-ethusdt-scenario/wfo-sacentcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1/run/research.sqlite",
+        "sha256": "7cc7213295542d6d3b3a2b9b2b36cfe6e3f336eda782f909b442d1e4ed561952"
+      },
+      {
+        "path": ".tmp/real-ethusdt-scenario/wfo-sacentcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1/run/research.sqlite",
+        "sha256": "8a8a71232f0e995298e29b6ea2b99b6edff0f50cceb2ead03f5b7b268177907b"
+      },
+      {
+        "path": ".tmp/wfo-validation-recovery-20261013/run/research.sqlite",
+        "sha256": "b1e92d657c61f406aa031cb1907bf22af3e30d71929ec0b8594199797f83557d"
+      }
+    ],
+    "scan_roots": [
+      ".tmp/real-ethusdt-scenario",
+      ".tmp/wfo-validation-recovery-20261013"
+    ],
+    "market_data_loaded": false,
+    "formal_test_or_holdout_data_loaded": false
+  },
+  "coverage": {
+    "protocol_count": 10,
+    "config_file_count": 11,
+    "query_reservation_count": 22,
+    "query_reservations_by_kind": {
+      "validation": 21,
+      "test": 1
+    },
+    "protocol_candidate_pairs": 18,
+    "candidate_id_count": 10,
+    "distinct_config_recipe_fingerprints": 10,
+    "standalone_report_index_count": 22,
+    "legacy_access_entry_count": 67,
+    "unresolved_legacy_access_count": 0
+  },
+  "protocols": [
+    {
+      "protocol_id": "real-ethusdt-wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1",
+      "state": "ABORTED",
+      "config_files": [
+        ".tmp/real-ethusdt-scenario/config-wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1.json"
+      ],
+      "config_candidates": [
+        {
+          "config_path": ".tmp/real-ethusdt-scenario/config-wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1.json",
+          "candidate_id": "sac-deadband-005",
+          "seed": 62,
+          "feature_profile": "legacy",
+          "parameter_sha256": "3f796447c9e740777d70719e5a69a2381d8e6b89d71c8d8f89f20900eac97c60",
+          "attempt_recipe_sha256": "69f12d809455875a17dd15d679e7646786c69fe7380c2dae58c92a26e689870d"
+        },
+        {
+          "config_path": ".tmp/real-ethusdt-scenario/config-wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1.json",
+          "candidate_id": "sac-deadband-010",
+          "seed": 62,
+          "feature_profile": "legacy",
+          "parameter_sha256": "c1160f97ce851cd4004e0fb53395f5a636418c564c5f9a58005695cf61596301",
+          "attempt_recipe_sha256": "95c3ff8b5f81357f771591e3bbcd30fff068ca4513ef3b9823aad63276c51f86"
+        }
+      ],
+      "query_reservations": [
+        {
+          "query_id": "validation-0-sac-deadband-005",
+          "protocol_id": "real-ethusdt-wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1",
+          "kind": "validation",
+          "candidate": "sac-deadband-005",
+          "fold_id": "60-15-15-0000"
+        },
+        {
+          "query_id": "validation-0-sac-deadband-010",
+          "protocol_id": "real-ethusdt-wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1",
+          "kind": "validation",
+          "candidate": "sac-deadband-010",
+          "fold_id": "60-15-15-0000"
+        }
+      ]
+    },
+    {
+      "protocol_id": "real-ethusdt-wfo-deadband-2025-05-11-to-2025-08-26-v1",
+      "state": "ABORTED",
+      "config_files": [
+        ".tmp/real-ethusdt-scenario/config-wfo-deadband-fresh-2025-05-11-to-2025-08-26-v1.json"
+      ],
+      "config_candidates": [
+        {
+          "config_path": ".tmp/real-ethusdt-scenario/config-wfo-deadband-fresh-2025-05-11-to-2025-08-26-v1.json",
+          "candidate_id": "sac-deadband-001",
+          "seed": 62,
+          "feature_profile": "legacy",
+          "parameter_sha256": "01c7b7a0a2a489e62e596dff97e2a56039aa78c1592f95a9244f168d55668943",
+          "attempt_recipe_sha256": "a2c975e97dd89d9827b0ee5db07bb05adb256c110b3f499c01e6f14dee912bb7"
+        },
+        {
+          "config_path": ".tmp/real-ethusdt-scenario/config-wfo-deadband-fresh-2025-05-11-to-2025-08-26-v1.json",
+          "candidate_id": "sac-deadband-005",
+          "seed": 62,
+          "feature_profile": "legacy",
+          "parameter_sha256": "3f796447c9e740777d70719e5a69a2381d8e6b89d71c8d8f89f20900eac97c60",
+          "attempt_recipe_sha256": "69f12d809455875a17dd15d679e7646786c69fe7380c2dae58c92a26e689870d"
+        }
+      ],
+      "query_reservations": [
+        {
+          "query_id": "validation-0-sac-deadband-001",
+          "protocol_id": "real-ethusdt-wfo-deadband-2025-05-11-to-2025-08-26-v1",
+          "kind": "validation",
+          "candidate": "sac-deadband-001",
+          "fold_id": "60-15-15-0000"
+        },
+        {
+          "query_id": "validation-0-sac-deadband-005",
+          "protocol_id": "real-ethusdt-wfo-deadband-2025-05-11-to-2025-08-26-v1",
+          "kind": "validation",
+          "candidate": "sac-deadband-005",
+          "fold_id": "60-15-15-0000"
+        }
+      ]
+    },
+    {
+      "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2",
+      "state": "ABORTED",
+      "config_files": [
+        ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2/config.json"
+      ],
+      "config_candidates": [
+        {
+          "config_path": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2/config.json",
+          "candidate_id": "sac-causal-mtf-v1",
+          "seed": 62,
+          "feature_profile": "causal_mtf_v1",
+          "parameter_sha256": "01c7b7a0a2a489e62e596dff97e2a56039aa78c1592f95a9244f168d55668943",
+          "attempt_recipe_sha256": "b0738a9f9cabcb3541174487bf902094be9bc958ea9849ff68810a89a8f7fa2b"
+        },
+        {
+          "config_path": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2/config.json",
+          "candidate_id": "sac-causal-mtf-v2",
+          "seed": 62,
+          "feature_profile": "causal_mtf_v2",
+          "parameter_sha256": "01c7b7a0a2a489e62e596dff97e2a56039aa78c1592f95a9244f168d55668943",
+          "attempt_recipe_sha256": "45732db86c59fd4ef590e68cfc0793b8d31517c3ea275a02091507940411cb4a"
+        }
+      ],
+      "query_reservations": [
+        {
+          "query_id": "stress-validation-0-sac-causal-mtf-v1",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v1",
+          "fold_id": "60-15-15-0000"
+        },
+        {
+          "query_id": "validation-0-sac-causal-mtf-v1",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v1",
+          "fold_id": "60-15-15-0000"
+        },
+        {
+          "query_id": "validation-0-sac-causal-mtf-v2",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v2",
+          "fold_id": "60-15-15-0000"
+        }
+      ]
+    },
+    {
+      "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+      "state": "ABORTED",
+      "config_files": [
+        ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3/config.json"
+      ],
+      "config_candidates": [
+        {
+          "config_path": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3/config.json",
+          "candidate_id": "sac-causal-mtf-v1",
+          "seed": 62,
+          "feature_profile": "causal_mtf_v1",
+          "parameter_sha256": "01c7b7a0a2a489e62e596dff97e2a56039aa78c1592f95a9244f168d55668943",
+          "attempt_recipe_sha256": "b0738a9f9cabcb3541174487bf902094be9bc958ea9849ff68810a89a8f7fa2b"
+        },
+        {
+          "config_path": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3/config.json",
+          "candidate_id": "sac-causal-mtf-v2",
+          "seed": 62,
+          "feature_profile": "causal_mtf_v2",
+          "parameter_sha256": "01c7b7a0a2a489e62e596dff97e2a56039aa78c1592f95a9244f168d55668943",
+          "attempt_recipe_sha256": "45732db86c59fd4ef590e68cfc0793b8d31517c3ea275a02091507940411cb4a"
+        }
+      ],
+      "query_reservations": [
+        {
+          "query_id": "stress-validation-0-sac-causal-mtf-v1",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v1",
+          "fold_id": "60-15-15-0000"
+        },
+        {
+          "query_id": "stress-validation-0-sac-causal-mtf-v2",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v2",
+          "fold_id": "60-15-15-0000"
+        },
+        {
+          "query_id": "validation-0-sac-causal-mtf-v1",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v1",
+          "fold_id": "60-15-15-0000"
+        },
+        {
+          "query_id": "validation-0-sac-causal-mtf-v2",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v2",
+          "fold_id": "60-15-15-0000"
+        }
+      ]
+    },
+    {
+      "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1",
+      "state": "ABORTED",
+      "config_files": [
+        ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1/config.json"
+      ],
+      "config_candidates": [
+        {
+          "config_path": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1/config.json",
+          "candidate_id": "sac-causal-mtf-v1",
+          "seed": 62,
+          "feature_profile": "causal_mtf_v1",
+          "parameter_sha256": "01c7b7a0a2a489e62e596dff97e2a56039aa78c1592f95a9244f168d55668943",
+          "attempt_recipe_sha256": "b0738a9f9cabcb3541174487bf902094be9bc958ea9849ff68810a89a8f7fa2b"
+        },
+        {
+          "config_path": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1/config.json",
+          "candidate_id": "sac-causal-mtf-v2",
+          "seed": 62,
+          "feature_profile": "causal_mtf_v2",
+          "parameter_sha256": "01c7b7a0a2a489e62e596dff97e2a56039aa78c1592f95a9244f168d55668943",
+          "attempt_recipe_sha256": "45732db86c59fd4ef590e68cfc0793b8d31517c3ea275a02091507940411cb4a"
+        }
+      ],
+      "query_reservations": [
+        {
+          "query_id": "validation-0-sac-causal-mtf-v1",
+          "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1",
+          "kind": "validation",
+          "candidate": "sac-causal-mtf-v1",
+          "fold_id": "60-15-15-0000"
+        }
+      ]
+    },
+    {
+      "protocol_id": "real-ethusdt-wfo-fresh-2025-01-24-2025-05-10-v1",
+      "state": "ABORTED",
+      "config_files": [
+        ".tmp/real-ethusdt-scenario/config-wfo-fresh-2025-01-24-to-2025-05-10-v1-validate.json",
+        ".tmp/real-ethusdt-scenario/config-wfo-fresh-2025-01-24-to-2025-05-10-v1.json"
+      ],
+      "config_candidates": [
+        {
+          "config_path": ".tmp/real-ethusdt-scenario/config-wfo-fresh-2025-01-24-to-2025-05-10-v1-validate.json",
+          "candidate_id": "ppo-fullpass",
+          "seed": 61,
+          "feature_profile": "legacy",
+          "parameter_sha256": "c8d9608dbd46cfdfe426b8561184dab7b4b711a947a8f4232c83ccb5c0196368",
+          "attempt_recipe_sha256": "7313a6c0eae0094a717e028430a11497a9d7d80a472fdea1cf023caabe1e7a43"
+        },
+        {
+          "config_path": ".tmp/real-ethusdt-scenario/config-wfo-fresh-2025-01-24-to-2025-05-10-v1-validate.json",
+          "candidate_id": "sac-fullpass",
+          "seed": 62,
+          "feature_profile": "legacy",
+          "parameter_sha256": "1e3497be298713c0ac608f77bb93d3c55331515a1ab5c4d4e924295e8b47df50",
+          "attempt_recipe_sha256": "4c60db7fe7651f769c6da1137491847bae12f2c72b85cba8cf1879e7b7f7fcbe"
+        },
+        {
+          "config_path": ".tmp/real-ethusdt-scenario/config-wfo-fresh-2025-01-24-to-2025-05-10-v1.json",
+          "candidate_id": "ppo-fullpass",
+          "seed": 61,
+          "feature_profile": "legacy",
+          "parameter_sha256": "c8d9608dbd46cfdfe426b8561184dab7b4b711a947a8f4232c83ccb5c0196368",
+          "attempt_recipe_sha256": "7313a6c0eae0094a717e028430a11497a9d7d80a472fdea1cf023caabe1e7a43"
+        },
+        {
+          "config_path": ".tmp/real-ethusdt-scenario/config-wfo-fresh-2025-01-24-to-2025-05-10-v1.json",
+          "candidate_id": "sac-fullpass",
+          "seed": 62,
+          "feature_profile": "legacy",
+          "parameter_sha256": "1e3497be298713c0ac608f77bb93d3c55331515a1ab5c4d4e924295e8b47df50",
+          "attempt_recipe_sha256": "4c60db7fe7651f769c6da1137491847bae12f2c72b85cba8cf1879e7b7f7fcbe"
+        }
+      ],
+      "query_reservations": [
+        {
+          "query_id": "validation-0-ppo-fullpass",
+          "protocol_id": "real-ethusdt-wfo-fresh-2025-01-24-2025-05-10-v1",
+          "kind": "validation",
+          "candidate": "ppo-fullpass",
+          "fold_id": "60-15-15-0000"
+        },
+        {
+          "query_id": "validation-0-sac-fullpass",
+          "protocol_id": "real-ethusdt-wfo-fresh-2025-01-24-2025-05-10-v1",
+          "kind": "validation",
+          "candidate": "sac-fullpass",
+          "fold_id": "60-15-15-0000"
+        }
+      ]
+    },
+    {
+      "protocol_id": "real-ethusdt-wfo-real-fullpass-60-15-15-v1",
+      "state": "ABORTED",
+      "config_files": [
+        ".tmp/real-ethusdt-scenario/config-wfo-real-fullpass-60-15-15-v1.json"
+      ],
+      "config_candidates": [
+        {
+          "config_path": ".tmp/real-ethusdt-scenario/config-wfo-real-fullpass-60-15-15-v1.json",
+          "candidate_id": "ppo-fullpass",
+          "seed": 61,
+          "feature_profile": "legacy",
+          "parameter_sha256": "c8d9608dbd46cfdfe426b8561184dab7b4b711a947a8f4232c83ccb5c0196368",
+          "attempt_recipe_sha256": "7313a6c0eae0094a717e028430a11497a9d7d80a472fdea1cf023caabe1e7a43"
+        },
+        {
+          "config_path": ".tmp/real-ethusdt-scenario/config-wfo-real-fullpass-60-15-15-v1.json",
+          "candidate_id": "sac-fullpass",
+          "seed": 62,
+          "feature_profile": "legacy",
+          "parameter_sha256": "1e3497be298713c0ac608f77bb93d3c55331515a1ab5c4d4e924295e8b47df50",
+          "attempt_recipe_sha256": "4c60db7fe7651f769c6da1137491847bae12f2c72b85cba8cf1879e7b7f7fcbe"
+        }
+      ],
+      "query_reservations": [
+        {
+          "query_id": "validation-0-ppo-fullpass",
+          "protocol_id": "real-ethusdt-wfo-real-fullpass-60-15-15-v1",
+          "kind": "validation",
+          "candidate": "ppo-fullpass",
+          "fold_id": "60-15-15-0000"
+        },
+        {
+          "query_id": "validation-0-sac-fullpass",
+          "protocol_id": "real-ethusdt-wfo-real-fullpass-60-15-15-v1",
+          "kind": "validation",
+          "candidate": "sac-fullpass",
+          "fold_id": "60-15-15-0000"
+        }
+      ]
+    },
+    {
+      "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1",
+      "state": "ABORTED",
+      "config_files": [
+        ".tmp/real-ethusdt-scenario/config-wfo-sacentcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1.json"
+      ],
+      "config_candidates": [
+        {
+          "config_path": ".tmp/real-ethusdt-scenario/config-wfo-sacentcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1.json",
+          "candidate_id": "sac-entcoef-auto",
+          "seed": 62,
+          "feature_profile": "legacy",
+          "parameter_sha256": "3f796447c9e740777d70719e5a69a2381d8e6b89d71c8d8f89f20900eac97c60",
+          "attempt_recipe_sha256": "69f12d809455875a17dd15d679e7646786c69fe7380c2dae58c92a26e689870d"
+        },
+        {
+          "config_path": ".tmp/real-ethusdt-scenario/config-wfo-sacentcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1.json",
+          "candidate_id": "sac-entcoef-fixed-001",
+          "seed": 62,
+          "feature_profile": "legacy",
+          "parameter_sha256": "dbfbb1ab5cf04a3603a2f31247059415a76131b1f09c362f00ce4d2f59e3e65c",
+          "attempt_recipe_sha256": "6322c1c8ef228d01b70b9bb209589cea3bbac8ea2f1308b6fa52eed13e682102"
+        }
+      ],
+      "query_reservations": [
+        {
+          "query_id": "validation-0-sac-entcoef-auto",
+          "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1",
+          "kind": "validation",
+          "candidate": "sac-entcoef-auto",
+          "fold_id": "60-15-15-0000"
+        },
+        {
+          "query_id": "validation-0-sac-entcoef-fixed-001",
+          "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1",
+          "kind": "validation",
+          "candidate": "sac-entcoef-fixed-001",
+          "fold_id": "60-15-15-0000"
+        }
+      ]
+    },
+    {
+      "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+      "state": "CLOSED",
+      "config_files": [
+        ".tmp/real-ethusdt-scenario/config-wfo-sacentcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1.json"
+      ],
+      "config_candidates": [
+        {
+          "config_path": ".tmp/real-ethusdt-scenario/config-wfo-sacentcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1.json",
+          "candidate_id": "sac-entcoef-auto",
+          "seed": 62,
+          "feature_profile": "legacy",
+          "parameter_sha256": "3f796447c9e740777d70719e5a69a2381d8e6b89d71c8d8f89f20900eac97c60",
+          "attempt_recipe_sha256": "69f12d809455875a17dd15d679e7646786c69fe7380c2dae58c92a26e689870d"
+        },
+        {
+          "config_path": ".tmp/real-ethusdt-scenario/config-wfo-sacentcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1.json",
+          "candidate_id": "sac-entcoef-fixed-001",
+          "seed": 62,
+          "feature_profile": "legacy",
+          "parameter_sha256": "dbfbb1ab5cf04a3603a2f31247059415a76131b1f09c362f00ce4d2f59e3e65c",
+          "attempt_recipe_sha256": "6322c1c8ef228d01b70b9bb209589cea3bbac8ea2f1308b6fa52eed13e682102"
+        }
+      ],
+      "query_reservations": [
+        {
+          "query_id": "test-0-sac-entcoef-fixed-001",
+          "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+          "kind": "test",
+          "candidate": "sac-entcoef-fixed-001",
+          "fold_id": "60-15-15-0000"
+        },
+        {
+          "query_id": "validation-0-sac-entcoef-auto",
+          "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+          "kind": "validation",
+          "candidate": "sac-entcoef-auto",
+          "fold_id": "60-15-15-0000"
+        },
+        {
+          "query_id": "validation-0-sac-entcoef-fixed-001",
+          "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+          "kind": "validation",
+          "candidate": "sac-entcoef-fixed-001",
+          "fold_id": "60-15-15-0000"
+        }
+      ]
+    },
+    {
+      "protocol_id": "engineering-real-wfo-validation-recovery-20261013",
+      "state": "SUSPENDED",
+      "config_files": [
+        ".tmp/wfo-validation-recovery-20261013/config.json"
+      ],
+      "config_candidates": [
+        {
+          "config_path": ".tmp/wfo-validation-recovery-20261013/config.json",
+          "candidate_id": "engineering-a",
+          "seed": 31,
+          "feature_profile": "legacy",
+          "parameter_sha256": "d84ef20171f9372d4a9680d6d16537a63e1bee10c222e6a9ffc87bddfce5f3c5",
+          "attempt_recipe_sha256": "8a767e00c4e92a43ea9398084b9dda303f5e4492f37b8964f2048a01b09353fc"
+        },
+        {
+          "config_path": ".tmp/wfo-validation-recovery-20261013/config.json",
+          "candidate_id": "engineering-b",
+          "seed": 32,
+          "feature_profile": "legacy",
+          "parameter_sha256": "d84ef20171f9372d4a9680d6d16537a63e1bee10c222e6a9ffc87bddfce5f3c5",
+          "attempt_recipe_sha256": "fec9900509d3d3b576e4a12ea3dda19d321a908b4d9a8fba39f495b9671c7a16"
+        }
+      ],
+      "query_reservations": [
+        {
+          "query_id": "validation-0-engineering-a",
+          "protocol_id": "engineering-real-wfo-validation-recovery-20261013",
+          "kind": "validation",
+          "candidate": "engineering-a",
+          "fold_id": "60-15-15-0000"
+        }
+      ]
+    }
+  ],
+  "query_reservations": [
+    {
+      "database": ".tmp/real-ethusdt-scenario/wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1/run/research.sqlite",
+      "query_id": "validation-0-sac-deadband-005",
+      "protocol_id": "real-ethusdt-wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1",
+      "kind": "validation",
+      "candidate": "sac-deadband-005",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    },
+    {
+      "database": ".tmp/real-ethusdt-scenario/wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1/run/research.sqlite",
+      "query_id": "validation-0-sac-deadband-010",
+      "protocol_id": "real-ethusdt-wfo-deadband-005-vs-010-2025-08-27-to-2025-12-12-v1",
+      "kind": "validation",
+      "candidate": "sac-deadband-010",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    },
+    {
+      "database": ".tmp/real-ethusdt-scenario/wfo-deadband-fresh-2025-05-11-to-2025-08-26-v1/run/research.sqlite",
+      "query_id": "validation-0-sac-deadband-001",
+      "protocol_id": "real-ethusdt-wfo-deadband-2025-05-11-to-2025-08-26-v1",
+      "kind": "validation",
+      "candidate": "sac-deadband-001",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    },
+    {
+      "database": ".tmp/real-ethusdt-scenario/wfo-deadband-fresh-2025-05-11-to-2025-08-26-v1/run/research.sqlite",
+      "query_id": "validation-0-sac-deadband-005",
+      "protocol_id": "real-ethusdt-wfo-deadband-2025-05-11-to-2025-08-26-v1",
+      "kind": "validation",
+      "candidate": "sac-deadband-005",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    },
+    {
+      "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2/run/research.sqlite",
+      "query_id": "stress-validation-0-sac-causal-mtf-v1",
+      "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2",
+      "kind": "validation",
+      "candidate": "sac-causal-mtf-v1",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    },
+    {
+      "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2/run/research.sqlite",
+      "query_id": "validation-0-sac-causal-mtf-v1",
+      "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2",
+      "kind": "validation",
+      "candidate": "sac-causal-mtf-v1",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    },
+    {
+      "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2/run/research.sqlite",
+      "query_id": "validation-0-sac-causal-mtf-v2",
+      "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r2",
+      "kind": "validation",
+      "candidate": "sac-causal-mtf-v2",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    },
+    {
+      "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3/run/research.sqlite",
+      "query_id": "stress-validation-0-sac-causal-mtf-v1",
+      "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+      "kind": "validation",
+      "candidate": "sac-causal-mtf-v1",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    },
+    {
+      "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3/run/research.sqlite",
+      "query_id": "stress-validation-0-sac-causal-mtf-v2",
+      "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+      "kind": "validation",
+      "candidate": "sac-causal-mtf-v2",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    },
+    {
+      "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3/run/research.sqlite",
+      "query_id": "validation-0-sac-causal-mtf-v1",
+      "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+      "kind": "validation",
+      "candidate": "sac-causal-mtf-v1",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    },
+    {
+      "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3/run/research.sqlite",
+      "query_id": "validation-0-sac-causal-mtf-v2",
+      "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-r3",
+      "kind": "validation",
+      "candidate": "sac-causal-mtf-v2",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    },
+    {
+      "database": ".tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1/.tmp/real-ethusdt-scenario/wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1/run/research.sqlite",
+      "query_id": "validation-0-sac-causal-mtf-v1",
+      "protocol_id": "real-ethusdt-wfo-feature-ablation-v1-v2-2025-05-11-to-2025-08-26-v1",
+      "kind": "validation",
+      "candidate": "sac-causal-mtf-v1",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    },
+    {
+      "database": ".tmp/real-ethusdt-scenario/wfo-fresh-2025-01-24-to-2025-05-10-v1/run/research.sqlite",
+      "query_id": "validation-0-ppo-fullpass",
+      "protocol_id": "real-ethusdt-wfo-fresh-2025-01-24-2025-05-10-v1",
+      "kind": "validation",
+      "candidate": "ppo-fullpass",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    },
+    {
+      "database": ".tmp/real-ethusdt-scenario/wfo-fresh-2025-01-24-to-2025-05-10-v1/run/research.sqlite",
+      "query_id": "validation-0-sac-fullpass",
+      "protocol_id": "real-ethusdt-wfo-fresh-2025-01-24-2025-05-10-v1",
+      "kind": "validation",
+      "candidate": "sac-fullpass",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    },
+    {
+      "database": ".tmp/real-ethusdt-scenario/wfo-real-fullpass-60-15-15-v1/run/research.sqlite",
+      "query_id": "validation-0-ppo-fullpass",
+      "protocol_id": "real-ethusdt-wfo-real-fullpass-60-15-15-v1",
+      "kind": "validation",
+      "candidate": "ppo-fullpass",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    },
+    {
+      "database": ".tmp/real-ethusdt-scenario/wfo-real-fullpass-60-15-15-v1/run/research.sqlite",
+      "query_id": "validation-0-sac-fullpass",
+      "protocol_id": "real-ethusdt-wfo-real-fullpass-60-15-15-v1",
+      "kind": "validation",
+      "candidate": "sac-fullpass",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    },
+    {
+      "database": ".tmp/real-ethusdt-scenario/wfo-sacentcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1/run/research.sqlite",
+      "query_id": "validation-0-sac-entcoef-auto",
+      "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1",
+      "kind": "validation",
+      "candidate": "sac-entcoef-auto",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    },
+    {
+      "database": ".tmp/real-ethusdt-scenario/wfo-sacentcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1/run/research.sqlite",
+      "query_id": "validation-0-sac-entcoef-fixed-001",
+      "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2025-12-14-to-2026-03-29-v1",
+      "kind": "validation",
+      "candidate": "sac-entcoef-fixed-001",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    },
+    {
+      "database": ".tmp/real-ethusdt-scenario/wfo-sacentcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1/run/research.sqlite",
+      "query_id": "test-0-sac-entcoef-fixed-001",
+      "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+      "kind": "test",
+      "candidate": "sac-entcoef-fixed-001",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    },
+    {
+      "database": ".tmp/real-ethusdt-scenario/wfo-sacentcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1/run/research.sqlite",
+      "query_id": "validation-0-sac-entcoef-auto",
+      "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+      "kind": "validation",
+      "candidate": "sac-entcoef-auto",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    },
+    {
+      "database": ".tmp/real-ethusdt-scenario/wfo-sacentcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1/run/research.sqlite",
+      "query_id": "validation-0-sac-entcoef-fixed-001",
+      "protocol_id": "real-ethusdt-wfo-sac-entcoef-auto-vs-001-2026-04-01-to-2026-07-15-v1",
+      "kind": "validation",
+      "candidate": "sac-entcoef-fixed-001",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    },
+    {
+      "database": ".tmp/wfo-validation-recovery-20261013/run/research.sqlite",
+      "query_id": "validation-0-engineering-a",
+      "protocol_id": "engineering-real-wfo-validation-recovery-20261013",
+      "kind": "validation",
+      "candidate": "engineering-a",
+      "fold_id": "60-15-15-0000",
+      "matching_config_candidate": true,
+      "execution_completion": "not_proven_by_query_reservation"
+    }
+  ],
+  "effective_project_historical_trials": "not_estimated",
+  "limitations": [
+    "only the two roots in the frozen legacy access inventory are scanned",
+    "query reservations do not prove training/evaluation completion or failed attempt coverage",
+    "candidate recipe fingerprints omit code, data, window, and selection-history identity",
+    "manual selections and unledgered research are not represented",
+    "correlated candidate performance is unavailable for historical sensitivity analysis"
+  ]
+}

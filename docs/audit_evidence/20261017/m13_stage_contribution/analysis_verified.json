@@ -1,0 +1,157 @@
+{
+  "actor_sha256": "216a7d5017f802873b67c557bb77dc5d05ebdb073c6edbd4b2feb00bc1bb6b69",
+  "bundle_sha256": "d08f5586cf391bba106a116a2734d9e7bba2132a295a291543c81e024549446d",
+  "formal_evaluation_queries": {
+    "holdout": 0,
+    "test": 0,
+    "validation": 0
+  },
+  "interpretation_limit": "single reused Train-inner window with scenario-only execution rules; descriptive stage diagnostic, not an independent strategy result",
+  "modes": {
+    "base": {
+      "e2_metrics": {
+        "gross_return_before_reported_costs": -0.000131814001999938,
+        "max_drawdown": 0.0015097045530021447,
+        "net_return": -0.0015097045530021447,
+        "sharpe": -320.5314792190882,
+        "sortino": -331.21395970604004,
+        "total_fee": 11.431933549999997,
+        "total_funding": 0.01466804,
+        "total_slippage_cost": 2.361640000000001,
+        "turnover_ratio": 2.288196078262565
+      },
+      "equity_reconciliation": {
+        "e2_selected": {
+          "max_abs_residual": "5E-8",
+          "maximum_tolerance": 3.78e-06,
+          "rows": 480,
+          "terminal_flat": true
+        },
+        "r1_neutral": {
+          "max_abs_residual": "3E-8",
+          "maximum_tolerance": 4.13e-06,
+          "rows": 480,
+          "terminal_flat": true
+        }
+      },
+      "execution_deltas_e2_minus_r1": {
+        "fills": -35,
+        "hard_risk_interventions": 10,
+        "native_orders": -35,
+        "submit_decisions": -35
+      },
+      "final_equity_e2": 9984.90295447,
+      "final_equity_r1": 9973.41382017,
+      "initial_equity": 10000.0,
+      "metric_deltas_e2_minus_r1": {
+        "gross_return_before_reported_costs": 2.6350009999934546e-06,
+        "max_drawdown": -0.001148913429998788,
+        "net_return": 0.001148913429998788,
+        "sharpe": -98.12991755635005,
+        "sortino": -79.05444103255704,
+        "total_fee": -9.520493260000002,
+        "total_funding": -0.02466897,
+        "total_slippage_cost": -1.9669599999999954,
+        "turnover_ratio": -1.908274424547781
+      },
+      "mode": "base",
+      "native_equity_delta_e2_minus_r1": 11.489134299999932,
+      "paired_account_rows": 479,
+      "policy_decisions_per_arm": 477,
+      "r1_metrics": {
+        "gross_return_before_reported_costs": -0.00013444900299993147,
+        "max_drawdown": 0.0026586179830009327,
+        "net_return": -0.0026586179830009327,
+        "sharpe": -222.40156166273817,
+        "sortino": -252.159518673483,
+        "total_fee": 20.95242681,
+        "total_funding": 0.03933701,
+        "total_slippage_cost": 4.328599999999996,
+        "turnover_ratio": 4.196470502810346
+      },
+      "report_sha256": null,
+      "same_native_timestamps": true
+    },
+    "stress": {
+      "e2_metrics": {
+        "gross_return_before_reported_costs": -0.00015005800100007207,
+        "max_drawdown": 0.0031657849719988196,
+        "net_return": -0.0031657849719988196,
+        "sharpe": -551.7718324523173,
+        "sortino": -453.876243062921,
+        "total_fee": 20.087992230000008,
+        "total_funding": 0.01511252,
+        "total_slippage_cost": 10.084390000000012,
+        "turnover_ratio": 2.012020142126679
+      },
+      "equity_reconciliation": {
+        "e2_selected": {
+          "max_abs_residual": "2E-8",
+          "maximum_tolerance": 3.55e-06,
+          "rows": 480,
+          "terminal_flat": true
+        },
+        "r1_neutral": {
+          "max_abs_residual": "5E-8",
+          "maximum_tolerance": 4.06e-06,
+          "rows": 480,
+          "terminal_flat": true
+        }
+      },
+      "execution_deltas_e2_minus_r1": {
+        "fills": -51,
+        "hard_risk_interventions": 4,
+        "native_orders": -51,
+        "submit_decisions": -51
+      },
+      "final_equity_e2": 9968.34215028,
+      "final_equity_r1": 9944.15192851,
+      "initial_equity": 10000.0,
+      "metric_deltas_e2_minus_r1": {
+        "gross_return_before_reported_costs": 0.00015290699499990136,
+        "max_drawdown": -0.0024190221770025166,
+        "net_return": 0.0024190221770025166,
+        "sharpe": -104.98397264340167,
+        "sortino": -51.0773543462937,
+        "total_fee": -15.099370239999974,
+        "total_funding": -0.01866842,
+        "total_slippage_cost": -7.580449999999983,
+        "turnover_ratio": -1.5167219634116074
+      },
+      "mode": "stress",
+      "native_equity_delta_e2_minus_r1": 24.19022176999897,
+      "paired_account_rows": 479,
+      "policy_decisions_per_arm": 477,
+      "r1_metrics": {
+        "gross_return_before_reported_costs": -0.00030296499599997344,
+        "max_drawdown": 0.005584807149001336,
+        "net_return": -0.005584807149001336,
+        "sharpe": -446.78785980891564,
+        "sortino": -402.7988887166273,
+        "total_fee": 35.18736246999998,
+        "total_funding": 0.03378094,
+        "total_slippage_cost": 17.664839999999995,
+        "turnover_ratio": 3.5287421055382864
+      },
+      "report_sha256": null,
+      "same_native_timestamps": true
+    }
+  },
+  "preregistration_path": "docs/audit_evidence/20261017/m13_stage_contribution/preregistration_revision2.json",
+  "preregistration_sha256": "5f3631ce29bc58db722a309611bfd8e0b411f67beb45cbc31e651c717178613c",
+  "r1_neutral_multipliers": {
+    "drawdown_throttle": 1.0,
+    "exposure_multiplier": 1.0
+  },
+  "report_sha256": {
+    "base": "63bd2df21c6a7622f173cad9e3c8f05dae3ae239e66f83f04e0ea828c35ecc4f",
+    "stress": "c373c3ae87d5480d5947a9bb514eca17b6e7cec95c4f866e42bc370af5d4fa65"
+  },
+  "schema": "rles.m13-stage-contribution-independent-analysis.v1",
+  "selected_e2_multipliers": {
+    "drawdown_throttle": 0.517038340871133,
+    "exposure_multiplier": 0.47419330025202333
+  },
+  "stage_pair": "A2 R1 neutral SoftRisk -> selected E2 SoftRisk",
+  "status": "verified_train_inner_diagnostic"
+}

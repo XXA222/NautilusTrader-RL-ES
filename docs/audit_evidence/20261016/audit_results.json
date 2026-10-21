@@ -1,0 +1,325 @@
+{
+  "audit_date": "2026-10-16",
+  "head": "c24d1bc4a47584f91a4c4db93bf77117d4e8341c",
+  "scope": "uncommitted working tree; synthetic probes; existing Train artifacts",
+  "probes": {
+    "scaler": {
+      "cached_hash_unchanged": true,
+      "fresh_digest_changed": true,
+      "transform_changed_without_guard_error": true,
+      "before": [
+        [
+          0.0,
+          -18.0,
+          0.0,
+          -2.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "after": [
+        [
+          0.0,
+          -18.0,
+          0.0,
+          -102.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      ]
+    },
+    "ledger": {
+      "same_ledger_repeat_blocked": true,
+      "same_holdout_opened_in_two_databases": [
+        "HOLDOUT_OPENED",
+        "HOLDOUT_OPENED"
+      ]
+    },
+    "voluntary_flat": {
+      "current_exposure_risk_budget_units": 0.05,
+      "requested_target": 0,
+      "deadband": 0.1,
+      "action": "NOOP",
+      "reason": "deadband",
+      "interpretation": "ordinary zero target can retain a valid nonzero position inside deadband"
+    },
+    "standalone_holdout": {
+      "two_calls_succeeded": true,
+      "same_metrics": true,
+      "ledger_before": {
+        "query": 0,
+        "audit": 2
+      },
+      "ledger_after": {
+        "query": 0,
+        "audit": 2
+      },
+      "scope": "synthetic fixture only; no real Holdout was accessed"
+    }
+  },
+  "candidate": {
+    "summary": {
+      "actions": 1414077,
+      "bundle_sha256": "ea2ea516780f25756c7dae35636ee59eca7e3443a24259c6b58526b2536fec68",
+      "evaluation_queries": 0,
+      "executed_nonzero_fraction": 0.0,
+      "execution_groups": [
+        {
+          "action": "NOOP",
+          "count": 1414077,
+          "executed_abs_mean": 0.0,
+          "executed_mean": 0.0,
+          "executed_nonzero_fraction": 0.0,
+          "fraction": 1.0,
+          "reason": "deadband",
+          "requested_abs_mean": 0.019647240488412526,
+          "requested_long_fraction": 4.243050413803492e-06,
+          "requested_mean": -0.01964723440155608,
+          "requested_short_fraction": 0.9999950497745173,
+          "requested_to_executed_gap_abs_mean": 0.019647240488412526,
+          "risk_targets": {
+            "components_known": true,
+            "count": 1414077,
+            "requested_to_soft_gap_abs_mean": 1.5675227794615076e-06,
+            "risk_target_abs_mean": 0.019645672965633028,
+            "risk_to_executed_gap_abs_mean": 0.019645672965633028,
+            "soft_target_abs_mean": 0.019645672965633028,
+            "soft_to_risk_gap_abs_mean": 0.0
+          }
+        }
+      ],
+      "interpretation": "all 1,414,077 policy actions were NOOP from deadband; zero return is a no-trade result, not evidence of profitability",
+      "max_drawdown": 0.0,
+      "net_return": 0.0,
+      "observations": 1414078,
+      "report_sha256": "5281016794fb3390837c5472e414c06ac076e9a99a26c1f1437bb71f49959eb5",
+      "requested_abs_mean": 0.019647240488412526,
+      "requested_abs_p95": 0.0443238705396652,
+      "scaler_refitted": false,
+      "schema": "rles.stage66.candidate-verification.v1",
+      "status": "PASS",
+      "total_fee": 0.0,
+      "total_funding": 0.0,
+      "total_slippage_cost": 0.0,
+      "turnover_ratio": 0.0
+    },
+    "actual_report_sha256": "5281016794fb3390837c5472e414c06ac076e9a99a26c1f1437bb71f49959eb5",
+    "report_hash_matches_summary": true
+  },
+  "control": {
+    "summary": {
+      "action_counts": {
+        "NOOP": 1414033,
+        "SUBMIT": 44
+      },
+      "actions": 1414077,
+      "bundle_sha256": "cec246832d0f2d9ac75eec762e016f9efd63b02968740c8fa068cc3a8be7899c",
+      "config_sha256": "a9b89201c04079da943a69dd193cc585d2701b3f45cb3b6ae85976b74ed8ba52",
+      "deadband": "0.05",
+      "diagnostic_scope": {
+        "end_ns": 1788912060001000000,
+        "evaluation_queries": 0,
+        "purpose": "exploratory mechanism diagnosis; not independent strategy acceptance",
+        "scaler_refitted": false,
+        "split": "train_inner",
+        "start_ns": 1704067260001000000
+      },
+      "executed_abs_mean": 0.05509280048454928,
+      "executed_nonzero_fraction": 0.9977264321532703,
+      "fills": 45,
+      "funding_events": 2939,
+      "gross_return_before_reported_costs": -0.0024188979989999693,
+      "interpretation": "0.05 deadband permitted initial position and 43 rebalances, while 99.9969% of plans remained NOOP; full Train net return was negative, so this control is not profitable.",
+      "liquidations": 0,
+      "max_drawdown": 0.006749955225566873,
+      "net_return": -0.0013056014180726772,
+      "observations": 1414078,
+      "reason_counts": {
+        "deadband": 1414033,
+        "hard_risk_reduce": 1,
+        "rebalance": 43
+      },
+      "report_sha256": "2d36b60737a663484a049cde209300f6be2f0ba311b2d3dfd2aae1489c7a4a42",
+      "requested_abs_mean": 0.03512893715069834,
+      "requested_abs_p95": 0.053781303763389576,
+      "schema": "rles.stage66.control-verification.v1",
+      "seed": 102,
+      "sharpe": -0.12493440285494292,
+      "sortino": -0.17921842893037454,
+      "source_config_sha256": "c6fb6629df367f1e7b4c54f55403e1f43960f8afd6b51f3fdaee8ff029eb06fe",
+      "status": "PASS",
+      "terminal_flat": true,
+      "total_fee": 1.21926592,
+      "total_funding": 12.59972173,
+      "total_slippage_cost": 0.24749,
+      "turnover_ratio": 0.24429695535581025
+    },
+    "actual_report_sha256": "2d36b60737a663484a049cde209300f6be2f0ba311b2d3dfd2aae1489c7a4a42",
+    "report_hash_matches_summary": true
+  },
+  "recipe": {
+    "steps": 32768,
+    "algorithm": "PPO",
+    "seed": 102,
+    "hyperparameters": {
+      "n_steps": 2048,
+      "batch_size": 512,
+      "n_epochs": 5,
+      "learning_rate": 0.0001,
+      "gamma": 0.99,
+      "gae_lambda": 0.9,
+      "clip_range": 0.2,
+      "ent_coef": 0.0,
+      "vf_coef": 1.0,
+      "max_grad_norm": 0.5,
+      "log_std_init": -2.0,
+      "zero_init_action_head": true
+    },
+    "normalize_observation": true,
+    "hidden_layers": [
+      64,
+      64
+    ],
+    "reward_scale": 1000.0,
+    "rl_num_envs": 1,
+    "rl_episode_steps": 8192,
+    "rl_corpus_episode_steps": 256,
+    "economic_units": {
+      "starting_balance": "10000",
+      "risk_budget_notional": "1000",
+      "feature_profile": "legacy"
+    }
+  },
+  "coverage": {
+    "sample_fraction": 0.0231727126599188,
+    "sample_days": 22.755555555555556,
+    "episode_days": 5.688888888888889,
+    "discount_half_life_steps": 68.96756393652842,
+    "gae_geometric_scale_steps": 9.174311926605506
+  },
+  "profiling": {
+    "rollout_seconds": [
+      10.239094799995655,
+      9.511869299982209,
+      7.934569900011411,
+      7.152429299982032
+    ],
+    "aggregate_comparison_equal": true,
+    "full_action_trace_compared": false
+  },
+  "source_sha256": {
+    "packages/compute_runtime/src/rles_compute_runtime/__init__.py": "4192562a58d400efc2ff1f10640bfe263dfddd56b7b7c0f063de552fa32bdfae",
+    "packages/compute_runtime/src/rles_compute_runtime/allocation.py": "5d74cb7d1c2ac77ce1e87f1faba9933531c95bc371d0561662dec4c8565d41fe",
+    "packages/compute_runtime/src/rles_compute_runtime/benchmark.py": "08a6e0983d23890c9fa933ee4729abb20a94846a8e634d67046b6739154b742e",
+    "packages/compute_runtime/src/rles_compute_runtime/device.py": "7e65aaf5079f3f81fab77ba9dcac70d7c12e8a19a56684742d92b4abcb333b67",
+    "packages/compute_runtime/src/rles_compute_runtime/errors.py": "2e3f44bb9db9277177287b006a56efa68c49f126df163e4b963fc7b07b011fb6",
+    "packages/compute_runtime/src/rles_compute_runtime/faults.py": "b615eece397f8c44382cc1b0720c51a06e0ffef1bc41bf0ec885b387df1f7331",
+    "packages/compute_runtime/src/rles_compute_runtime/lanes.py": "3e5d7558750b627e60cc27397914a640250f565839e65797c82b3455f1ba9c29",
+    "packages/compute_runtime/src/rles_compute_runtime/provider.py": "b8a83a8171ef35e75e39d2ad86e7f9d60b0ad78feae3b47443dfe4cf59cc8325",
+    "packages/compute_runtime/src/rles_compute_runtime/recovery.py": "5feaf49fb0f2fe9e76d35d13a25d378cdc661a0e6c9466547f0ae549e59a4ba5",
+    "packages/compute_runtime/src/rles_compute_runtime/resources.py": "30a376ac9d02c7a014b589192631452303d85afb07ccde0f02f8c04d1ff73b5c",
+    "packages/compute_runtime/src/rles_compute_runtime/transport.py": "eb3c07e982837453096cdf045d73772a827c58450244ba7b4dbc8e02fde8d4bb",
+    "packages/compute_runtime/src/rles_compute_runtime/validation.py": "6aa90ff405c6524a99e05b0b67b8830cf366ed5653b8e04c617f290646c998ab",
+    "packages/compute_runtime/src/rles_compute_runtime/windows_job.py": "15b1e9b35175cfc18ad0267264f994885d04e7b5c3d0fc24728502e4bea6c0e3",
+    "packages/compute_runtime/src/rles_compute_runtime/windows_recovery.py": "52b0077bd24e165624643d8358b8154c3bceb727f3538d1e9191e2d4542e0dea",
+    "packages/compute_runtime/src/rles_compute_runtime/workers.py": "a0462ddfda025386de6eb01d32e737575e34932c91ea641b589634f10ec0c14b",
+    "packages/contracts/src/rles_contracts/__init__.py": "4c005291ad47f0c81127b07558d251eb39c7749f54e727ce9264c972a1271649",
+    "packages/contracts/src/rles_contracts/catalog.py": "ced9d418aec9dae78122ca1ef0415631c2a2a16cf6ab45d4b212a5556166c74a",
+    "packages/contracts/src/rles_contracts/config.py": "28e1d9225c35af39e9fc5cddbc459fd488fc276ae4687f2f647891539954d120",
+    "packages/contracts/src/rles_contracts/dto.py": "1cdd2c69e3ee8466e44e6a938bf1b7d0bfcceffb8337f04e37bc3d8ec11e837a",
+    "packages/contracts/src/rles_contracts/errors.py": "e5f1d8d400bee5c54363236d6591e6889d4d3bb4f846fa873c4979ba86e7a814",
+    "packages/contracts/src/rles_contracts/frozen.py": "82ed91d749810fa66a0949c13853b900adfb9a0eb9c19e7c5c9987d08da4e7f5",
+    "packages/contracts/src/rles_contracts/manifest.py": "de1b7e84be20a3772dfe62dd84c0707a39ab9dcbcbea91f9adad454f8f720576",
+    "packages/contracts/src/rles_contracts/protocols.py": "04c46dd46e99d6e2e6bd74029e2cfdbebb8e43f514d270c8d3481594a89a774d",
+    "packages/contracts/src/rles_contracts/registry.py": "eeadaf173780b899612dcbdbf3a2f921d964b57e60c545cf3bdee11ff54c32ce",
+    "packages/contracts/src/rles_contracts/risk_contracts.py": "5891a40617969638e7603a7c8bce00d33c679a985b8e66be30382543fa01d864",
+    "packages/contracts/src/rles_contracts/schema.py": "ac9201a13c6b151beadc91f9d819c7894c2e8e49fb8a37c62556728f085951e4",
+    "packages/contracts/src/rles_contracts/seed.py": "0963ed44a4fd11559017dbeba49aa08a5d9d6a0181c6f7b76abe8907c127d128",
+    "packages/contracts/src/rles_contracts/serialization.py": "1f593aea69ef8dc567f99df61683e7c9e1917f6b8a65ce18fbf265d8e3e1c30f",
+    "packages/contracts/src/rles_contracts/validation.py": "bb31f15f32355debfec07cd7cddfc6b15c3c2a9cae6c65cd79b7b46febfaade4",
+    "packages/data/src/rles_data/__init__.py": "09f09ec8fb997b6afc6a4db558cdd574e1689cc9d0d28de32c2509fd80394d3f",
+    "packages/data/src/rles_data/__main__.py": "fa965a3551fe60781607b522c95b53ac8149e8f5fe5afa051917a2280955efe0",
+    "packages/data/src/rles_data/binance_archive.py": "09e3ce984df8e0b5083f9dc17ac35649dab707c6536dfd374a25f61a2b3f0fb5",
+    "packages/data/src/rles_data/contracts.py": "388f8fa47fda76aae37d5cb5dc5cfee6b87930e1ba7ad4d354ab74a240138c12",
+    "packages/data/src/rles_data/core.py": "5f29242b3e9c3b523ca165b539891f3ec9eae3e166d887338e281a2baef053a5",
+    "packages/data/src/rles_data/coverage.py": "5414bd9036e1fa54802fb008e6edc8bab7a5784437ce6320d1ca1510c86a2666",
+    "packages/data/src/rles_data/features.py": "dafd456f774aa274f4ee96fe096447a85890646855aaac0a82d179e753c6f969",
+    "packages/data/src/rles_data/folds.py": "ba69ab8b478d3ab1b371cf79760bae5a02225b7b7af2d7cda0765741d85c73ce",
+    "packages/data/src/rles_data/io.py": "ff6c97540fc7c4ee0cc697d737284f8d1e206aa2803172123e73cc3256ad5395",
+    "packages/data/src/rles_data/quality.py": "875ab89b5c6fbec89f56e3503efc8378a205754ec4b80041709e24c58bf789df",
+    "packages/data/src/rles_data/schemas.py": "d07dba0961b5c12e1b62edabafde5f341ce8160e7e1eb3027a2995d8bec7da2e",
+    "packages/es_evotorch/src/rles_es_evotorch/__init__.py": "17776e50c502de6cdc36576c84acc35eaa083a85f3e23ecac9dcf0b5649e71ad",
+    "packages/es_evotorch/src/rles_es_evotorch/actor.py": "92a05a59560c8bb619d4d2bbcbcb47bb8665b7b7711f45af03e6a14d12ef0ecc",
+    "packages/es_evotorch/src/rles_es_evotorch/checkpoint.py": "e7e992e981e36c7e5c89af43b395d149cf0b14ba9d27cb6c7b50bf1c1f5ecd0b",
+    "packages/es_evotorch/src/rles_es_evotorch/evaluation.py": "5417ab34c1c27dc4b61af1ff54160ff74445ec2c5e53eb312b74adf98bd830de",
+    "packages/es_evotorch/src/rles_es_evotorch/fitness.py": "6259db5906bd53756a724ad1dc48c8bf88096d42b0050c8fa713ad9822b6226b",
+    "packages/es_evotorch/src/rles_es_evotorch/provider.py": "a3c876017e4b5e591fc531c556033b0e60b20668a6c8b0e4cfd8c6a9cc06ebda",
+    "packages/es_evotorch/src/rles_es_evotorch/soft_risk.py": "18d517472533dd1573f12d0447621f8018539096888f672aeb6b37aa11053388",
+    "packages/execution/src/rles_execution/__init__.py": "ab724ec81e187bb50e701189578ead3d7e8fea1d959250f9e46e3b7ff81309ff",
+    "packages/execution/src/rles_execution/faults.py": "9229728c633159b7377dfb13aaa0239970ba8a64a7519fc9a3265c4dc2dbbf05",
+    "packages/execution/src/rles_execution/planner.py": "0f85219ffbb8bf3db90bea5bafc47c886601b0cea69fd56dd5db29e8e841e0a2",
+    "packages/execution/src/rles_execution/spec.py": "82b3eac3418fdb4cf7eba7aad526414af8c83bc60c3b9abc9227c2778d6a8ca6",
+    "packages/execution/src/rles_execution/stress.py": "a7ed6b92f2a28dca653d632015cb2afb139fd8a1c2d8f2f10cb77571c43a932a",
+    "packages/gym_bridge/src/rles_gym_bridge/__init__.py": "8a5e356dbb290f5965b0be59edfb3f39220199eb4c4aacabaf9286d08c267331",
+    "packages/gym_bridge/src/rles_gym_bridge/env.py": "1368780bfae567bb2ce93ad8be77cb6d3a29a4571ffc8e03275484d3300b594d",
+    "packages/gym_bridge/src/rles_gym_bridge/episode.py": "5208cf2fc44b0f8ee6d2eda6d519ab1b67f5054f2d378152ef67b8e41f24d193",
+    "packages/gym_bridge/src/rles_gym_bridge/historical.py": "7b5adf90b9b073ac75f4f5e56c966d9a4c0a419f68c2b030bbe48acdfd20d2fb",
+    "packages/gym_bridge/src/rles_gym_bridge/l2_bridge.py": "a17cdcbcf60c581f0ba08941e22e5b3aa710cba3ba81b98eb17e7cb23b676f58",
+    "packages/gym_bridge/src/rles_gym_bridge/observation.py": "ebe1f5eb6911e2e43bb5e1e94898b21068bceb2209802bbafde02f901e87d6e6",
+    "packages/gym_bridge/src/rles_gym_bridge/reward.py": "eca7a854f59caf5945bdfb1cd4960d6093061f8d5bc7ec2866ae8ae750376012",
+    "packages/gym_bridge/src/rles_gym_bridge/vector.py": "0f2a5f3886c648992f1f3e7852eab469eeee8ed317884b12869bc85141de8894",
+    "packages/nautilus_adapter/src/rles_nautilus_adapter/__init__.py": "4798131e499f44a71665935028f0d40212cf1341f04e522c6c63d961100983ec",
+    "packages/nautilus_adapter/src/rles_nautilus_adapter/bootstrap.py": "350b8a1876fabd64a023e6f6a1844d4b55a568afd5d4dfc96311afc69fb2aa6b",
+    "packages/nautilus_adapter/src/rles_nautilus_adapter/market_data.py": "dd8b49a2eaf1bb92cc1ea50d4c1a35486840aae3319125b28f3482839b30fe8f",
+    "packages/nautilus_adapter/src/rles_nautilus_adapter/perpetual.py": "915d7ef14f939970749cc965c87e044fa0ec9cc2bce3600b218e7ee62cafdeee",
+    "packages/nautilus_adapter/src/rles_nautilus_adapter/session.py": "c0ca5758e138fc66247b1e217b41a2ec39daf4079df6fc6478cfb1536596e769",
+    "packages/nautilus_adapter/src/rles_nautilus_adapter/submitter.py": "8aeb79752305f27689bb47dd5a7552af67570226a7ff7c09e15e9fd0dca7ec5e",
+    "packages/orchestrator/src/rles_orchestrator/__init__.py": "68e47d152104ebac880f67f4e420f17be2285ee64a48d023d5d918ca2d69b94a",
+    "packages/orchestrator/src/rles_orchestrator/__main__.py": "a7b2ea5a478f7b0563fc1278e0235f4d9101fab8a3fd2493d60ef8743fc562b5",
+    "packages/orchestrator/src/rles_orchestrator/ablation.py": "850d78a725de848cfe35241962d26c6219df94f462acdf091ae2cc9b572051b7",
+    "packages/orchestrator/src/rles_orchestrator/application.py": "dfda69185297753dfa97d98b05abc170009f1303cb2f5b0f8fd7a0c758721e90",
+    "packages/orchestrator/src/rles_orchestrator/diagnostics.py": "fb844b2d2654d6fae8517d0b2269fef0a28a53a15f157ec103fd15e8fefdfdef",
+    "packages/orchestrator/src/rles_orchestrator/discovery.py": "f637141948d63b86e76b6a838bffc82af5a96308098822bdcd4fe33a0851c2ad",
+    "packages/orchestrator/src/rles_orchestrator/es_stage.py": "50e70bed36c47200eb79dc9a888d225aa4551f599206877824e8d4a6075ba9ce",
+    "packages/orchestrator/src/rles_orchestrator/lineage.py": "3afccaee5bf5e588c9f8957bce7eb0c49e73e8bba98057ed14acb0c351de8652",
+    "packages/orchestrator/src/rles_orchestrator/native_es_worker.py": "d7c7b1b0d5f25f8a5601bf6dc751c8a017cae4763e7eb5b0091243e7b56ac7fc",
+    "packages/orchestrator/src/rles_orchestrator/rl_stage.py": "8a263ff24d731f63020756a663bbcf57cfe99d9bae89cd1124bb0a9e8123529d",
+    "packages/orchestrator/src/rles_orchestrator/transfer.py": "bd79a673ff97758f805f559cf9a29838f209d44814362560ed5d05fb4aa9efa3",
+    "packages/orchestrator/src/rles_orchestrator/wfo_application.py": "5dbc0fafc219782456c4aff7340244b661a32ed41b708c28cbda04a36ae7f1dd",
+    "packages/orchestrator/src/rles_orchestrator/workflow.py": "e7e357bad944977150591bf93b442be3c1ea03db70bbbcea6681e9144f189578",
+    "packages/research/src/rles_research/__init__.py": "d7c6beef4de4a47d1d01440fc63092a08613a74fb87d23188fb707eac744bfe0",
+    "packages/research/src/rles_research/artifacts.py": "9f43e892c06388c86f2ac2b7b1cc903dff0e394f24f445616568c71dbf63973f",
+    "packages/research/src/rles_research/baselines.py": "591767f836eb86c8ed3b50c9922c83a5ca6c47d8bd9442c3533481839c234d5b",
+    "packages/research/src/rles_research/ledger.py": "b3dfbc09a93463071b6b1737e4f4a7d46da89dc884ca8a19b3759fb4c37fc473",
+    "packages/research/src/rles_research/metrics.py": "1f8223fc7445deed22a10146d3e9dd3695729404e2728f107a85c93bf9b05088",
+    "packages/research/src/rles_research/native_metrics.py": "4d8c7eb9c79d5f20efab5518c697d691b5cc96f25899966c6fdc65a1ca3afe70",
+    "packages/research/src/rles_research/numeric.py": "07294c3741ebda154af9232225b80097e3c7b87b9af65c1385849f9805192d2b",
+    "packages/research/src/rles_research/selection.py": "e19a1b512e7e039c135c5901d1a8fc457a82b61487ebadd07581942af58814c3",
+    "packages/research/src/rles_research/statistics.py": "b8a079f72f0f527e98398f7f633f2c8c05cae9fafcf1ae328f63a037fa479fc4",
+    "packages/research/src/rles_research/stress.py": "79fd0a9df4d9cc65260ce9b7f841f783786ba774bf5c4b5582a5b004e1599f2e",
+    "packages/research/src/rles_research/wfo.py": "f6143452f412af3e9d973f3ac18a1ecd96baea33354778ec5f48736f44173876",
+    "packages/risk/src/rles_risk/__init__.py": "b8f3094a52b62ed28c4fee3b907855d097b249e75a485e4cef99b6233367880e",
+    "packages/risk/src/rles_risk/guards.py": "30872b57abb6ef8fffcc96e6f6b38eea5f7913057b90b8803deb6b81bd11365c",
+    "packages/rl_sb3/src/rles_rl_sb3/__init__.py": "5857381dd01846bd09d177268b63359127f9ef4ccae80cbbca2f139c09c48f84",
+    "packages/rl_sb3/src/rles_rl_sb3/actor.py": "8b17486a0963ecd75947a663cd7428c42eead19a8e342163f53571b4db5df021",
+    "packages/rl_sb3/src/rles_rl_sb3/checkpoint.py": "7c11be37d830f3fd66cdbbbbf7f8e840b1e952e233c8800e68e68fbae23eaa4c",
+    "packages/rl_sb3/src/rles_rl_sb3/config.py": "4fe2ca270a84c40b93d3529e39aaeb827e2d878442102e3b2e9d313827c40c8e",
+    "packages/rl_sb3/src/rles_rl_sb3/envs.py": "1042e7a95414807825f9d9dce06a1226b174974099fae1c157956138b196685c",
+    "packages/rl_sb3/src/rles_rl_sb3/errors.py": "a65d3d9ca5b561a10ec795df94fdc512e982d9fff2ba6f9971b1156f09e10faa",
+    "packages/rl_sb3/src/rles_rl_sb3/noise.py": "49b487a4e099b5d1258b610c9fa75c690061d6233d4c36543624c030690035bf",
+    "packages/rl_sb3/src/rles_rl_sb3/normalize.py": "e3cbb18b07fd205ccc5173a090e22b360ca765b563017bfd02826141ab069dfa",
+    "packages/rl_sb3/src/rles_rl_sb3/provider.py": "7a12dfcd4252d46dd1c4704e3f1dcc4259e04ac29008423bd18f3debbf49a849"
+  },
+  "probe_script_sha256": "902278ccde92467a577a836082ff4ca6c936d8b68ffc832015b6a906626882e5",
+  "checks": {
+    "pytest": "442 passed, 4 skipped, 45 warnings in 270.60s",
+    "skipped_reason": "CUDA learner unavailable",
+    "perf_collected": 1,
+    "initial_test_environment_issue": "default sandbox temp dir not writable; full run succeeded with a new workspace basetemp",
+    "ruff": "packages tests qa: All checks passed",
+    "mypy": "packages qa: Success, no issues found in 108 source files; untyped-body notes remain",
+    "diff_check": "passed; existing LF/CRLF warnings"
+  }
+}

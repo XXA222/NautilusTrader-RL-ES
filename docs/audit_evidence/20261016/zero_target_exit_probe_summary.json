@@ -1,0 +1,88 @@
+{
+  "schema": "rles.zero-target-exit-evidence.v1",
+  "scope": "deterministic execution semantics; not strategy performance",
+  "split": "train_inner",
+  "bundle_sha256": "ea2ea516780f25756c7dae35636ee59eca7e3443a24259c6b58526b2536fec68",
+  "dataset_snapshot_hash": "258834aba27e77b0c97fbb4a5ca9fc6c18699f2f8d0d56c77812d1946bbc1adb",
+  "plan": {
+    "path": "configs/zero_target_exit_probe_20261016.json",
+    "sha256": "cbf5c47541e4b31cf09fa003ab8de0710cbfe7a4323d2984523e97548586a0fd"
+  },
+  "runner": {
+    "path": "qa/zero_target_exit_probe_20261016.py",
+    "sha256": "7bfa4489f186b77fe8ed60a3a24d8777f89bbf0e4f880dd6d55049899a656d3a"
+  },
+  "preparer": {
+    "path": "qa/prepare_zero_target_exit_probe_20261016.py",
+    "sha256": "a44acc3d38acb80b129109b4fb462dcbe3656ce61c98d823c9163565c6b44192"
+  },
+  "source_result": {
+    "path": ".artifacts/audit-development-20261016/zero-target-exit-v1",
+    "sha256": "c9f2fc99af7ebfce1f529522831b6b94d285374856c9851623a4ec526240c6dc"
+  },
+  "comparison_count": 3,
+  "semantic_probe_passed": true,
+  "cases": [
+    {
+      "policy": "deadband",
+      "seed": 102,
+      "pre_zero_actual_exposure": 0.0495855,
+      "post_zero_plan": "NOOP/deadband",
+      "post_zero_actual_exposure": 0.0495933,
+      "first_flat_step_before_terminal": null,
+      "terminal_flat": true
+    },
+    {
+      "policy": "close",
+      "seed": 102,
+      "pre_zero_actual_exposure": 0.0495855,
+      "post_zero_plan": "SUBMIT/policy_flat",
+      "post_zero_actual_exposure": 0.0,
+      "first_flat_step_before_terminal": 22,
+      "terminal_flat": true
+    },
+    {
+      "policy": "deadband",
+      "seed": 103,
+      "pre_zero_actual_exposure": 0.0495855,
+      "post_zero_plan": "NOOP/deadband",
+      "post_zero_actual_exposure": 0.0495933,
+      "first_flat_step_before_terminal": null,
+      "terminal_flat": true
+    },
+    {
+      "policy": "close",
+      "seed": 103,
+      "pre_zero_actual_exposure": 0.0495855,
+      "post_zero_plan": "SUBMIT/policy_flat",
+      "post_zero_actual_exposure": 0.0,
+      "first_flat_step_before_terminal": 22,
+      "terminal_flat": true
+    },
+    {
+      "policy": "deadband",
+      "seed": 104,
+      "pre_zero_actual_exposure": 0.0495855,
+      "post_zero_plan": "NOOP/deadband",
+      "post_zero_actual_exposure": 0.0495933,
+      "first_flat_step_before_terminal": null,
+      "terminal_flat": true
+    },
+    {
+      "policy": "close",
+      "seed": 104,
+      "pre_zero_actual_exposure": 0.0495855,
+      "post_zero_plan": "SUBMIT/policy_flat",
+      "post_zero_actual_exposure": 0.0,
+      "first_flat_step_before_terminal": 22,
+      "terminal_flat": true
+    }
+  ],
+  "interpretation": "Only zero_target_policy differed. Under deadband the valid residual exposure persisted for all 60 post-zero steps; close submitted policy_flat and actual exposure was zero at step 22 in all three paired seeds.",
+  "limitations": [
+    "The action path is deterministic and hand-specified; it is not an RL policy.",
+    "All data and execution economics are previously used Train/scenario-only inputs.",
+    "No profitability or independent generalization claim is made.",
+    "Both arms were terminal-flat after forced episode settlement; fill counts and PnL are not evidence of superiority."
+  ]
+}

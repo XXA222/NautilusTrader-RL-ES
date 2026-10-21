@@ -105,22 +105,45 @@ def _episode_replays(vec, cfg: RLConfig, boundary: Boundary) -> list[dict[str, A
         raise ContractError("L3 replay journal count differs from the frozen environment count")
     v1_fields = {"schema", "transition_hash", "actions", "boundary_token"}
     v2_fields = v1_fields | {"episode_index", "episode_start_offset"}
+    v3_fields = v2_fields | {"leverage_changes"}
     checked: list[dict[str, Any]] = []
     for index, value in enumerate(values):
         if (not isinstance(value, dict)
                 or (value.get("schema") == "rles.episode-replay.v1" and set(value) != v1_fields)
                 or (value.get("schema") == "rles.episode-replay.v2" and set(value) != v2_fields)
-                or value.get("schema") not in {"rles.episode-replay.v1", "rles.episode-replay.v2"}
+                or (value.get("schema") == "rles.episode-replay.v3" and set(value) != v3_fields)
+                or value.get("schema") not in {
+                    "rles.episode-replay.v1", "rles.episode-replay.v2", "rles.episode-replay.v3",
+                }
                 or value["transition_hash"] != cfg.fingerprint.hash
                 or value["boundary_token"] != boundary.env_tokens[index]
                 or not isinstance(value["actions"], list)):
             raise ContractError("L3 replay journal differs from its approved checkpoint boundary")
-        if value["schema"] == "rles.episode-replay.v2" and (
+        if value["schema"] in {"rles.episode-replay.v2", "rles.episode-replay.v3"} and (
             type(value["episode_index"]) is not int or value["episode_index"] < 0
             or type(value["episode_start_offset"]) is not int
             or value["episode_start_offset"] < 0
         ):
             raise ContractError("L3 replay journal has invalid rotating-window identity")
+        if value["schema"] == "rles.episode-replay.v3":
+            changes = value["leverage_changes"]
+            if not isinstance(changes, list):
+                raise ContractError("L3 replay journal has invalid leverage changes")
+            previous_step = -1
+            for change in changes:
+                if (not isinstance(change, list) or len(change) != 2
+                        or type(change[0]) is not int or change[0] < 0
+                        or change[0] > len(value["actions"])
+                        or change[0] < previous_step
+                        or not isinstance(change[1], str)):
+                    raise ContractError("L3 replay journal has invalid leverage changes")
+                try:
+                    leverage = Decimal(change[1])
+                except InvalidOperation as exc:
+                    raise ContractError("L3 replay journal has invalid leverage") from exc
+                if not leverage.is_finite() or leverage < 1:
+                    raise ContractError("L3 replay journal has invalid leverage")
+                previous_step = change[0]
         for action in value["actions"]:
             if not isinstance(action, str):
                 raise ContractError("L3 replay journal actions must be decimal strings")

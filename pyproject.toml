@@ -12,6 +12,7 @@ description = "L1-owned workspace metadata only; not a distribution"
 dev = [
     "mypy==2.3.0",
     "pytest==9.1.1",
+    "rles-data[arrow]",
     "ruff==0.17.0",
 ]
 

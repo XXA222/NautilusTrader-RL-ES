@@ -1,0 +1,84 @@
+{
+  "schema": "rles.stage58-train-coverage-analysis.v1",
+  "status": "partial",
+  "source_verification_summary_sha256": "a869f4adcbfa8cfada3b8ae988896b443a50fa22db953842669a504aa09a73c9",
+  "evaluation_queries": {
+    "validation": 0,
+    "test": 0,
+    "holdout": 0,
+    "outer_2026": 0
+  },
+  "totals": {
+    "environment_interaction_steps": 32768,
+    "unique_decision_timestamps": 32768,
+    "repeated_samples_within_or_between_windows": 0,
+    "unique_market_coverage_fraction": 1.0,
+    "completed_episodes": 4,
+    "cross_window_episode_overlap_pairs": 0
+  },
+  "windows": [
+    {
+      "window_id": 1,
+      "start_date_utc": "2024-01-01",
+      "samples": 8192,
+      "unique_decision_timestamps": 8192,
+      "within_window_repeated_samples": 0,
+      "decision_start_ns": 1704067380001000000,
+      "decision_end_ns": 1704558840001000000,
+      "episodes_completed": 1,
+      "episode_window_overlap_pairs": 0,
+      "position_state_coverage": "not_recorded_in_legacy_schema",
+      "market_regime_coverage": "not_recorded_in_legacy_schema",
+      "regime_conditioned_economic_contribution": "not_recorded_in_legacy_schema"
+    },
+    {
+      "window_id": 2,
+      "start_date_utc": "2024-09-01",
+      "samples": 8192,
+      "unique_decision_timestamps": 8192,
+      "within_window_repeated_samples": 0,
+      "decision_start_ns": 1725148980001000000,
+      "decision_end_ns": 1725640440001000000,
+      "episodes_completed": 1,
+      "episode_window_overlap_pairs": 0,
+      "position_state_coverage": "not_recorded_in_legacy_schema",
+      "market_regime_coverage": "not_recorded_in_legacy_schema",
+      "regime_conditioned_economic_contribution": "not_recorded_in_legacy_schema"
+    },
+    {
+      "window_id": 3,
+      "start_date_utc": "2025-05-01",
+      "samples": 8192,
+      "unique_decision_timestamps": 8192,
+      "within_window_repeated_samples": 0,
+      "decision_start_ns": 1746057780001000000,
+      "decision_end_ns": 1746549240001000000,
+      "episodes_completed": 1,
+      "episode_window_overlap_pairs": 0,
+      "position_state_coverage": "not_recorded_in_legacy_schema",
+      "market_regime_coverage": "not_recorded_in_legacy_schema",
+      "regime_conditioned_economic_contribution": "not_recorded_in_legacy_schema"
+    },
+    {
+      "window_id": 4,
+      "start_date_utc": "2026-01-01",
+      "samples": 8192,
+      "unique_decision_timestamps": 8192,
+      "within_window_repeated_samples": 0,
+      "decision_start_ns": 1767225780001000000,
+      "decision_end_ns": 1767717240001000000,
+      "episodes_completed": 1,
+      "episode_window_overlap_pairs": 0,
+      "position_state_coverage": "not_recorded_in_legacy_schema",
+      "market_regime_coverage": "not_recorded_in_legacy_schema",
+      "regime_conditioned_economic_contribution": "not_recorded_in_legacy_schema"
+    }
+  ],
+  "cross_window_overlap_pairs": [],
+  "limitations": [
+    "Exact timestamp union follows from each verified window having unique_decision_timestamps == samples and pairwise-disjoint observed start/end intervals.",
+    "All four windows have prior Train research reuse; unique timestamps describe this run's coverage, not fresh independent market evidence.",
+    "The v2 learning files contain no per-step position state or market-feature/regime samples, so state coverage and conditioned reward contribution cannot be reconstructed without rerunning or reading extra market data.",
+    "Rewards are Train diagnostics under scenario costs, not held-out/account-level profitability evidence."
+  ]
+}

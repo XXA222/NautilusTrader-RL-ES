@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 import importlib.metadata
 import re
@@ -56,7 +56,11 @@ class VisibleBatch:
 
 @dataclass(frozen=True, slots=True)
 class NativeAccountFacts:
-    """Detached facts read from authoritative Nautilus ledger/cache."""
+    """Detached facts read from authoritative Nautilus ledger/cache.
+
+    Compact readers expose fills and funding adjustments as newly observed facts;
+    non-compact funding remains a full cache-derived snapshot.
+    """
     equity: Decimal
     currency: str
     positions: tuple[dict, ...]
@@ -68,6 +72,7 @@ class NativeAccountFacts:
     orders_all: tuple[dict, ...]
     liquidation_orders: tuple[dict, ...] | None
     mark_price: Decimal | None
+    position_initial_margin: Decimal | None
     margins: tuple[dict, ...]
     mark_stale: bool
     liquidation_capability: bool
@@ -79,17 +84,24 @@ class NativeFactsReader:
 
     def __init__(self, *, account_id: Any, instrument_id: Any, currency: str,
                  liquidation_capability: bool = False,
-                 compact_history: bool = False) -> None:
+                 compact_history: bool = False,
+                 include_position_pnl: bool = False) -> None:
         if account_id is None or instrument_id is None or not currency:
             raise ValueError("native account/instrument/base currency required")
         if type(liquidation_capability) is not bool:
             raise TypeError("liquidation capability must be certified Boolean")
         if type(compact_history) is not bool:
             raise TypeError("native cache history compaction must be Boolean")
+        if type(include_position_pnl) is not bool:
+            raise TypeError("native position PnL capture flag must be Boolean")
         self.account_id, self.instrument_id, self.currency = account_id, instrument_id, currency
         self.liquidation_capability = liquidation_capability
         self.compact_history = compact_history
+        self.include_position_pnl = include_position_pnl
         self._latest_account_event: dict | None = None
+        self._funding_initialized = False
+        self._position_last_updates: dict[tuple[str, int], int] = {}
+        self._funding_facts: dict[str, dict] = {}
 
     def read(self, engine: Any, timestamp_ns: int) -> NativeAccountFacts:
         native = engine.portfolio.build_snapshot(self.account_id)
@@ -110,21 +122,56 @@ class NativeFactsReader:
             raise EngineBoundaryError("native account base currency differs from episode currency")
         cache = engine.cache
         scope = {"instrument_id": self.instrument_id, "account_id": self.account_id}
+        from nautilus_trader.model import PriceType
+        raw_mark = cache.price(self.instrument_id, PriceType.MARK)
+        mark = Decimal(str(raw_mark.as_decimal())) if raw_mark is not None else None
+        if mark is not None and (not mark.is_finite() or mark <= 0):
+            raise EngineBoundaryError("invalid native mark")
         positions_all = tuple(cache.positions(**scope))
-        positions = tuple(p.to_dict() for p in cache.positions_open(**scope))
+        open_positions = tuple(cache.positions_open(**scope))
         if self.compact_history:
-            # Position.to_dict() includes its complete fill, adjustment,
-            # commission, and trade-ID history. Historical snapshots need the
-            # current position state only; fills and funding are detached below
-            # into their own incremental ledgers. Retaining these nested lists
-            # in every minute snapshot makes an episode grow quadratically.
-            historical_fields = {
-                "events", "adjustments", "commissions", "venue_order_ids", "trade_ids",
-            }
-            positions = tuple(
-                {key: value for key, value in row.items() if key not in historical_fields}
-                for row in positions
+            # Do not call Position.to_dict() here: it materializes every fill,
+            # adjustment, commission, venue order ID, and trade ID before the
+            # caller can discard them. Long episodes would repeatedly allocate
+            # the entire open-position history at every decision timestamp.
+            positions = tuple(_position_ledger_record(
+                p, raw_mark, compact=True, include_pnl=self.include_position_pnl,
             )
+                              for p in open_positions)
+        else:
+            positions = tuple(_position_ledger_record(
+                p, raw_mark, compact=False, include_pnl=self.include_position_pnl,
+            )
+                              for p in open_positions)
+        # Nautilus position snapshots carry maintenance margin, while initial
+        # margin rows are reserved for open orders. Calculate the open-position
+        # requirement too so downstream account observations include both.
+        position_initial_margin: Decimal | None = Decimal(0)
+        if open_positions:
+            if raw_mark is None:
+                position_initial_margin = None
+            else:
+                instrument = cache.instrument(self.instrument_id)
+                if instrument is None:
+                    raise EngineBoundaryError(
+                        "native instrument required to calculate position initial margin",
+                    )
+                position_initial_total = Decimal(0)
+                for position in open_positions:
+                    try:
+                        required = account.calculate_initial_margin(
+                            instrument, position.quantity, raw_mark, None,
+                        )
+                        amount = Decimal(str(required.as_decimal()))
+                    except (TypeError, ValueError, ArithmeticError) as exc:
+                        raise EngineBoundaryError(
+                            "native position initial margin calculation failed",
+                        ) from exc
+                    if (str(required.currency) != self.currency
+                            or not amount.is_finite() or amount < 0):
+                        raise EngineBoundaryError("native position initial margin is invalid")
+                    position_initial_total += amount
+                position_initial_margin = position_initial_total
         # Pending commands may be in-flight even when not yet classified open.
         # Union is by native client_order_id, never by array position.
         pending_by_id: dict[str, dict] = {}
@@ -133,6 +180,20 @@ class NativeFactsReader:
             client_id = str(record.get("client_order_id", ""))
             if not client_id:
                 raise EngineBoundaryError("native pending order missing client identity")
+            try:
+                quantity = Decimal(str(record.get("quantity")))
+                filled_qty = Decimal(str(record.get("filled_qty")))
+            except (InvalidOperation, TypeError, ValueError) as exc:
+                raise EngineBoundaryError("native pending order quantity facts are invalid") from exc
+            if (not quantity.is_finite() or not filled_qty.is_finite()
+                    or quantity <= 0 or filled_qty < 0 or filled_qty > quantity):
+                raise EngineBoundaryError("native pending order filled quantity is outside order size")
+            if record.get("side") not in {"BUY", "SELL"}:
+                raise EngineBoundaryError("native pending order side is invalid")
+            # Nautilus Order.to_dict() exposes cumulative quantity fields but
+            # not leaves_qty. Derive the pending amount from those native facts
+            # so the planner sees partial fills without inventing an order size.
+            record["leaves_qty"] = str(quantity - filled_qty)
             existing = pending_by_id.get(client_id)
             if existing is not None and existing != record:
                 raise EngineBoundaryError("inconsistent native open/inflight order state")
@@ -162,12 +223,17 @@ class NativeFactsReader:
                 if tagged:
                     identified.append(row)
             liquidation_orders = tuple(identified)
-        archived = tuple(p for p in cache.position_snapshots(account_id=self.account_id)
-                         if p.instrument_id == self.instrument_id)
-        # Snapshots can overlap the current position; deduplicate by native event
-        # identity, rejecting contradictory records rather than counting twice.
-        funding = self._unique_events(adj for p in (*positions_all, *archived) for adj in p.adjustments()
-                                      if adj.adjustment_type == PositionAdjustmentType.FUNDING)
+        if self.compact_history:
+            funding = self._compact_funding_updates(positions_all, cache,
+                                                    PositionAdjustmentType.FUNDING)
+        else:
+            archived = tuple(p for p in cache.position_snapshots(account_id=self.account_id)
+                             if p.instrument_id == self.instrument_id)
+            # Snapshots can overlap the current position; deduplicate by native event
+            # identity, rejecting contradictory records rather than counting twice.
+            funding = self._unique_events(adj for p in (*positions_all, *archived)
+                                          for adj in p.adjustments()
+                                          if adj.adjustment_type == PositionAdjustmentType.FUNDING)
         events = tuple(ev.to_dict() for ev in account.events)
         if self.compact_history:
             if events:
@@ -181,14 +247,10 @@ class NativeFactsReader:
         native_margins = account.margins()
         margin_values = native_margins.values() if isinstance(native_margins, Mapping) else native_margins
         margins = tuple(m.to_dict() for m in margin_values)
-        from nautilus_trader.model import PriceType
-        raw_mark = cache.price(self.instrument_id, PriceType.MARK)
-        mark = Decimal(str(raw_mark.as_decimal())) if raw_mark is not None else None
-        if mark is not None and (not mark.is_finite() or mark <= 0):
-            raise EngineBoundaryError("invalid native mark")
         facts = NativeAccountFacts(
             equity, self.currency, positions, orders, account.to_dict(), events, fills,
-            funding, all_orders, liquidation_orders, mark, margins, bool(native.is_stale),
+            funding, all_orders, liquidation_orders, mark, position_initial_margin, margins,
+            bool(native.is_stale),
             self.liquidation_capability, timestamp_ns,
         )
         if self.compact_history:
@@ -200,6 +262,40 @@ class NativeFactsReader:
             cache.purge_closed_positions(ts_now=timestamp_ns, buffer_secs=0)
             cache.purge_account_events(ts_now=timestamp_ns, lookback_secs=0)
         return facts
+
+    def _compact_funding_updates(self, positions: tuple[Any, ...], cache: Any,
+                                 funding_type: Any) -> tuple[dict, ...]:
+        """Read funding only when a Position timestamp changes; return new facts."""
+        candidates = list(positions)
+        if not self._funding_initialized:
+            candidates.extend(
+                position for position in cache.position_snapshots(account_id=self.account_id)
+                if position.instrument_id == self.instrument_id
+            )
+            self._funding_initialized = True
+        updates: dict[str, dict] = {}
+        for position in candidates:
+            position_key = (str(position.id), int(position.ts_opened))
+            last_update = int(position.ts_last)
+            if self._position_last_updates.get(position_key) == last_update:
+                continue
+            self._position_last_updates[position_key] = last_update
+            for adjustment in position.adjustments():
+                if adjustment.adjustment_type != funding_type:
+                    continue
+                record = adjustment.to_dict()
+                identity = str(record.get("event_id", ""))
+                if not identity:
+                    raise EngineBoundaryError("native funding event identity missing")
+                previous = self._funding_facts.get(identity)
+                if previous is not None:
+                    if previous != record:
+                        raise EngineBoundaryError("native funding identity has conflicting facts")
+                    continue
+                self._funding_facts[identity] = record
+                updates[identity] = record
+        return tuple(sorted(updates.values(),
+                            key=lambda row: (row["ts_init"], row["ts_event"], row["event_id"])))
 
     @staticmethod
     def _unique_events(events: Iterable[Any]) -> tuple[dict, ...]:
@@ -214,6 +310,75 @@ class NativeFactsReader:
             by_id[key] = record
         return tuple(sorted(by_id.values(), key=lambda r: (r["ts_init"], r["ts_event"], r["event_id"])))
 
+
+def _compact_position_record(position: Any) -> dict:
+    """Serialize only the stable scalar Position fields used by observations."""
+    base_currency = position.base_currency
+    quote_currency = position.quote_currency
+    settlement_currency = position.settlement_currency
+    realized_pnl = position.realized_pnl
+    return {
+        "type": "Position",
+        "trader_id": str(position.trader_id),
+        "strategy_id": str(position.strategy_id),
+        "instrument_id": str(position.instrument_id),
+        "position_id": str(position.id),
+        "account_id": str(position.account_id),
+        "opening_order_id": str(position.opening_order_id),
+        "closing_order_id": (str(position.closing_order_id)
+                              if position.closing_order_id is not None else None),
+        "entry": str(position.entry),
+        "side": str(position.side),
+        "signed_qty": position.signed_qty,
+        "quantity": str(position.quantity),
+        "peak_qty": str(position.peak_qty),
+        "price_precision": position.price_precision,
+        "size_precision": position.size_precision,
+        "multiplier": str(position.multiplier),
+        "is_inverse": position.is_inverse,
+        "base_currency": base_currency.code if base_currency is not None else None,
+        "quote_currency": quote_currency.code if quote_currency is not None else None,
+        "settlement_currency": (settlement_currency.code
+                                if settlement_currency is not None else None),
+        "ts_init": position.ts_init,
+        "ts_opened": position.ts_opened,
+        "ts_last": position.ts_last,
+        "ts_closed": position.ts_closed,
+        "duration_ns": position.duration_ns,
+        "avg_px_open": position.avg_px_open,
+        "avg_px_close": position.avg_px_close,
+        "realized_return": position.realized_return,
+        "realized_pnl": str(realized_pnl) if realized_pnl is not None else None,
+    }
+
+
+def _position_ledger_record(position: Any, last_price: Any, *, compact: bool,
+                            include_pnl: bool) -> dict:
+    """Retain Nautilus-calculated mark PnL and notional in the same native currencies."""
+    record = _compact_position_record(position) if compact else position.to_dict()
+    if not include_pnl:
+        return record
+    if last_price is None:
+        raise EngineBoundaryError("native mark required to read open-position PnL")
+    try:
+        unrealized = position.unrealized_pnl(last_price)
+        notional = position.notional_value(last_price)
+        unrealized_value = Decimal(str(unrealized.as_decimal()))
+        notional_value = Decimal(str(notional.as_decimal()))
+        unrealized_currency = unrealized.currency.code
+        notional_currency = notional.currency.code
+    except (TypeError, ValueError, ArithmeticError) as exc:
+        raise EngineBoundaryError("native position PnL/notional calculation failed") from exc
+    if (not unrealized_value.is_finite() or not notional_value.is_finite() or notional_value <= 0
+            or not unrealized_currency or not notional_currency):
+        raise EngineBoundaryError("native position PnL/notional facts are invalid")
+    record.update({
+        "unrealized_pnl": str(unrealized),
+        "unrealized_pnl_currency": unrealized_currency,
+        "notional_value": str(notional),
+        "notional_currency": notional_currency,
+    })
+    return record
 
 class EngineSession:
     """One immutable fold -> one native engine. No reset across folds/candidates."""
@@ -243,6 +408,7 @@ class EngineSession:
         self._last_ts = 0
         self._action_ids: set[str] = set()
         self._event_ids: set[str] = set()
+        self._settlement_keys: set[tuple[str, int]] = set()
         self._fingerprint: str | None = None
 
     @property
@@ -301,24 +467,45 @@ class EngineSession:
         prepared: list[tuple[VisibleBatch, tuple[Any, ...]]] = []
         ts = self._last_ts
         seen: set[str] = set()
+        settlement_keys = set(self._settlement_keys)
+        ordered_batches: list[VisibleBatch] = []
         for batch in batches:
             if not isinstance(batch, VisibleBatch) or batch.timestamp_ns <= ts or batch.timestamp_ns > end_ts_ns:
                 raise EngineBoundaryError("unordered or incomplete timestamp batch")
             ts = batch.timestamp_ns
-            decoded: list[Any] = []
             for event in batch.events:
                 eid = str(event.event_id)
                 if eid in seen or eid in self._event_ids:
                     raise EngineBoundaryError("duplicate native source event identity")
                 seen.add(eid)
-                native = self._decode(event)
-                if native is None or type(getattr(native, "ts_init", None)) is not int \
-                        or native.ts_init != batch.timestamp_ns:
-                    raise EngineBoundaryError("decoded native event replay timestamp differs")
-                decoded.append(native)
-            prepared.append((batch, tuple(decoded)))
-        if not prepared or ts != end_ts_ns:
+                if getattr(event, "event_type", None) == "funding_settlement":
+                    payload = dict(event.payload.entries)
+                    instrument = payload.get("instrument")
+                    settlement_ns = payload.get("settlement_ns")
+                    if isinstance(instrument, str) and type(settlement_ns) is int:
+                        key = (instrument, settlement_ns)
+                        if key in settlement_keys:
+                            raise EngineBoundaryError("duplicate native funding settlement boundary")
+                        settlement_keys.add(key)
+            ordered_batches.append(batch)
+        if not ordered_batches or ts != end_ts_ns:
             raise EngineBoundaryError("next decision clock must have one complete final timestamp batch")
+
+        # Validate identities, timestamps and settlement uniqueness for the whole
+        # decision interval before decoding. Funding decoders keep schedule state,
+        # so decoding an earlier duplicate before discovering a later one would
+        # leave a rejected interval with mutated decoder state.
+        for batch in ordered_batches:
+            decoded: list[Any] = []
+            for event in batch.events:
+                native = self._decode(event)
+                native_events = native if isinstance(native, tuple) else (native,)
+                if (not native_events or any(
+                        item is None or type(getattr(item, "ts_init", None)) is not int
+                        or item.ts_init != batch.timestamp_ns for item in native_events)):
+                    raise EngineBoundaryError("decoded native event replay timestamp differs")
+                decoded.extend(native_events)
+            prepared.append((batch, tuple(decoded)))
         return tuple(prepared)
 
     def _replay(self, prepared: tuple[tuple[VisibleBatch, tuple[Any, ...]], ...]) -> None:
@@ -336,6 +523,13 @@ class EngineSession:
         for batch, _native_events in prepared:
             self._last_ts = batch.timestamp_ns
             self._event_ids.update(str(e.event_id) for e in batch.events)
+            for event in batch.events:
+                if getattr(event, "event_type", None) == "funding_settlement":
+                    payload = dict(event.payload.entries)
+                    instrument = payload.get("instrument")
+                    settlement_ns = payload.get("settlement_ns")
+                    if isinstance(instrument, str) and type(settlement_ns) is int:
+                        self._settlement_keys.add((instrument, settlement_ns))
 
     def _native_facts(self) -> NativeAccountFacts:
         if self._engine is None:
@@ -350,6 +544,7 @@ class EngineSession:
             funding=facts.funding_adjustments, all_orders=facts.orders_all,
             liquidation_orders=facts.liquidation_orders,
             margins=facts.margins, mark=facts.mark_price,
+            position_initial_margin=facts.position_initial_margin,
             liquidation_capability=facts.liquidation_capability,
             decision_ts_ns=facts.timestamp_ns,
         )

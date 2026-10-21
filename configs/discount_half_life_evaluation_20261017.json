@@ -1,0 +1,50 @@
+{
+  "schema": "rles.discount-half-life-evaluation.v1",
+  "date": "2026-10-17",
+  "status": "preregistered_before_any_model_diagnostic",
+  "training_plan": "configs/discount_half_life_probe_20261017.json",
+  "training_plan_sha256": "f5c5125a2392b9a24460412c549fec99ed41a6200c2c01039da3891e727bb113",
+  "trained_run_manifest": "docs/audit_evidence/20261017/discount_gamma_trained_runs_v1.json",
+  "trained_run_manifest_sha256": "1cfaa3c16154b2240bdf93328490bc4b69f6c892c069d25272ad6aae2104b86f",
+  "trained_runs_root": ".artifacts/audit-development-20261016/gamma-half-life-v5",
+  "quality_amendment": {
+    "supersedes_invalid_diagnostic_window_ns": [
+      1722470400000000000,
+      1722556800000000000
+    ],
+    "reason": "factory classified the first post-training candidate diagnostic window DQ-D before any trained model was evaluated; no strategy returns were observed",
+    "selection_basis": "use existing Train development folds already classified DQ-B in low_capacity_predictor_20261016 evidence; no model outcomes were inspected"
+  },
+  "quality_evidence": {
+    "plan": "configs/low_capacity_predictor_20261016.json",
+    "summary": "docs/audit_evidence/20261016/low_capacity_predictor_summary.json",
+    "summary_sha256": "d739c43717e767dd3929403cd260c319c741fb3e0d585afbce828a5be87432bf",
+    "expected_quality": "DQ-B"
+  },
+  "diagnostic_windows": [
+    {
+      "start_ns": 1738368000000000000,
+      "end_ns": 1740960000000000000
+    },
+    {
+      "start_ns": 1756684800000000000,
+      "end_ns": 1759276800000000000
+    },
+    {
+      "start_ns": 1775001600000000000,
+      "end_ns": 1777593600000000000
+    }
+  ],
+  "execution_modes": [
+    "base",
+    "stress"
+  ],
+  "minimum_start_free_bytes": 10737418240,
+  "stop_free_bytes": 2147483648,
+  "comparisons": "paired per-seed treatment-control net return in each mode/window and treatment seed mean vs contemporaneous no-trade",
+  "advancement_gate": "all three seed-mean paired deltas positive in both modes, and treatment seed-mean exceeds no-trade in at least two of three windows per mode; only authorizes preregistered five-seed confirmation",
+  "formal_test_or_holdout_queries": 0,
+  "candidate_promotion": false,
+  "budget_expansion": false,
+  "scope": "Train-only development under scenario economics; not independent OOS or historical economic validation"
+}

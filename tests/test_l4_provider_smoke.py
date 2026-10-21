@@ -57,11 +57,17 @@ def test_ppo_initial_exploration_and_flat_action_head_are_frozen_controls():
         assert torch.equal(provider.model.policy.log_std, torch.full_like(provider.model.policy.log_std, -2.0))
         assert provider.predict(np.zeros((1, 2), dtype=np.float32)).item() == 0.0
         performance = provider.train(2)
+        assert performance.cpu_rss_bytes is None or performance.cpu_rss_bytes > 0
+        assert performance.gpu_max_allocated_bytes is None
+        assert performance.gpu_max_reserved_bytes is None
         assert performance.diagnostics is not None
         assert performance.diagnostics.decision_start_ns == 1
         assert performance.diagnostics.decision_end_ns == 2
         assert performance.diagnostics.unique_decision_timestamps == 2
         assert performance.diagnostics.decision_timestamp_revisit_fraction == 0.0
+        assert performance.diagnostics.soft_risk_intervention_fraction == 0.0
+        assert performance.diagnostics.hard_risk_intervention_fraction == 0.0
+        assert performance.diagnostics.execution_plan_reasons == (("target changed", 2),)
         metrics = dict(performance.diagnostics.optimizer_metrics)
         assert metrics["train/std"] == pytest.approx(np.exp(-2), rel=0.02)
     finally:
@@ -89,6 +95,68 @@ def test_ppo_rejects_invalid_exploration_initialization(parameters):
             seeds=SeedSpec(11, (12,), 13, 14),
             hyperparameters=parameters,
         )
+
+
+def test_cuda_allocator_fraction_is_validated_and_fingerprinted():
+    from dataclasses import asdict, replace
+    from rles_rl_sb3.config import digest
+
+    base = _small_pretraining_provider().config
+    assert base.hash == digest({
+        "algorithm": base.algorithm, "policy": asdict(base.policy),
+        "fingerprint": asdict(base.fingerprint), "seeds": asdict(base.seeds),
+        "hyperparameters": dict(base.hyperparameters), "device": base.device,
+        "normalize_observation": base.normalize_observation,
+        "normalize_reward": base.normalize_reward, "noise_sigma": base.noise_sigma,
+        "version": base.version,
+    })
+    with pytest.raises(ContractError, match="requires CUDA device"):
+        replace(base, cuda_allocator_fraction=0.5)
+    cuda_config = replace(base, device="cuda", cuda_allocator_fraction=0.5)
+    assert cuda_config.hash != replace(base, device="cuda").hash
+    for invalid in (True, 0, 1.01, float("nan")):
+        with pytest.raises(ContractError, match="cuda_allocator_fraction"):
+            replace(base, device="cuda", cuda_allocator_fraction=invalid)
+
+    provider = RLProvider(cuda_config, lambda *_args: None, lambda *_args: True)
+    calls = []
+    fake_torch = type("Torch", (), {"cuda": type("Cuda", (), {
+        "is_available": staticmethod(lambda: True),
+        "current_device": staticmethod(lambda: 3),
+        "set_per_process_memory_fraction": staticmethod(
+            lambda fraction, device: calls.append((fraction, device))),
+    })()})
+    provider._configure_cuda_allocator(fake_torch)
+    assert calls == [(0.5, 3)]
+
+
+@pytest.mark.gpu
+def test_cuda_allocator_fraction_runs_native_provider_training():
+    from dataclasses import replace
+
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA learner unavailable")
+    template = _small_pretraining_provider()
+    device = torch.cuda.current_device()
+    previous_fraction = torch.cuda.get_per_process_memory_fraction(device)
+    provider = RLProvider(
+        replace(template.config, device="cuda", cuda_allocator_fraction=0.9),
+        template.env_factory,
+        template.gate_authorizer,
+    )
+    try:
+        provider.create()
+        assert torch.cuda.get_per_process_memory_fraction(device) == pytest.approx(0.9)
+        performance = provider.train(2)
+        assert performance.samples == 2
+        torch.cuda.synchronize(device)
+        assert performance.gpu_max_allocated_bytes is not None
+        assert performance.gpu_max_reserved_bytes is not None
+        assert performance.gpu_max_reserved_bytes >= performance.gpu_max_allocated_bytes
+    finally:
+        provider.close()
+        torch.cuda.empty_cache()
+        torch.cuda.set_per_process_memory_fraction(previous_fraction, device)
 
 
 class ProviderFixtureEnv(gym.Env):
@@ -149,8 +217,17 @@ class ProviderFixtureEnv(gym.Env):
             "requested_action": requested,
             "policy_executed_action_pre_terminal": requested,
             "risk_guard_intervention": 0.0,
+            "risk_soft_adjustment": 0.0,
+            "risk_hard_adjustment": 0.0,
             "execution_plan_action": "SUBMIT",
+            "execution_plan_reason": "target changed",
             "decision_ts_ns": self._step,
+            "episode_window": {
+                "start_ns": 1, "end_ns": 1_000_000,
+                "episode_index": 0, "start_offset": 0, "decision_steps": 999_999,
+            },
+            "market_features": {"synthetic_step": float(self._step)},
+            "net_exposure": requested,
         }
 
 

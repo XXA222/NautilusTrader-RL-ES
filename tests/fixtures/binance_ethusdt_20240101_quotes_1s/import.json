@@ -1,0 +1,39 @@
+{
+  "availability": "derived",
+  "availability_delay_ns": 1000000,
+  "bookticker_included": true,
+  "bookticker_raw_rows": 7376016,
+  "bookticker_sample_count": 86394,
+  "bookticker_sampling": "last_event_time_quote_per_second",
+  "day": "2024-01-01",
+  "end_ns": 1704153660000000000,
+  "event_count": 90722,
+  "funding_feature": "last_settled_rate",
+  "instrument": "ETHUSDT-PERP.SIM",
+  "instrument_rules_supplied": false,
+  "schema": "rles.binance-archive.v1+bookticker-sampled.v1",
+  "sources": [
+    {
+      "sha256": "db143263ed9be478acb69a3290318d20cee518dd930c8372857818642d50fe98",
+      "url": "https://data.binance.vision/data/futures/um/daily/klines/ETHUSDT/1m/ETHUSDT-1m-2024-01-01.zip"
+    },
+    {
+      "sha256": "28fe8ccc692246e65dbd0b8128eb6417ad57a989acbfd575e4e141b01005a7dc",
+      "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/ETHUSDT/1m/ETHUSDT-1m-2024-01-01.zip"
+    },
+    {
+      "sha256": "5d1195bee7e5d1624e7d99cce9a9003be4f5189b3dbd1257689777786a387338",
+      "url": "https://data.binance.vision/data/futures/um/daily/indexPriceKlines/ETHUSDT/1m/ETHUSDT-1m-2024-01-01.zip"
+    },
+    {
+      "sha256": "5a71469b0b363886df904e784dddefc484dd943334b1fb7454713ce4ed715a4b",
+      "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/ETHUSDT/ETHUSDT-fundingRate-2024-01.zip"
+    },
+    {
+      "sha256": "8b0ba77526b089682e541fd4d80dcf7d228f50227ec8e5c81ca7431e0e98eb2f",
+      "url": "https://data.binance.vision/data/futures/um/daily/bookTicker/ETHUSDT/ETHUSDT-bookTicker-2024-01-01.zip"
+    }
+  ],
+  "start_ns": 1704067260000000000,
+  "symbol": "ETHUSDT"
+}

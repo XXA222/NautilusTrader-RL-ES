@@ -146,6 +146,8 @@ def test_event_time_window_is_bounded_and_filters_late_availability() -> None:
 
     assert store.visible_event_window(70, 45, "mark") == (events[1], events[3])
     assert store.visible_event_window(74, 45, "mark") == (events[1], events[3])
+    assert store.available_event_window(60, 70, kind="mark") == (events[1], events[3])
+    assert store.available_event_window(60, 75) == (events[1], events[3], events[2])
 
 
 def test_l2_quality_counts_ohlcv_gaps_per_instrument() -> None:

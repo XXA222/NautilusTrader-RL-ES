@@ -1,0 +1,131 @@
+{
+  "schema": "rles.stage59-train-diagnostic-preregistration.v1",
+  "status": "frozen_before_diagnostic_replay",
+  "supersedes": {
+    "path": "docs\\audit_evidence\\20261017\\stage59_train_diagnostics\\preregistration.json",
+    "sha256": "bc222018f354ccd7e7266e2e085bc3b7b5d31e8d0921fbfe5681078f04c68e74"
+  },
+  "prior_attempt": {
+    "status": "blocked_before_learning",
+    "detail": "CLI train command previously required a Validation window even though the Python training API supports evaluate=False; no R1 learner stage ran and no Validation query occurred.",
+    "validation_queries": 0,
+    "test_queries": 0,
+    "holdout_queries": 0
+  },
+  "objective": "Re-run the already-used Stage58 fixed PPO Train-only recipe solely to emit v3 episode, position, market-regime and r_econ diagnostics; no candidate selection or evaluation split.",
+  "source_stage58_verification_sha256": "a869f4adcbfa8cfada3b8ae988896b443a50fa22db953842669a504aa09a73c9",
+  "stage58_preregistrations_sha256": {
+    "window-01-2024-01-01": "57dc8fb28589f92c62f0bf55adea1c538d848f02a9a8279a04c651a82b5b66b0",
+    "window-02-2024-09-01": "19fcbe9263dabe91743e1ec620239003fb9838a663a840b7c623c1ab5960acaa",
+    "window-03-2025-05-01": "c42ea76777002a900f806ed4ca34e319d306ce4f062ba6c1b4d16d6285475675",
+    "window-04-2026-01-01": "7680a4d0d7e8eced784d15caf12802852242da2e986544bc0f5a4ae23b433999"
+  },
+  "data_and_base_config_sha256": {
+    "base_config": {
+      "path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-stage57-action-econ-bins-seed102-20261016\\config.json",
+      "sha256": "cc6f909b593da4c5d4de663ab0c497d36e621e356681c9983f4d68affeee32cf"
+    },
+    "market": {
+      "path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-expanded-market-stage-20261014\\expanded-market-v2\\market.parquet",
+      "sha256": "06323e909997909dee35b4abf1543444ae230f30cbc1f672ded033b3bc41fe70"
+    },
+    "market_completion": {
+      "path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-expanded-market-stage-20261014\\expanded-market-v2\\market.parquet.COMPLETED.json",
+      "sha256": "44a76ea72f06ca050a2faf0adff7b7c99a05fab935dc82c28ec24c25dcf8a768"
+    },
+    "scenario_rules": {
+      "path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-expanded-market-stage-20261014\\scenario-rules-2024-onwards.json",
+      "sha256": "690292b508ce722d6ba2f5b9fb745671f56fc396d2026943fd36668e9028c93b"
+    }
+  },
+  "stage58_reused_train_dates": [
+    "2024-01-01",
+    "2024-09-01",
+    "2025-05-01",
+    "2026-01-01"
+  ],
+  "source_code_sha256": {
+    "packages/gym_bridge/src/rles_gym_bridge/env.py": "e98aa714a659f5f79c9776f8cb71aad517dda9ac7932cec0ba8ab2ce9cd67372",
+    "packages/gym_bridge/src/rles_gym_bridge/historical.py": "a70eb0faaa9aa7ecc7522729b44b1a57d4cf349d3cf09e0d1a9675050539dd3e",
+    "packages/rl_sb3/src/rles_rl_sb3/provider.py": "48b186d4a74a6d7c745deb1b0623fccff681198996de459b1a7c0c1ba64e9a46",
+    "packages/orchestrator/src/rles_orchestrator/rl_stage.py": "2b84406ff110b58a3c688a7f1de41c050749b35f2fdd15eb1790499dce4fff67",
+    "packages/orchestrator/src/rles_orchestrator/application.py": "c289e0dd97cbbb9c0f8694063c08ba030d3dd21dd45979873563388ea9a60a2c",
+    "qa/preregister_stage59_train_diagnostics.py": "bdfa77180f5ec87d65366feafc52530f591a617829bdd352451f601fae3bf585"
+  },
+  "windows": [
+    {
+      "window_id": 1,
+      "start_date_utc": "2024-01-01",
+      "config_path": "D:\\Program Files\\NautilusTrader_RL_ES\\docs\\audit_evidence\\20261017\\stage59_train_diagnostics_revision2\\window-01-2024-01-01.config.json",
+      "config_sha256": "0eaad9a9fe2eb8a8f8d9dd0ad83584116445181538150158eaa04efa40b700ca",
+      "market_start_ns": 1704067260001000000,
+      "market_end_ns": 1704559260001000000,
+      "steps": 8192,
+      "episodes": 1,
+      "seed": 102,
+      "output": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-stage59-train-diagnostics-v3-20261017\\window-01-2024-01-01\\run"
+    },
+    {
+      "window_id": 2,
+      "start_date_utc": "2024-09-01",
+      "config_path": "D:\\Program Files\\NautilusTrader_RL_ES\\docs\\audit_evidence\\20261017\\stage59_train_diagnostics_revision2\\window-02-2024-09-01.config.json",
+      "config_sha256": "4ce72fc176aca89cbf06dc821d97b86350fc19ca19a5e5726604d4cf5b0c3d90",
+      "market_start_ns": 1725148860001000000,
+      "market_end_ns": 1725640860001000000,
+      "steps": 8192,
+      "episodes": 1,
+      "seed": 102,
+      "output": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-stage59-train-diagnostics-v3-20261017\\window-02-2024-09-01\\run"
+    },
+    {
+      "window_id": 3,
+      "start_date_utc": "2025-05-01",
+      "config_path": "D:\\Program Files\\NautilusTrader_RL_ES\\docs\\audit_evidence\\20261017\\stage59_train_diagnostics_revision2\\window-03-2025-05-01.config.json",
+      "config_sha256": "d284040c7151b9b3c9cd501d45c55fd985708af6c4b1cdef7ccddaf7699bf4a2",
+      "market_start_ns": 1746057660001000000,
+      "market_end_ns": 1746549660001000000,
+      "steps": 8192,
+      "episodes": 1,
+      "seed": 102,
+      "output": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-stage59-train-diagnostics-v3-20261017\\window-03-2025-05-01\\run"
+    },
+    {
+      "window_id": 4,
+      "start_date_utc": "2026-01-01",
+      "config_path": "D:\\Program Files\\NautilusTrader_RL_ES\\docs\\audit_evidence\\20261017\\stage59_train_diagnostics_revision2\\window-04-2026-01-01.config.json",
+      "config_sha256": "8620dbfad3de2899209deed32204474200db50e5b34beea0507388ea6cdd65cf",
+      "market_start_ns": 1767225660001000000,
+      "market_end_ns": 1767717660001000000,
+      "steps": 8192,
+      "episodes": 1,
+      "seed": 102,
+      "output": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-stage59-train-diagnostics-v3-20261017\\window-04-2026-01-01\\run"
+    }
+  ],
+  "evaluation_queries": {
+    "validation": 0,
+    "test": 0,
+    "holdout": 0,
+    "outer_2026": 0
+  },
+  "fixed_policy": {
+    "algorithm": "PPO",
+    "seed": 102,
+    "steps_per_window": 8192,
+    "environment_count": 1,
+    "episode_steps": 8192,
+    "purpose": "diagnostic_replay_only_no_selection_no_validation",
+    "expected_learning_schema": "rles.r1-learning.v3"
+  },
+  "market_regime_policy": {
+    "volatility": "train-call empirical quartiles, linear quantile method, cutpoints persisted per block",
+    "trend": "sign buckets from highest-available return_15m/return_5m/return_1m feature",
+    "funding": "sign buckets from last_settled_funding feature",
+    "economic_contribution": "sum and mean of native per-step r_econ within each bucket",
+    "limitations": [
+      "quartile thresholds are specific to each learn block and are descriptive, not cross-window fixed thresholds",
+      "these previously reused Train dates do not constitute independent evidence",
+      "all rewards retain Stage58 scenario-only rules and costs"
+    ]
+  }
+}

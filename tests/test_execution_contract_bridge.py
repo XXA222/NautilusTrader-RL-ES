@@ -24,6 +24,27 @@ from rles_risk import HardRiskConfig, HardRiskGuard
 pytestmark = pytest.mark.contracts
 
 
+def test_configured_high_leverage_keeps_incomplete_data_at_one_x() -> None:
+    guard = HardRiskGuard(HardRiskConfig(
+        Decimal("100000"), Decimal("3"), Decimal("0"), Decimal("1"), Decimal("1"),
+        require_mark=False, require_funding=False,
+    ))
+    verified = guard.apply(
+        Decimal("1"), budget_notional=Decimal("50000"), equity=Decimal("10000"),
+        free_margin=Decimal("10000"), current_notional=Decimal(0),
+        mark_available=True, funding_available=True, liquidation_capability=True,
+        data_quality_grade="DQ-A",
+    )
+    incomplete = guard.apply(
+        Decimal("1"), budget_notional=Decimal("50000"), equity=Decimal("10000"),
+        free_margin=Decimal("10000"), current_notional=Decimal(0),
+        mark_available=True, funding_available=True, liquidation_capability=True,
+        data_quality_grade="DQ-C",
+    )
+    assert verified.adjusted == Decimal("0.6")
+    assert incomplete.adjusted == Decimal("0.2")
+
+
 def _planner() -> TargetQuantityPlanner:
     config = ResolvedExecutionConfig(
         schema_version="0.4.0", deadband=Decimal("0"),
@@ -47,6 +68,38 @@ def _decision(*, target: str, current: str = "0",
         equity=Decimal("1000"), mark_price=Decimal("100"),
         current_qty=Decimal(current), pending=pending,
     )
+
+
+@pytest.mark.parametrize("sign", [-1, 1])
+def test_explicit_zero_target_exits_small_position_without_deadband(sign):
+    legacy = replace(_planner().config, deadband=Decimal("0.10"))
+    rules = InstrumentRules("BTC/USD.SIM", Decimal("0.0001"), Decimal("0.0001"),
+                            Decimal("5"), Decimal("1"))
+    args = dict(decision_id="voluntary-flat", instrument=rules, target_exposure=Decimal(0),
+                risk_budget_notional=Decimal("1000"), equity=Decimal("1000"),
+                mark_price=Decimal("100"), current_qty=Decimal("0.5") * sign, pending=())
+    assert TargetQuantityPlanner(legacy).plan(**args).reason == "deadband"
+    explicit = replace(legacy, zero_target_policy="close")
+    decision = TargetQuantityPlanner(explicit).plan(**args)
+    assert (decision.action, decision.reason, decision.delta_qty) == ("SUBMIT", "policy_flat", -args["current_qty"])
+    assert legacy.fingerprint() != explicit.fingerprint()
+
+
+def test_explicit_flat_cancels_pending_orders_and_respects_dated_minimums():
+    planner = TargetQuantityPlanner(replace(_planner().config, deadband=Decimal("0.10"),
+                                            zero_target_policy="close", pending_order_policy="wait"))
+    rules = InstrumentRules("BTC/USD.SIM", Decimal("0.0001"), Decimal("0.0001"),
+                            Decimal("20"), Decimal("1"))
+    args = dict(decision_id="flat-dust", instrument=rules, target_exposure=Decimal(0),
+                risk_budget_notional=Decimal("1000"), equity=Decimal("1000"),
+                mark_price=Decimal("100"), current_qty=Decimal("0.1"), pending=())
+    blocked = planner.plan(**args)
+    assert blocked.action == "NOOP" and "historical minimum" in blocked.reason
+    allowed = planner.plan(**{**args, "instrument": replace(rules, reduce_only_min_notional_exempt=True)})
+    assert allowed.action == "SUBMIT" and allowed.reason == "policy_flat"
+    pending = (PendingOrder("native-1", Decimal("1"), "ACCEPTED"),)
+    assert planner.plan(**{**args, "current_qty": Decimal(0), "pending": pending}).action == "CANCEL"
+    assert planner.plan(**{**args, "pending": (replace(pending[0], status="PENDING_CANCEL"),)}).action == "WAIT"
 
 
 @pytest.mark.parametrize(("target", "pending", "action", "policy"), (
@@ -101,6 +154,31 @@ def test_fee_stress_is_hashed_and_only_increases_positive_fees() -> None:
     rebate = {"maker_fee": "-0.0001", "taker_fee": "0.0005"}
     assert _effective_fee_rates(rebate, config, "stress") == (Decimal("-0.0001"), Decimal("0.0010"))
     assert rule["maker_fee"] == "0.0002"  # source facts remain untouched
+
+
+def test_partial_depth_stress_is_explicit_and_bound_to_execution_identity() -> None:
+    config = replace(
+        _planner().config,
+        stress_fill=FillProfile("depth-stress", Decimal("2"),
+                                simulated_depth_fraction=Decimal("0.4")),
+    )
+    assert config.fingerprint() != _planner().config.fingerprint()
+    scenario = resolve_scenario(config, "stress")
+    assert scenario.simulated_depth_fraction == "0.4"
+    assert scenario.scenario_hash != resolve_scenario(_planner().config, "stress").scenario_hash
+    assert FillProfile("base", Decimal("1")).simulated_depth_fraction == Decimal(1)
+
+
+def test_partial_depth_is_bounded_and_quote_depth_cannot_be_synthetic() -> None:
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        FillProfile("invalid-depth", Decimal("2"), simulated_depth_fraction=Decimal("1.1"))
+    with pytest.raises(ValueError, match="base execution must retain"):
+        replace(_planner().config,
+                base_fill=FillProfile("partial-base", Decimal("1"),
+                                      simulated_depth_fraction=Decimal("0.5")))
+    with pytest.raises(ValueError, match="native displayed depth"):
+        FillProfile("synthetic-quote-cap", Decimal(0), "quote",
+                    simulated_depth_fraction=Decimal("0.5"))
 
 
 def test_default_fee_multipliers_preserve_legacy_execution_fingerprint() -> None:
@@ -203,6 +281,76 @@ def test_hard_cap_reduction_bypasses_deadband(sign, requested) -> None:
     assert decision.action == "SUBMIT"
     assert decision.reason == "hard_risk_reduce"
     assert decision.delta_qty == Decimal("-0.01") * sign
+
+
+def test_hard_cap_reserves_entry_cost_to_preserve_post_fill_leverage() -> None:
+    guard = HardRiskGuard(HardRiskConfig(
+        Decimal("100000"), Decimal("10"), Decimal("0"), Decimal("1"), Decimal("1"),
+    ))
+    risk = guard.apply(
+        Decimal("1"), budget_notional=Decimal("100000"), equity=Decimal("10000"),
+        free_margin=Decimal("10000"), current_notional=Decimal("0"),
+        mark_available=True, funding_available=True, liquidation_capability=True,
+        data_quality_grade="DQ-B", estimated_cost_rate=Decimal("0.0005"),
+    )
+    projected_notional = risk.adjusted * Decimal("100000")
+    projected_equity = Decimal("10000") - projected_notional * Decimal("0.0005")
+    assert projected_notional <= Decimal("10") * projected_equity
+    assert risk.adjusted < Decimal("1")
+
+
+@pytest.mark.parametrize("current_sign", [Decimal("1"), Decimal("-1")])
+def test_hard_risk_reversal_flattens_before_opening_opposite_side(current_sign) -> None:
+    budget = Decimal("100000")
+    current_notional = Decimal("50000") * current_sign
+    risk = HardRiskGuard(HardRiskConfig(
+        Decimal("100000"), Decimal("10"), Decimal("0"), Decimal("1"), Decimal("1"),
+    )).apply(
+        -current_sign * Decimal("0.5"), budget_notional=budget, equity=Decimal("10000"),
+        free_margin=Decimal("10000"), current_notional=current_notional,
+        mark_available=True, funding_available=True, liquidation_capability=True,
+        data_quality_grade="DQ-B", estimated_cost_rate=Decimal("0.0005"),
+    )
+    assert risk.adjusted == 0
+    assert risk.force_reduce
+
+    current_qty = Decimal("0.025") * current_sign
+    decision = TargetQuantityPlanner(_planner().config).plan(
+        decision_id="reverse-only-after-flat", instrument=InstrumentRules(
+            "ETHUSDT-PERP.SIM", Decimal("0.001"), Decimal("0.001"), Decimal("20"), Decimal("1")),
+        target_exposure=risk.adjusted, risk_budget_notional=budget,
+        equity=Decimal("10000"), mark_price=Decimal("2000"), current_qty=current_qty,
+        pending=(), force_reduce=risk.force_reduce,
+    )
+    assert decision.action == "SUBMIT"
+    assert decision.reason == "hard_risk_reduce"
+    assert decision.delta_qty == -current_qty
+
+
+def test_incompatible_cost_estimate_blocks_opening_but_keeps_flatten_available() -> None:
+    budget = Decimal("100000")
+    guard = HardRiskGuard(HardRiskConfig(
+        Decimal("100000"), Decimal("10"), Decimal("0"), Decimal("1"), Decimal("1"),
+    ))
+    risk = guard.apply(
+        Decimal("0.5"), budget_notional=budget, equity=Decimal("10000"),
+        free_margin=Decimal("10000"), current_notional=Decimal("50000"),
+        mark_available=True, funding_available=True, liquidation_capability=True,
+        data_quality_grade="DQ-B", estimated_cost_rate=Decimal("0.11"),
+    )
+    assert risk.adjusted == 0
+    assert risk.force_reduce
+
+    decision = TargetQuantityPlanner(_planner().config).plan(
+        decision_id="cost-stress-flatten", instrument=InstrumentRules(
+            "ETHUSDT-PERP.SIM", Decimal("0.001"), Decimal("0.001"), Decimal("20"), Decimal("1")),
+        target_exposure=risk.adjusted, risk_budget_notional=budget,
+        equity=Decimal("10000"), mark_price=Decimal("2000"), current_qty=Decimal("0.025"),
+        pending=(), force_reduce=risk.force_reduce,
+    )
+    assert decision.action == "SUBMIT"
+    assert decision.reason == "hard_risk_reduce"
+    assert decision.delta_qty == Decimal("-0.025")
 
 
 @pytest.mark.parametrize("requested", ["0", "0.02"])

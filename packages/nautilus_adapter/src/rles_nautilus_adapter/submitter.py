@@ -77,7 +77,8 @@ class NativePlanSubmitter:
         if plan.idempotency_key in self._used:
             raise EngineBoundaryError("native action idempotency key already used")
         instrument_id = InstrumentId.from_str(plan.instrument_id)
-        risk_reduction = plan.action == "SUBMIT" and plan.reason == "hard_risk_reduce"
+        policy_close = plan.action == "SUBMIT" and plan.reason == "policy_flat"
+        risk_reduction = plan.action == "SUBMIT" and plan.reason in {"hard_risk_reduce", "policy_flat"}
         if flatten or risk_reduction:
             positions = tuple(engine.cache.positions_open(instrument_id=instrument_id))
             if (plan.action != "SUBMIT" or len(positions) != 1
@@ -91,7 +92,7 @@ class NativePlanSubmitter:
                 expected = quantity
             else:
                 raise EngineBoundaryError("terminal native position side is not closeable")
-            if flatten and plan.delta_qty != expected:
+            if (flatten or policy_close) and plan.delta_qty != expected:
                 raise EngineBoundaryError("terminal flatten quantity differs from native position")
             if risk_reduction and (plan.delta_qty * expected <= 0 or abs(plan.delta_qty) > quantity):
                 raise EngineBoundaryError("hard-risk reduction must reduce the owned native position")

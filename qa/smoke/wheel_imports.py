@@ -1,4 +1,4 @@
-"""Require all eleven RLES packages to load from installed wheels in this env."""
+"""Require every workspace RLES package to load from installed wheels in this env."""
 from __future__ import annotations
 
 import importlib
@@ -17,7 +17,7 @@ MODULES = (
 
 def main() -> None:
     prefix = Path(sys.prefix).resolve()
-    records: dict[str, dict[str, str]] = {}
+    records: dict[str, dict[str, object]] = {}
     for name in MODULES:
         module = importlib.import_module(name)
         if module.__file__ is None:
@@ -35,7 +35,27 @@ def main() -> None:
             or not origin.get('url', '').startswith('file:')
             or not origin.get('url', '').lower().endswith('.whl')):
             raise SystemExit(f'{name}: expected archive installation, got {origin}')
-        records[name] = {'version': dist.version, 'module_path': str(path)}
+        entry_points = []
+        for entry_point in sorted(dist.entry_points, key=lambda item: (item.group, item.name)):
+            entry_module = importlib.import_module(entry_point.module)
+            entry_path = (Path(entry_module.__file__).resolve()
+                          if entry_module.__file__ is not None else None)
+            if entry_path is None or not entry_path.is_relative_to(prefix):
+                raise SystemExit(
+                    f'{name}:{entry_point.group}:{entry_point.name}: '
+                    f'entry point module imported outside wheel environment: {entry_path}'
+                )
+            entry_points.append({
+                'group': entry_point.group,
+                'name': entry_point.name,
+                'module': entry_point.module,
+                'module_path': str(entry_path),
+            })
+        records[name] = {
+            'version': dist.version,
+            'module_path': str(path),
+            'entry_points': entry_points,
+        }
     print(json.dumps({'python': sys.version.split()[0], 'prefix': str(prefix),
                       'installed_wheels': records}, ensure_ascii=False, indent=2))
 

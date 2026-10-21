@@ -1,0 +1,41 @@
+{
+  "bundle_sha256": "ea2ea516780f25756c7dae35636ee59eca7e3443a24259c6b58526b2536fec68",
+  "market_sha256": "06323e909997909dee35b4abf1543444ae230f30cbc1f672ded033b3bc41fe70",
+  "plan_path": ".artifacts/audit-development-20261017/m2-3-bar-cost-v1/plan.json",
+  "plan_sha256": "1b82f75b701e9c6f3e7133f0e93177e0cc67fcc3878269748eb6002863f627cc",
+  "research_access": {
+    "matching_rows": [
+      {
+        "end_ns": 1713052800000000000,
+        "family": "perpetual-market-v1",
+        "market": "ETHUSDT",
+        "owner": "23f482f69d0b2017aa134d92d02d67cf253e3fa108b1a3e1266350164e30ee5f",
+        "purpose": "development",
+        "start_ns": 1705276800000000000,
+        "state": "recorded"
+      }
+    ],
+    "matching_rows_count": 1,
+    "purpose": "development",
+    "split": "train_inner"
+  },
+  "result": "completed; Base and Stress both terminal-flat; summary sidecar verified",
+  "rules_sha256": "690292b508ce722d6ba2f5b9fb745671f56fc396d2026943fd36668e9028c93b",
+  "run_log": ".tmp/m2-3-bar-cost-v1-run.log",
+  "schema": "rles.bar-cost-execution-manifest.v1",
+  "source_code_sha256": {
+    "packages/execution/src/rles_execution/planner.py": "030a255711060b1cf064f9c9fad3cd55878fbe36eb1751442f54216e81d2d28c",
+    "packages/gym_bridge/src/rles_gym_bridge/env.py": "92f11604d19144672225df689c6362fa5a37f2cc50acbc5de20a3f04e12031be",
+    "packages/gym_bridge/src/rles_gym_bridge/historical.py": "ab6b756d5d1103b1fcc59cf251d4e1927169316b90cee7147217aa6020926597",
+    "packages/orchestrator/src/rles_orchestrator/application.py": "af40b41e2f62a923a2fc797dd70fc925d04da825e5d325a2a2046b5919486ce2",
+    "packages/orchestrator/src/rles_orchestrator/research_access.py": "6fcce53f2137e299f407df46694b5911dc543b47d6c179ac4c93d26e9596b412",
+    "packages/research/src/rles_research/access.py": "e1e9f100e0ceea8c5e83f1b3af9a2bd58de4c52363e78a2df99726376d4a0cc4",
+    "packages/research/src/rles_research/native_metrics.py": "ef5b9f827c24c94211fcdd7766004076da1287656155af093030cab4161e31bd",
+    "packages/risk/src/rles_risk/guards.py": "c84e0cddc2beaabf915b53a2969f81caf6407c2a30196fb63852a8ffe33dd061",
+    "qa/compare_bar_cost_modes_20261017.py": "a94b7902732bc5c987afb32fc4209036a4c5b1218475e82522e217241b6efbbb",
+    "qa/profile_native_history_growth_20261016.py": "1b86efa24575794f045550307d961ce0f20c220cafa78b4c1393ef67dd73019a"
+  },
+  "source_plan_sha256": "82eeb26cf6c8daae72ed7c4d1f26a777d174425de87f3927b2ddb884b0094003",
+  "summary_path": "docs/audit_evidence/20261017/m2_3_bar_cost_base_stress_train_inner.json",
+  "summary_sha256": "a66cf6e85563f35d71dfc89c07647bc9acb080a8d73ba85d6ffe8a7806e67ed8"
+}

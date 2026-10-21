@@ -1,7 +1,14 @@
 """Strict source event schema validation, shared by DTOs and Parquet ingestion."""
 from __future__ import annotations
+import re
 from typing import Any
 from .core import DataError, KINDS, MINUTE_NS, require_ns
+
+_INSTRUMENT_RULE_FIELDS = {
+    "instrument", "tick_size", "step_size", "min_notional", "min_qty", "maker_fee", "taker_fee",
+    "initial_margin_rate", "maintenance_margin_rate", "effective_ns", "valid_until_ns", "rule_version",
+    "contract_spec", "reduce_only_min_notional_exempt",
+}
 
 def _number(payload: dict[str, Any], key: str, *, allow_zero: bool = False,
             signed: bool = False) -> float:
@@ -45,8 +52,35 @@ def validate_payload(kind: str, p: dict[str, Any], ts: int) -> None:
         for key in ("update_id", "transaction_time_ns"):
             if type(p.get(key)) is not int or p[key] < 0:
                 raise DataError(f"{key} must be a nonnegative integer")
+    elif kind == "trade_flow_1s":
+        for key in ("aggressor_buy_qty", "aggressor_sell_qty",
+                    "aggressor_buy_notional", "aggressor_sell_notional",
+                    "first_price", "last_price", "high_price", "low_price"):
+            _number(p, key, allow_zero=key.startswith("aggressor_"))
+        if (type(p.get("trade_count")) is not int or p["trade_count"] <= 0
+                or type(p.get("first_trade_id")) is not int or p["first_trade_id"] < 0
+                or type(p.get("last_trade_id")) is not int or p["last_trade_id"] < p["first_trade_id"]):
+            raise DataError("trade_flow_1s requires positive count and ordered nonnegative trade IDs")
+        if _number(p, "high_price") < max(_number(p, "first_price"), _number(p, "last_price")):
+            raise DataError("trade_flow_1s high price is below an observed endpoint")
+        if _number(p, "low_price") > min(_number(p, "first_price"), _number(p, "last_price")):
+            raise DataError("trade_flow_1s low price is above an observed endpoint")
     elif kind in ("funding_update", "funding_settlement"):
         _number(p, "rate", signed=True)
+        interval = p.get("interval_minutes")
+        if interval is not None and (type(interval) is not int or interval <= 0):
+            raise DataError("interval_minutes must be a positive integer when provided")
+        if kind == "funding_update":
+            semantics = p.get("rate_semantics")
+            if semantics is not None and semantics != "last_settled_rate":
+                raise DataError("unsupported funding_update rate_semantics")
+            next_funding_value = p.get("next_funding_ns")
+            if next_funding_value is not None:
+                next_funding = require_ns(next_funding_value)
+                if next_funding <= ts:
+                    raise DataError("next_funding_ns must follow the update timestamp")
+                if semantics == "last_settled_rate":
+                    raise DataError("last settled funding rate cannot schedule a future payment")
         if kind == "funding_settlement":
             settlement_value = p.get("settlement_ns")
             if type(settlement_value) is not int:
@@ -54,13 +88,41 @@ def validate_payload(kind: str, p: dict[str, Any], ts: int) -> None:
             settlement = require_ns(settlement_value)
             if settlement != ts:
                 raise DataError("funding settlement event time must equal settlement time")
+            if "settlement_mark_price" in p:
+                _number(p, "settlement_mark_price")
     elif kind == "instrument_rule":
+        unsupported_fields = sorted(str(key) for key in p if key not in _INSTRUMENT_RULE_FIELDS)
+        if unsupported_fields:
+            raise DataError(
+                "instrument_rule contains fields not consumed by the static native rule model: "
+                + ", ".join(unsupported_fields)
+            )
         if ("reduce_only_min_notional_exempt" in p
                 and type(p["reduce_only_min_notional_exempt"]) is not bool):
             raise DataError("reduce_only_min_notional_exempt must be bool when provided")
+        if "contract_spec" in p:
+            spec = p["contract_spec"]
+            required = {"raw_symbol", "base_currency", "quote_currency", "settlement_currency",
+                        "is_inverse", "multiplier"}
+            if not isinstance(spec, dict) or set(spec) != required:
+                raise DataError("contract_spec must contain the complete frozen unit schema")
+            for key in ("raw_symbol", "base_currency", "quote_currency", "settlement_currency"):
+                value = spec[key]
+                if (not isinstance(value, str)
+                        or re.fullmatch(r"[A-Z0-9][A-Z0-9._/-]{0,31}", value) is None):
+                    raise DataError(f"contract_spec {key} is invalid")
+            if type(spec["is_inverse"]) is not bool:
+                raise DataError("contract_spec is_inverse must be bool")
+            _number(spec, "multiplier")
+            if not spec["is_inverse"] and spec["settlement_currency"] != spec["quote_currency"]:
+                raise DataError("linear contract must settle in its quote currency")
         for key in ("tick_size", "step_size", "min_notional", "min_qty"):
             _number(p, key)
-        for key in ("maker_fee", "taker_fee", "initial_margin_rate", "maintenance_margin_rate"):
+        # Fee rates are signed cash flows: a negative maker/taker rate is a
+        # rebate. Margin rates remain nonnegative ratios.
+        for key in ("maker_fee", "taker_fee"):
+            _number(p, key, allow_zero=True, signed=True)
+        for key in ("initial_margin_rate", "maintenance_margin_rate"):
             _number(p, key, allow_zero=True)
         if _number(p, "initial_margin_rate", allow_zero=True) < _number(p, "maintenance_margin_rate", allow_zero=True):
             raise DataError("initial margin rate below maintenance rate")

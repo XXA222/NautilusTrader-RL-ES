@@ -1,0 +1,41 @@
+{
+  "schema": "rles.clean-source-reproduction.v1",
+  "snapshot_archive": {
+    "path": ".artifacts\\audit-development-20261016\\source-snapshot-v4.zip",
+    "sha256": "38643fc3a03b2249a722a5236a2c45e5f323b04022ce4c0f67aae43f994426bb",
+    "entries": 343
+  },
+  "source_manifest": {
+    "path": "docs/audit_evidence/20261016/development_source_manifest_v4.json",
+    "sha256": "b46b02bd21137105295ce418c7d1c1fdddf65879d676c380940ac0401530f2b9"
+  },
+  "lock_sha256": "5889ef96a6491b2292a61a3cd0739b1272178df798c9852ffc9e37b6c7e84d2d",
+  "install": "uv sync --locked --offline --all-packages --no-editable --extra application; isolated .venv in extracted snapshot; 68 locked packages installed, including 11 RLES packages built from extracted source",
+  "test_command": "python -m pytest -q -p no:cacheprovider --basetemp %TEMP%\\rles-pytest-clean-extract-v4-20261016 --tb=short --show-capture=no",
+  "test_log": {
+    "path": ".artifacts/audit-development-20261016/pytest-clean-extract-v4.log",
+    "sha256": "7e713eb8410bb0bde7c1b97ca9bf75c8c0583ca0669ee81d522ebce7ccc65cb3"
+  },
+  "tests": {
+    "passed": 493,
+    "skipped": 4,
+    "warnings": 45,
+    "duration_seconds": 279.32,
+    "exit_code": 0,
+    "skip_reason": "CUDA learner unavailable in this CPU-only isolated environment"
+  },
+  "required_non_source_inputs_in_snapshot": [
+    "data/binance_ethusdt_20240101_quotes_1s/{market.parquet,import.json,market.parquet.COMPLETED.json,source-audit.json}",
+    "nautilus_trader/examples/backtest/liquidation_demo.py"
+  ],
+  "iteration_notes": [
+    "Snapshot v1 missed packaging/; collection failed.",
+    "Snapshot v3 omitted two locally ignored real-validation inputs; after adding them, full v4 suite passed.",
+    "An initial pytest basetemp under the extracted workspace hit Windows hard-link restrictions; the passing run used %TEMP%."
+  ],
+  "limitations": [
+    "This is a clean source extraction and offline installation using the host Python and dependency cache, not a network-fresh machine reproduction.",
+    "CUDA-specific tests were skipped.",
+    "The snapshot includes only one upstream NautilusTrader example as a test fixture; upstream code was not modified."
+  ]
+}

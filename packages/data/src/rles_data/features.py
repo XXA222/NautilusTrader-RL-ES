@@ -2,14 +2,67 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
+from itertools import groupby
+from bisect import bisect_left, bisect_right
 import math
 import struct
-from typing import Iterable
+from typing import Iterable, cast
 
 from .core import (CuratedStore, DataError, FeatureField, FeatureSpec,
-                   MINUTE_NS, Window, digest, require_ns)
+                   MAX_NS, MINUTE_NS, Window, digest, require_ns)
 
 TIMEFRAMES = (5, 15, 60, 240, 480, 1440)
+
+
+def _indexed_closed_bars(store: CuratedStore, instrument: str,
+                         timeframe_minutes: int) -> tuple[tuple[int, ...], tuple[dict, ...]] | None:
+    """Return a store-cached immutable-history aggregation, or None for duplicate bars.
+
+    Duplicate close timestamps need decision-specific handling because one duplicate
+    may become visible later than the other. The direct bounded path handles that
+    case exactly; clean histories can use the precomputed bucket index.
+    """
+    key = ("ohlcv_closed", instrument, timeframe_minutes)
+    cached = store._feature_cache.get(key)
+    if key in store._feature_cache:
+        return cast(tuple[tuple[int, ...], tuple[dict, ...]] | None, cached)
+
+    span = timeframe_minutes * MINUTE_NS
+    events = store.visible_event_window(MAX_NS, 0, "ohlcv_1m")
+    selected = (event for event in events if event.payload.get("instrument") == instrument)
+    previous_close: int | None = None
+    buckets: dict[int, list] = {}
+    for event in selected:
+        if event.ts_event_ns == previous_close:
+            store._feature_cache[key] = None
+            return None
+        previous_close = event.ts_event_ns
+        bucket_close = ((event.ts_event_ns - 1) // span + 1) * span
+        buckets.setdefault(bucket_close, []).append(event)
+
+    output = []
+    for bucket_close, segment in sorted(buckets.items()):
+        if (len(segment) != timeframe_minutes or
+                segment[0].ts_event_ns != bucket_close - span + MINUTE_NS or
+                segment[-1].ts_event_ns != bucket_close or
+                any(b.ts_event_ns - a.ts_event_ns != MINUTE_NS
+                    for a, b in zip(segment, segment[1:]))):
+            continue
+        available_at = [event.available_at_ns for event in segment]
+        assert all(timestamp is not None for timestamp in available_at)
+        output.append({"close_ns": bucket_close,
+                       "available_at_ns": max(timestamp for timestamp in available_at
+                                               if timestamp is not None),
+                       "open": float(segment[0].payload["open"]),
+                       "high": max(float(event.payload["high"]) for event in segment),
+                       "low": min(float(event.payload["low"]) for event in segment),
+                       "close": float(segment[-1].payload["close"]),
+                       "volume": math.fsum(float(event.payload["volume"]) for event in segment)})
+    cached_bars = tuple(output)
+    indexed = (tuple(int(bar["close_ns"]) for bar in cached_bars), cached_bars)
+    store._feature_cache[key] = indexed
+    return indexed
 
 
 def _instrument(store: CuratedStore, instrument: str | None) -> str:
@@ -30,8 +83,14 @@ def _bars_1m(store: CuratedStore, decision_ns: int, instrument: str,
              *, start_event_ns: int | None = None) -> tuple[dict, ...]:
     source = (store.visible(decision_ns, "ohlcv_1m") if start_event_ns is None
               else store.visible_event_window(decision_ns, start_event_ns, "ohlcv_1m"))
-    bars = sorted((e for e in source
-                   if e.payload.get("instrument") == instrument), key=lambda e: e.ts_event_ns)
+    # Event-time windows are already sorted by (event time, availability, ID)
+    # in CuratedStore. Keep sorting the availability-ordered unbounded view,
+    # but do not sort each bounded lookback again for every feature row.
+    if start_event_ns is None:
+        bars = sorted((e for e in source if e.payload.get("instrument") == instrument),
+                      key=lambda e: e.ts_event_ns)
+    else:
+        bars = [e for e in source if e.payload.get("instrument") == instrument]
     closes = set()
     result = []
     for e in bars:
@@ -60,32 +119,86 @@ def aggregate_closed(store: CuratedStore, decision_ns: int, timeframe_minutes: i
         raise DataError("lookback_buckets must be a positive integer")
     symbol = _instrument(store, instrument)
     span = timeframe_minutes * MINUTE_NS
-    buckets: dict[int, list[dict]] = {}
     start_event_ns = None
     if lookback_buckets is not None:
         last_complete_bucket = (decision_ns // span) * span
         start_event_ns = max(0, last_complete_bucket - lookback_buckets * span + MINUTE_NS)
-    for bar in _bars_1m(store, decision_ns, symbol, start_event_ns=start_event_ns):
+        indexed = _indexed_closed_bars(store, symbol, timeframe_minutes)
+        if indexed is not None:
+            first_bucket_close = ((start_event_ns - 1) // span + 1) * span
+            closes, indexed_bars = indexed
+            first = bisect_left(closes, first_bucket_close)
+            last = bisect_right(closes, last_complete_bucket)
+            return tuple(dict(bar) for bar in indexed_bars[first:last]
+                         if bar["available_at_ns"] <= decision_ns)
+
+    if start_event_ns is not None:
+        # The bounded event-time view is already sorted and availability-filtered.
+        # Aggregate immutable events directly instead of rebuilding an
+        # intermediate dictionary for every 1m bar on every decision.
+        events = store.visible_event_window(decision_ns, start_event_ns, "ohlcv_1m")
+
+        def selected_events():
+            previous_close: int | None = None
+            for event in events:
+                if event.payload.get("instrument") != symbol:
+                    continue
+                if event.ts_event_ns == previous_close:
+                    raise DataError("non-unique 1m close timestamp in feature history")
+                previous_close = event.ts_event_ns
+                yield event
+
+        output = []
+        bucketed_events = groupby(
+            selected_events(), key=lambda event: ((event.ts_event_ns - 1) // span + 1) * span)
+        for bucket_close, event_group in bucketed_events:
+            event_segment = tuple(event_group)
+            if bucket_close > decision_ns:
+                continue
+            if (len(event_segment) != timeframe_minutes or
+                    event_segment[0].ts_event_ns != bucket_close - span + MINUTE_NS or
+                    event_segment[-1].ts_event_ns != bucket_close or
+                    any(b.ts_event_ns - a.ts_event_ns != MINUTE_NS
+                        for a, b in zip(event_segment, event_segment[1:]))):
+                continue
+            available_at = [event.available_at_ns for event in event_segment]
+            assert all(timestamp is not None for timestamp in available_at)
+            availability = max(timestamp for timestamp in available_at if timestamp is not None)
+            if availability > decision_ns:
+                continue
+            output.append({"close_ns": bucket_close, "available_at_ns": availability,
+                           "open": float(event_segment[0].payload["open"]),
+                           "high": max(float(event.payload["high"]) for event in event_segment),
+                           "low": min(float(event.payload["low"]) for event in event_segment),
+                           "close": float(event_segment[-1].payload["close"]),
+                           "volume": math.fsum(float(event.payload["volume"])
+                                                for event in event_segment)})
+        return tuple(output)
+
+    bar_buckets: dict[int, list[dict]] = {}
+    for bar in _bars_1m(store, decision_ns, symbol):
         timestamp = bar["close_ns"]
         bucket_close = ((timestamp - 1) // span + 1) * span
         if bucket_close <= decision_ns:
-            buckets.setdefault(bucket_close, []).append(bar)
+            bar_buckets.setdefault(bucket_close, []).append(bar)
     output = []
-    for bucket_close, segment in sorted(buckets.items()):
-        if len(segment) != timeframe_minutes:
+    for bucket_close, bar_segment in sorted(bar_buckets.items()):
+        if len(bar_segment) != timeframe_minutes:
             continue
-        if (segment[0]["close_ns"] != bucket_close - span + MINUTE_NS or
-                segment[-1]["close_ns"] != bucket_close or
-                any(b["close_ns"] - a["close_ns"] != MINUTE_NS for a, b in zip(segment, segment[1:]))):
+        if (bar_segment[0]["close_ns"] != bucket_close - span + MINUTE_NS or
+                bar_segment[-1]["close_ns"] != bucket_close or
+                any(b["close_ns"] - a["close_ns"] != MINUTE_NS
+                    for a, b in zip(bar_segment, bar_segment[1:]))):
             continue
-        availability = max(b["available_at_ns"] for b in segment)
+        availability = max(b["available_at_ns"] for b in bar_segment)
         if availability > decision_ns:
             continue
         output.append({"close_ns": bucket_close, "available_at_ns": availability,
-                       "open": segment[0]["open"], "high": max(b["high"] for b in segment),
-                       "low": min(b["low"] for b in segment),
-                       "close": segment[-1]["close"],
-                       "volume": math.fsum(b["volume"] for b in segment)})
+                       "open": bar_segment[0]["open"],
+                       "high": max(b["high"] for b in bar_segment),
+                       "low": min(b["low"] for b in bar_segment),
+                       "close": bar_segment[-1]["close"],
+                       "volume": math.fsum(b["volume"] for b in bar_segment)})
     return tuple(output)
 
 
@@ -124,7 +237,7 @@ class FeatureRow:
                 self.available_at_ns > self.decision_ts_ns):
             raise DataError("future or non-finite feature observation")
 
-    @property
+    @cached_property
     def hash(self) -> str:
         return digest(self)
 
@@ -264,12 +377,26 @@ class Scaler:
             raise DataError("invalid/frozen scaler variance")
         if any(type(x) not in (int, float) or not math.isfinite(x) for x in self.mean):
             raise DataError("invalid scaler means")
+        self._bound_state: tuple
+        self._bound_hash: str
+        object.__setattr__(self, "_bound_state", self._state())
+        object.__setattr__(self, "_bound_hash", digest(self))
+
+    def _state(self) -> tuple:
+        return (self.feature_hash, self.mean, self.std, self.train_window_hash,
+                self.sample_count, self.training_only)
+
+    def verify_frozen(self) -> None:
+        if self._state() != self._bound_state:
+            raise DataError("scaler mutated after construction")
 
     @property
     def hash(self) -> str:
-        return digest(self)
+        self.verify_frozen()
+        return self._bound_hash
 
     def transform(self, vector: tuple[float, ...], feature_hash: str) -> tuple[float, ...]:
+        self.verify_frozen()
         if (feature_hash != self.feature_hash or type(vector) is not tuple or
                 len(vector) != len(self.mean)):
             raise DataError("scaler feature hash/shape mismatch")

@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import asdict, replace
 from hashlib import sha256
 import json
+import inspect
 import math
 from pathlib import Path
 import re
@@ -17,7 +18,7 @@ from rles_data.core import CuratedStore, DataError, digest
 from rles_data.coverage import CoveragePolicy
 from rles_data.features import Scaler
 from rles_data.folds import bind_fold_scaler, build_folds
-from rles_data.io import read_curated
+from rles_data.io import curated_source_identity, read_curated_window
 from rles_execution import ResolvedExecutionConfig
 from rles_gym_bridge.historical import (
     HistoricalEnvironmentFactory,
@@ -26,24 +27,104 @@ from rles_gym_bridge.historical import (
 )
 from rles_research.baselines import BaselinePolicy, BaselineSpec
 from rles_research.ledger import ResearchLedger
+from rles_research.access import authorize_evaluation
 from rles_research.native_metrics import NATIVE_LIQUIDATION_COUNTS_AVAILABLE
 from rles_research.selection import SelectionSpec, choose
 from rles_research.statistics import (
     block_bootstrap,
     candidate_set_sha256,
     deflated_sharpe,
+    deflated_sharpe_trial_count_sensitivity,
     pbo_cscv,
 )
 
 from .application import (_file_hash, _rl_sampling_policy, _verify_file,
                           _worker_memory_policy, _write_verified, backtest, rollout, train)
+from . import research_access
 
 
 _CANDIDATE_FIELDS = {
     "candidate_id", "route", "algorithm", "steps", "population", "generations",
     "seed", "hidden_layers", "normalize_observation", "hyperparameters", "distillation",
-    "deadband", "es_input_scaling", "feature_profile",
+    "deadband", "es_input_scaling", "feature_profile", "zero_target_policy",
 }
+
+
+class WFOValidationAccess:
+    """Per-candidate capability for a predeclared Validation WFO query.
+
+    The callback must consume it before constructing a Validation reader.
+    The WFO ledger query is rechecked at consumption and the caller verifies
+    consumption before accepting the callback's bundle/report artifacts.
+    """
+
+    def __init__(self, identity: dict, verify: Callable[[], None]):
+        self._identity = dict(identity)
+        self._verify = verify
+        self._bundle_sha256: str | None = None
+
+    @property
+    def identity(self) -> dict:
+        value = dict(self._identity)
+        if self._bundle_sha256 is not None:
+            value["bundle_sha256"] = self._bundle_sha256
+        return value
+
+    @property
+    def consumed(self) -> bool:
+        return self._bundle_sha256 is not None
+
+    @property
+    def bundle_sha256(self) -> str | None:
+        return self._bundle_sha256
+
+    def consume(self, *, bundle_sha256: str) -> None:
+        if self.consumed:
+            raise DataError("WFO Validation capability may be consumed only once")
+        if (not isinstance(bundle_sha256, str) or len(bundle_sha256) != 64
+                or any(char not in "0123456789abcdef" for char in bundle_sha256)):
+            raise DataError("WFO Validation capability requires the frozen bundle SHA-256")
+        self._verify()
+        self._bundle_sha256 = bundle_sha256
+
+
+def _dsr_trial_count_evidence(candidate_ids: list[str], ledger_summary: dict,
+                              project_trial_summary: dict) -> dict:
+    """Describe the narrow DSR trial count and the unestimated history around it."""
+    inventory = ledger_summary.get("trial_count_inventory")
+    if not isinstance(inventory, dict):
+        raise DataError("WFO ledger lacks trial-count inventory")
+    if not candidate_ids or len(candidate_ids) != len(set(candidate_ids)):
+        raise DataError("DSR trial-count evidence requires unique frozen candidate IDs")
+    return {
+        "status": "partial",
+        "scope": "frozen_current_protocol_candidates_only",
+        "dsr_effective_trials": len(candidate_ids),
+        "candidate_ids": list(candidate_ids),
+        "candidate_set_sha256": candidate_set_sha256(candidate_ids),
+        "source": "WFO frozen candidate list; DSR validation Sharpe inputs are computed once per candidate",
+        "deduplication": "candidate_id uniqueness is enforced; parameter-equivalent candidates are not canonicalized",
+        "cross_fold_handling": "fold results contribute to each candidate Sharpe; folds are not counted as separate trials",
+        "dependence_assumption": "DSR expected-maximum approximation assumes independent trial Sharpe draws; candidate correlation is not modeled",
+        "protocol_observed_usage": {
+            "raw_query_counts": inventory.get("raw_query_counts", {}),
+            "observed_candidate_ids": inventory.get("observed_candidate_ids", []),
+            "observed_fold_ids": inventory.get("observed_fold_ids", []),
+            "es_lane_request_count": inventory.get("es_lane_request_count", 0),
+            "stage_receipt_count": inventory.get("stage_receipt_count", 0),
+        },
+        "project_trial_attempt_inventory": project_trial_summary,
+        "project_historical_effective_trials": {
+            "status": "not_estimated",
+            "reason": "project inventory covers WFO candidates and standalone application training attempts registered by this schema, but not the full pre-existing or manual research history",
+            "uncovered_dimensions": [
+                "parameter-equivalent and feature-version trials across protocols",
+                "random-seed variants and failed or unqueried attempts",
+                "manual candidate selection and unledgered historical research",
+            ],
+        },
+        "interpretation": "protocol-limited diagnostic; it does not establish full-history selection-corrected significance",
+    }
 
 
 def _coverage(template: dict, instrument: str, start_ns: int, end_ns: int) -> dict:
@@ -99,11 +180,12 @@ def _candidate(base: dict, values: dict, output: Path) -> dict:
         raise DataError("invalid WFO candidate identity")
     result = {k: v for k, v in base.items() if k not in {"output", "evaluation", "wfo"}}
     result.update({k: v for k, v in values.items()
-                   if k not in {"candidate_id", "deadband", "feature_profile"}})
+                   if k not in {"candidate_id", "deadband", "feature_profile", "zero_target_policy"}})
     if "feature_profile" in values:
         profile = values["feature_profile"]
         if not isinstance(profile, str) or profile not in {
-            "legacy", "causal_mtf_v1", "causal_mtf_v2", "causal_mtf_v3",
+            "legacy", "causal_mtf_v1", "causal_mtf_v2", "causal_mtf_v3", "causal_mtf_v4",
+            "causal_mtf_v5",
         }:
             raise DataError("invalid WFO candidate feature profile")
         environment = base.get("environment")
@@ -122,8 +204,25 @@ def _candidate(base: dict, values: dict, output: Path) -> dict:
         except (TypeError, ValueError) as exc:
             raise DataError("WFO candidate deadband is invalid for the execution configuration") from exc
         result["environment"] = {**environment, "execution": execution}
+    if "zero_target_policy" in values:
+        environment = result.get("environment", base.get("environment"))
+        if not isinstance(environment, dict) or not isinstance(environment.get("execution"), dict):
+            raise DataError("WFO zero target policy requires a resolved execution configuration")
+        execution = {**environment["execution"], "zero_target_policy": values["zero_target_policy"]}
+        try:
+            ResolvedExecutionConfig.from_dict(execution)
+        except (TypeError, ValueError) as exc:
+            raise DataError("invalid WFO zero target policy") from exc
+        result["environment"] = {**environment, "execution": execution}
     result["output"] = str(output)
     return result
+
+
+def _candidate_feature_identity(profile: str, feature_spec_hash: str) -> str:
+    """Bind versioned causal feature semantics, not only the shared layout hash."""
+    if profile in {"causal_mtf_v3", "causal_mtf_v4", "causal_mtf_v5"}:
+        return digest({"profile": profile, "feature_spec": feature_spec_hash})
+    return feature_spec_hash
 
 
 def _with_window(environment: dict, *, start_ns: int, end_ns: int, coverage_policy: dict) -> dict:
@@ -436,6 +535,18 @@ def run_wfo(config: dict, *, train_fn: Callable[..., dict] = train,
             backtest_fn: Callable[..., dict] = backtest,
             stress_validation_fn: Callable[..., dict] | None = None,
             resume: bool = False) -> dict:
+    owner = digest([str(Path(config["output"]).resolve()), config.get("wfo", {}).get("protocol_id")])
+    token = research_access.ACTIVE_OWNER.set(owner)
+    try:
+        return _run_wfo(config, train_fn=train_fn, backtest_fn=backtest_fn,
+                        stress_validation_fn=stress_validation_fn, resume=resume)
+    finally:
+        research_access.ACTIVE_OWNER.reset(token)
+
+
+def _run_wfo(config: dict, *, train_fn: Callable[..., dict],
+             backtest_fn: Callable[..., dict], stress_validation_fn: Callable[..., dict] | None,
+             resume: bool) -> dict:
     """Execute Validation selection, one-shot fold Test, retrain and Holdout."""
     if type(resume) is not bool:
         raise DataError("WFO resume flag must be a boolean")
@@ -484,27 +595,136 @@ def run_wfo(config: dict, *, train_fn: Callable[..., dict] = train,
 
     environment = dict(config["environment"])
     instrument = environment["instrument"]
-    store = CuratedStore((*read_curated(environment["market_path"]).events,
-                          *load_rules(environment["rules_path"])))
+    protocol_id = settings["protocol_id"]
+    market_source_identity = curated_source_identity(environment["market_path"])
+    research_access.record_development(config, {
+        "start_ns": settings["data_start_ns"], "end_ns": holdout_start,
+    }, label="wfo-development", source_identity=market_source_identity)
+    registry = research_access.project_registry()
+    owner = research_access.owner_for(config)
+
+    def access_key(query_id: str, component: str = "policy") -> str:
+        return digest([owner, query_id, component])
+
+    def evaluation_access(run: dict, bundle_root: Path, query_id: str,
+                          component: str = "policy", *, intent_id: str,
+                          candidate_id: str):
+        window = run["evaluation"]
+        registry.verify_query_intent(
+            protocol_id=protocol_id, intent_id=intent_id, owner=owner,
+            market=research_access.market_key(instrument), family=research_access.DATA_FAMILY,
+            start_ns=window["start_ns"], end_ns=window["end_ns"],
+            purpose=window["split"], source_sha256=market_source_identity["snapshot_hash"],
+            candidate_id=candidate_id,
+        )
+        return authorize_evaluation(
+            registry, ledger, protocol_id=protocol_id, query_id=query_id, owner=owner,
+            market=research_access.market_key(instrument), family=research_access.DATA_FAMILY,
+            start_ns=window["start_ns"], end_ns=window["end_ns"], split=window["split"],
+            source_sha=market_source_identity["snapshot_hash"],
+            bundle_sha=_verify_file(bundle_root / "bundle.json"),
+            mode=window.get("mode", "base"), component=component,
+        )
+
+    def evaluate(run: dict, bundle_root: Path, query_id: str, *, intent_id: str,
+                 candidate_id: str):
+        access = evaluation_access(run, bundle_root, query_id,
+                                   intent_id=intent_id, candidate_id=candidate_id)
+        if backtest_fn is backtest:
+            report = backtest_fn(run, bundle_root, evaluation_access=access)
+        else:
+            try:
+                accepts_access = "evaluation_access" in inspect.signature(backtest_fn).parameters
+            except (TypeError, ValueError):
+                accepts_access = False
+            if accepts_access:
+                # Capability-aware callbacks consume this exact scope before
+                # constructing a data reader; WFO completes it after writing
+                # the verified report. Legacy two-argument callbacks are
+                # charged here before invocation, as before.
+                report = backtest_fn(run, bundle_root, evaluation_access=access)
+            else:
+                access.consume(bundle_sha=_verify_file(bundle_root / "bundle.json"),
+                               split=run["evaluation"]["split"],
+                               start_ns=run["evaluation"]["start_ns"],
+                               end_ns=run["evaluation"]["end_ns"],
+                               market=research_access.market_key(instrument),
+                               mode=run["evaluation"].get("mode", "base"))
+                report = backtest_fn(run, bundle_root)
+        return report, access
+
+    def make_validation_access(run: dict, query_id: str, candidate_id: str,
+                               fold_id: str) -> WFOValidationAccess:
+        window = run.get("evaluation")
+        if not isinstance(window, dict):
+            raise DataError("WFO Validation capability requires an evaluation window")
+        identity = {
+            "protocol_id": protocol_id, "query_id": query_id,
+            "candidate_id": candidate_id, "fold_id": fold_id,
+            "source_sha256": market_source_identity["snapshot_hash"],
+            "market": research_access.market_key(instrument),
+            "split": "validation", "start_ns": window["start_ns"],
+            "end_ns": window["end_ns"], "mode": window.get("mode", "base"),
+        }
+
+        def verify_query() -> None:
+            if ledger.query(protocol_id, query_id) != {
+                    "query_id": query_id, "kind": "validation",
+                    "candidate": candidate_id, "fold_id": fold_id,
+            }:
+                raise DataError("WFO Validation capability has no matching durable ledger query")
+            if (window.get("split") != "validation"
+                    or window.get("start_ns") != identity["start_ns"]
+                    or window.get("end_ns") != identity["end_ns"]):
+                raise DataError("WFO Validation capability differs from its frozen evaluation window")
+
+        return WFOValidationAccess(identity, verify_query)
+
+    def train_validation_candidate(run: dict, *, query_id: str,
+                                   candidate_id: str, fold_id: str) -> dict:
+        capability = make_validation_access(run, query_id, candidate_id, fold_id)
+        try:
+            accepts_validation_access = (
+                "validation_access" in inspect.signature(train_fn).parameters
+            )
+        except (TypeError, ValueError):
+            accepts_validation_access = False
+        if not accepts_validation_access:
+            return train_fn(run)
+        scoped_run = {**run, "wfo_candidate_id": candidate_id, "wfo_fold_id": fold_id}
+        trained = train_fn(scoped_run, validation_access=capability)
+        if (not isinstance(trained, dict) or not isinstance(trained.get("output"), str)
+                or Path(trained["output"]).resolve() != Path(run["output"]).resolve()):
+            raise DataError("WFO train callback returned an unexpected Validation artifact directory")
+        actual_bundle_sha = _verify_file(Path(trained["output"]) / "bundle.json")
+        if capability.bundle_sha256 != actual_bundle_sha:
+            raise DataError("WFO train callback did not bind Validation access to its frozen bundle")
+        return trained
     template = settings["coverage_template"]
     default_profile = environment.get("feature_profile", "legacy")
+    if "base_currency" not in environment and instrument != "ETHUSDT-PERP.SIM":
+        raise DataError("WFO requires base_currency for a non-legacy instrument")
+    base_currency = environment.get("base_currency", "ETH")
+    if not isinstance(base_currency, str) or re.fullmatch(r"[A-Z][A-Z0-9]{0,11}", base_currency) is None:
+        raise DataError("WFO environment requires a valid contract base currency")
     candidate_profiles = {
         values["candidate_id"]: values.get("feature_profile", default_profile)
         for values in candidates
     }
     if any(not isinstance(profile, str) or profile not in {
-        "legacy", "causal_mtf_v1", "causal_mtf_v2", "causal_mtf_v3",
+        "legacy", "causal_mtf_v1", "causal_mtf_v2", "causal_mtf_v3", "causal_mtf_v4",
+        "causal_mtf_v5",
     } for profile in candidate_profiles.values()):
         raise DataError("WFO candidates contain an unknown feature profile")
     candidate_features = {
-        identity: (historical_feature_spec(dict(template["maximum_age_ns"]))
+        identity: (historical_feature_spec(dict(template["maximum_age_ns"]), base_currency=base_currency)
                    if profile == "legacy" else
-                   historical_feature_spec(dict(template["maximum_age_ns"]), profile=profile))
+                   historical_feature_spec(dict(template["maximum_age_ns"]), profile=profile,
+                                           base_currency=base_currency))
         for identity, profile in candidate_profiles.items()
     }
     candidate_feature_hashes = {
-        identity: (digest({"profile": candidate_profiles[identity], "feature_spec": spec.hash})
-                   if candidate_profiles[identity] == "causal_mtf_v3" else spec.hash)
+        identity: _candidate_feature_identity(candidate_profiles[identity], spec.hash)
         for identity, spec in candidate_features.items()
     }
     protocol_feature_hash = digest(candidate_feature_hashes)
@@ -517,7 +737,8 @@ def run_wfo(config: dict, *, train_fn: Callable[..., dict] = train,
         warmup_ns=settings["warmup_ns"],
         feature_lookback_ns=max(spec.max_lookback_ns for spec in candidate_features.values()),
         execution_lag_guard_ns=settings["execution_lag_guard_ns"],
-        embargo_ns=settings["embargo_ns"], dataset_hash=store.snapshot_hash,
+        embargo_ns=settings["embargo_ns"],
+        dataset_hash=market_source_identity["snapshot_hash"],
         feature_hash=protocol_feature_hash, data_start_ns=settings["data_start_ns"],
     )
     if not manifests:
@@ -527,6 +748,56 @@ def run_wfo(config: dict, *, train_fn: Callable[..., dict] = train,
                         for manifest in manifests)
         for identity in candidate_ids
     }
+    source_root = Path(__file__).resolve().parents[4]
+    source_hash = _source_tree_hash(source_root)
+    rules_source_hash = _file_hash(Path(environment["rules_path"]))
+    config_identity_hash = digest({key: value for key, value in config.items() if key != "output"})
+    intent_ids = []
+    for fold_index, manifest in enumerate(manifests):
+        fold_id = f"{scheme.replace('/', '-')}-{fold_index:04d}"
+        intent_id = f"wfo-test-{fold_id}"
+        registry.reserve_query_intent(
+            protocol_id=protocol_id, intent_id=intent_id, owner=owner,
+            market=research_access.market_key(instrument), family=research_access.DATA_FAMILY,
+            start_ns=manifest.test.score_start_ns, end_ns=manifest.test.score_end_ns,
+            purpose="test", identity={
+                "protocol_id": protocol_id, "query_id": intent_id,
+                "source_sha256": market_source_identity["snapshot_hash"],
+                "market_marker_sha256": market_source_identity["marker_sha256"],
+                "rules_sha256": rules_source_hash, "code_sha256": source_hash,
+                "config_sha256": config_identity_hash,
+                "feature_sha256": protocol_feature_hash, "fold_id": fold_id,
+                "candidate_ids": candidate_ids,
+            },
+        )
+        intent_ids.append(intent_id)
+    registry.reserve_query_intent(
+        protocol_id=protocol_id, intent_id="final-holdout", owner=owner,
+        market=research_access.market_key(instrument), family=research_access.DATA_FAMILY,
+        start_ns=holdout_start, end_ns=holdout_end, purpose="holdout", identity={
+            "protocol_id": protocol_id, "query_id": "final-holdout",
+            "source_sha256": market_source_identity["snapshot_hash"],
+            "market_marker_sha256": market_source_identity["marker_sha256"],
+            "rules_sha256": rules_source_hash, "code_sha256": source_hash,
+            "config_sha256": config_identity_hash,
+            "feature_sha256": protocol_feature_hash,
+            "selection_spec_sha256": digest(settings["selection"]),
+            "candidate_ids": candidate_ids,
+        },
+    )
+    intent_ids.append("final-holdout")
+    # Every formal scope is durably declared before the complete source is decoded.
+    # The ordinary WFO ledger still decides when each evaluation may start.
+    registry.start_query_intents(protocol_id=protocol_id, owner=owner,
+                                 intent_ids=tuple(intent_ids))
+    market_store = read_curated_window(
+        environment["market_path"], settings["data_start_ns"], holdout_end,
+        expected_marker_sha256=market_source_identity["marker_sha256"],
+        allow_legacy_isolated_snapshot=True,
+    )
+    if market_store.snapshot_hash != market_source_identity["snapshot_hash"]:
+        raise DataError("WFO market payload differs from its pre-read registered identity")
+    store = CuratedStore((*market_store.events, *load_rules(environment["rules_path"])))
     for manifest in manifests:
         for window in (manifest.train, manifest.validation, manifest.test):
             _require_window(store, template, instrument, window.warmup_start_ns,
@@ -535,15 +806,29 @@ def run_wfo(config: dict, *, train_fn: Callable[..., dict] = train,
                     holdout_start)
     _require_window(store, template, instrument, holdout_start - settings["warmup_ns"],
                     holdout_end)
-    source_root = Path(__file__).resolve().parents[4]
-    source_hash = _source_tree_hash(source_root)
-    protocol_id = settings["protocol_id"]
+    trial_attempt_keys: dict[str, str] = {}
+    trial_attempt_records: dict[str, dict] = {}
+    for values in candidates:
+        candidate_id = values["candidate_id"]
+        attempt_key = digest(["wfo-trial-attempt-v1", protocol_id, candidate_id])
+        effective_seed = values.get("seed", config.get("seed", 31))
+        recipe = {
+            "candidate": values,
+            "effective_seed": effective_seed,
+            "feature_profile": candidate_profiles[candidate_id],
+        }
+        trial_attempt_keys[candidate_id] = attempt_key
+        trial_attempt_records[candidate_id] = {
+            "recipe": recipe, "feature_sha": candidate_feature_hashes[candidate_id],
+            "seed": effective_seed,
+        }
     resume_manifest = {
         "schema": "rles.wfo-resume.v1",
         "protocol_id": protocol_id,
-        "config_hash": digest({key: value for key, value in config.items() if key != "output"}),
+        "config_hash": config_identity_hash,
         "source_hash": source_hash,
         "dataset_hash": store.snapshot_hash,
+        "market_source_identity": market_source_identity,
         "feature_hash": protocol_feature_hash,
         "candidate_feature_hashes": candidate_feature_hashes,
         "candidate_feature_profiles": candidate_profiles,
@@ -585,6 +870,15 @@ def run_wfo(config: dict, *, train_fn: Callable[..., dict] = train,
             holdout = json.loads(holdout_path.read_text(encoding="utf-8"))
             if digest(report.get("holdout")) != digest(holdout) or not ledger.verify_audit_chain():
                 raise DataError("closed WFO Holdout artifact or ledger audit chain is inconsistent")
+            registry.verify_report(access_key("final-holdout"), _verify_file(holdout_path))
+            for fold_index, _manifest in enumerate(manifests):
+                fold_id = f"{scheme.replace('/', '-')}-{fold_index:04d}"
+                selected_id = report["selection"]["candidate_id"]
+                query_id = f"test-{fold_index}-{selected_id}"
+                test_root = root / "folds" / fold_id / "test"
+                registry.verify_report(access_key(query_id), _verify_file(test_root / "report.json"))
+                registry.verify_report(access_key(query_id, "baselines"),
+                                       _verify_file(test_root / "baselines.json"))
             return report
     else:
         root.mkdir(parents=True)
@@ -597,8 +891,21 @@ def run_wfo(config: dict, *, train_fn: Callable[..., dict] = train,
     stress_validation: dict[str, list[dict]] = {str(identity): [] for identity in candidate_ids}
     bundles: dict[tuple[int, str], Path] = {}
     bound_manifests: dict[str, list] = {identity: [] for identity in candidate_ids}
+    selection_registered = False
+    invocation_id = time_ns()
 
     try:
+        for candidate_id, attempt_key in trial_attempt_keys.items():
+            record = trial_attempt_records[candidate_id]
+            start_status = "started" if protocol_state == "DEVELOPMENT" else "resumed"
+            registry.register_trial_attempt(
+                attempt_key=attempt_key, protocol_id=protocol_id, candidate_id=candidate_id,
+                recipe=record["recipe"], feature_sha=record["feature_sha"], seed=record["seed"],
+            )
+            registry.record_trial_attempt_event(
+                attempt_key, event_key=f"{start_status}-{invocation_id}", status=start_status,
+                detail={"resume": resume},
+            )
         for fold_index, manifest in enumerate(manifests):
             fold_id = f"{scheme.replace('/', '-')}-{fold_index:04d}"
             for values in candidates:
@@ -647,7 +954,11 @@ def run_wfo(config: dict, *, train_fn: Callable[..., dict] = train,
                         checkpoint = _latest_final_retrain_checkpoint(output, str(run.get("route", "A0")))
                         if checkpoint is None:
                             raise DataError("partial WFO Validation training has no completed stage checkpoint; start a new protocol attempt")
-                        trained = train_fn({**run, "resume_checkpoint": str(checkpoint)})
+                        resumed_candidate = {**run, "resume_checkpoint": str(checkpoint)}
+                        trained = train_validation_candidate(
+                            resumed_candidate, query_id=query_id,
+                            candidate_id=candidate_id, fold_id=fold_id,
+                        )
                         if Path(trained["output"]).resolve() != output.resolve():
                             raise DataError("resumed WFO Validation training returned a different output")
                     report_hash, bundle_hash = _verify_file(report_path), _verify_file(bundle_path)
@@ -662,7 +973,10 @@ def run_wfo(config: dict, *, train_fn: Callable[..., dict] = train,
                     if output.exists():
                         raise DataError("WFO candidate output exists without its durable Validation reservation")
                     ledger.record_query(protocol_id, query_id, "validation", candidate_id, fold_id)
-                    trained = train_fn(run)
+                    trained = train_validation_candidate(
+                        run, query_id=query_id, candidate_id=candidate_id,
+                        fold_id=fold_id,
+                    )
                 report_path = Path(trained["output"]) / "report.json"
                 _verify_file(report_path)
                 report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -715,10 +1029,50 @@ def run_wfo(config: dict, *, train_fn: Callable[..., dict] = train,
                                 end_ns=manifest.validation.score_end_ns, coverage_policy=coverage_policy,
                             )
                         else:
-                            stress_report = stress_validation_fn(
-                                run, bundle_root, start_ns=manifest.validation.score_start_ns,
-                                end_ns=manifest.validation.score_end_ns, coverage_policy=coverage_policy,
-                            )
+                            stress_run = {
+                                **run,
+                                "wfo_candidate_id": candidate_id,
+                                "wfo_fold_id": fold_id,
+                                "evaluation": {
+                                    "split": "validation", "mode": "stress",
+                                    "start_ns": manifest.validation.score_start_ns,
+                                    "end_ns": manifest.validation.score_end_ns,
+                                    "coverage_policy": coverage_policy,
+                                },
+                            }
+                            try:
+                                accepts_validation_access = (
+                                    "validation_access" in inspect.signature(
+                                        stress_validation_fn
+                                    ).parameters
+                                )
+                            except (TypeError, ValueError):
+                                accepts_validation_access = False
+                            if accepts_validation_access:
+                                stress_access = make_validation_access(
+                                    stress_run, stress_query_id, candidate_id, fold_id,
+                                )
+                                stress_report = stress_validation_fn(
+                                    stress_run, bundle_root,
+                                    start_ns=manifest.validation.score_start_ns,
+                                    end_ns=manifest.validation.score_end_ns,
+                                    coverage_policy=coverage_policy,
+                                    validation_access=stress_access,
+                                )
+                                if (not stress_access.consumed
+                                        or stress_access.bundle_sha256 != _verify_file(
+                                            bundle_root / "bundle.json"
+                                        )):
+                                    raise DataError(
+                                        "stress Validation callback did not consume the capability "
+                                        "for the frozen candidate bundle"
+                                    )
+                            else:
+                                stress_report = stress_validation_fn(
+                                    run, bundle_root, start_ns=manifest.validation.score_start_ns,
+                                    end_ns=manifest.validation.score_end_ns,
+                                    coverage_policy=coverage_policy,
+                                )
                         if not isinstance(stress_report, dict) or stress_report.get("execution_mode") != "stress":
                             raise DataError("stress Validation evaluator must report execution_mode=stress")
                         stress_root.mkdir(parents=True)
@@ -799,6 +1153,12 @@ def run_wfo(config: dict, *, train_fn: Callable[..., dict] = train,
                             "risk_hard_interventions"
                         ),
                     })
+            for attempt_key in trial_attempt_keys.values():
+                registry.record_trial_attempt_event(
+                    attempt_key, event_key="validation-selection", status="not_selected",
+                    detail={"reason": "no_validation_candidate"},
+                )
+            selection_registered = True
             ledger.abort(
                 protocol_id,
                 error_type="NoValidationCandidate",
@@ -830,6 +1190,14 @@ def run_wfo(config: dict, *, train_fn: Callable[..., dict] = train,
             })
             raise DataError("WFO produced no feasible validation-selected candidate")
         selected_id = selected["candidate_id"]
+        for candidate_id, attempt_key in trial_attempt_keys.items():
+            registry.record_trial_attempt_event(
+                attempt_key, event_key="validation-selection",
+                status="selected" if candidate_id == selected_id else "not_selected",
+                detail={"selected_candidate_id": selected_id,
+                        "selection_metric": selection_spec.primary_metric},
+            )
+        selection_registered = True
         selected_values = next(values for values in candidates if values["candidate_id"] == selected_id)
         selected_bound_manifests = bound_manifests[selected_id]
         frozen_recipe = digest({"candidate": selected_values, "selection": asdict(selection_spec),
@@ -906,20 +1274,33 @@ def run_wfo(config: dict, *, train_fn: Callable[..., dict] = train,
                     raise DataError("WFO Test was reserved without a durable report; one-shot Test cannot be replayed")
                 _verify_file(report_path)
                 report = json.loads(report_path.read_text(encoding="utf-8"))
+                registry.verify_report(access_key(query_id), _verify_file(report_path))
             else:
                 if test_root.exists():
                     raise DataError("WFO Test artifacts exist without the durable one-shot query")
                 ledger.record_query(protocol_id, query_id, "test", selected_id, fold_id)
-                report = backtest_fn(run, bundle_root)
+                report, access = evaluate(
+                    run, bundle_root, query_id,
+                    intent_id=f"wfo-test-{fold_id}", candidate_id=selected_id,
+                )
                 test_root.mkdir(parents=True)
-                _write_verified(report_path, report)
+                access.complete(_write_verified(report_path, report))
             tests.append(report)
             if baseline_path.exists():
                 _verify_file(baseline_path)
                 baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+                registry.verify_report(access_key(query_id, "baselines"), _verify_file(baseline_path))
             else:
+                access = evaluation_access(
+                    run, bundle_root, query_id, "baselines",
+                    intent_id=f"wfo-test-{fold_id}", candidate_id=selected_id,
+                )
+                access.consume(bundle_sha=_verify_file(bundle_root / "bundle.json"), split="test",
+                               start_ns=run["evaluation"]["start_ns"],
+                               end_ns=run["evaluation"]["end_ns"],
+                               market=research_access.market_key(instrument), mode="base")
                 baseline = _baseline_reports(run, bundle_root, seed=int(run.get("seed", 31)))
-                _write_verified(baseline_path, baseline)
+                access.complete(_write_verified(baseline_path, baseline))
             baselines.append(baseline)
 
         # Finish all fold-level statistical work before the one-shot final
@@ -935,6 +1316,16 @@ def run_wfo(config: dict, *, train_fn: Callable[..., dict] = train,
         trial_sharpes = [_period_sharpe(validation_returns[identity]) for identity in candidate_ids]
         dsr = deflated_sharpe(test_returns, effective_trials=len(candidate_ids),
                               trial_sharpes=trial_sharpes)
+        dsr["effective_trials_scope"] = "frozen_current_protocol_candidates_only"
+        dsr["project_historical_trials"] = "not_estimated"
+        trial_count_evidence = _dsr_trial_count_evidence(
+            candidate_ids, ledger.evidence_summary(protocol_id),
+            registry.trial_attempt_summary(protocol_id),
+        )
+        trial_count_evidence["current_protocol_sensitivity"] = (
+            deflated_sharpe_trial_count_sensitivity(test_returns, trial_sharpes=trial_sharpes)
+        )
+        dsr["trial_count_evidence"] = trial_count_evidence
         pbo = None
         if len(manifests) >= 4 and len(manifests) % 2 == 0:
             sliced = [[_returns(report) for report in validation[identity]] for identity in candidate_ids]
@@ -1059,13 +1450,18 @@ def run_wfo(config: dict, *, train_fn: Callable[..., dict] = train,
                 raise DataError("Holdout report exists without a durable one-shot ledger reservation")
             holdout_hash = _verify_file(holdout_path)
             holdout = json.loads(holdout_path.read_text(encoding="utf-8"))
+            registry.verify_report(access_key("final-holdout"), holdout_hash)
         else:
             if protocol_state == "CLOSED":
                 raise DataError("closed WFO is missing its durable Holdout report")
             if holdout_was_open and protocol_state == "HOLDOUT_OPENED":
                 raise DataError("one-shot Holdout was opened without a durable report; refusing to replay")
-            holdout = backtest_fn(final_run, final["output"])
+            holdout, access = evaluate(
+                final_run, Path(final["output"]), "final-holdout",
+                intent_id="final-holdout", candidate_id=selected_id,
+            )
             holdout_hash = _write_verified(holdout_path, holdout)
+            access.complete(holdout_hash)
         ledger.record_holdout_report(protocol_id, holdout_hash)
         constraints_pass = _holdout_constraints_pass(holdout, selection_spec)
         holdout_return, strategy_return_pass = _holdout_return_gate(holdout, selection_spec)
@@ -1099,6 +1495,18 @@ def run_wfo(config: dict, *, train_fn: Callable[..., dict] = train,
         return report
     except BaseException as exc:
         detail = str(exc)[:2000] or "interrupted"
+        if not selection_registered:
+            event_status = "interrupted" if isinstance(exc, KeyboardInterrupt) else "failed"
+            try:
+                for attempt_key in trial_attempt_keys.values():
+                    registry.record_trial_attempt_event(
+                        attempt_key, event_key=f"{event_status}-{invocation_id}",
+                        status=event_status, detail={"error_type": type(exc).__name__,
+                                                    "detail": detail},
+                    )
+            except Exception:
+                # Preserve the original WFO exception when attempt logging also fails.
+                pass
         try:
             protocol_state = ledger.state(protocol_id)["state"]
             if isinstance(exc, KeyboardInterrupt) and protocol_state in {

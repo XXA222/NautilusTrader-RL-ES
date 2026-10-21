@@ -1,0 +1,101 @@
+{
+  "schema": "rles.td3-leverage-funding-diagnostic.v1",
+  "purpose": "Paired fixed-actor development diagnosis at 1x and 10x after the fee/slippage-aware leverage-cap correction; no candidate selection or retraining. Uses the same previously used Validation interval and scenario-only execution assumptions, so it is non-independent.",
+  "saved_split": "validation",
+  "independent_evaluation": false,
+  "config_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\real-ethusdt-scenario\\config-td3.json",
+  "config_sha256": "9658fb4df4ea9c47728ef4d76bb7e2d0c2e4f3ed8a5be6d4a15e11dee784ab57",
+  "bundle_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\real-ethusdt-scenario\\td3-output",
+  "bundle_sha256": "14283d71dc1970f71cfdc35ed8a3e8022b65f93921418c3b88577bb9038b8320",
+  "baseline_report_sha256": "6f6c1633e19457642a47a1a13e245328e870ec93ec06e9d63f75d021b14e1564",
+  "actor_hash": "1aa440a94435d3546d221170cb944fc727bf78c42656f01aac891bda23d216fa",
+  "training_window": {
+    "start_ns": 1704067500000000000,
+    "end_ns": 1704110400000000000,
+    "training_end_ns": 1704110400000000000
+  },
+  "evaluation_window": {
+    "start_ns": 1704110400000000000,
+    "end_ns": 1704153660000000000,
+    "saved_split": "validation"
+  },
+  "registered_source_window": {
+    "start_ns": 1704067200000000000,
+    "end_ns": 1704153660000000000
+  },
+  "access_label": "train-td3-10x-20261020-paired-diagnostic-r4-fee-aware-cap",
+  "source_mode": "whole_snapshot_isolated_v1",
+  "market_source_identity": {
+    "schema_version": "0.4.0",
+    "snapshot_hash": "db78040301b4840dcaa59f2cbebc96da231760b65a650cd33569dfcbaa10c3e9",
+    "file_sha256": "d4bfb69209f3ca86f6f9a473aaf20d0db2c0225a6fd72a6e2eafd92ca466b68b",
+    "marker_sha256": "43c258c0b232d74b004e818e439b703d07e6ffed66746106937500e39de15a62",
+    "events": 90722
+  },
+  "market_marker_metadata": {
+    "events": 90722,
+    "file_sha256": "d4bfb69209f3ca86f6f9a473aaf20d0db2c0225a6fd72a6e2eafd92ca466b68b",
+    "schema_version": "0.4.0",
+    "snapshot_hash": "db78040301b4840dcaa59f2cbebc96da231760b65a650cd33569dfcbaa10c3e9"
+  },
+  "scenario_rules_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\real-ethusdt-scenario\\scenario-rules.json",
+  "scenario_rules_sha256": "6f6ab69d90e798445a82cdefc004704ceb9e1f69d2f656bbdd4675c308f527d6",
+  "scenario_assumptions": {
+    "classification": "NON_HISTORICAL_SCENARIO_ONLY",
+    "instrument": "ETHUSDT-PERP.SIM",
+    "tick_size": "0.01",
+    "step_size": "0.001",
+    "min_qty": "0.001",
+    "min_notional": "20",
+    "maker_fee": "0.0002",
+    "taker_fee": "0.0005",
+    "initial_margin_rate": "1",
+    "maintenance_margin_rate": "0.004",
+    "effective_ns": 1704067200000000000,
+    "valid_until_ns": null,
+    "rule_version": "scenario-only-20261012",
+    "notes": "Current public trading parameters plus explicit regular-user fee assumption; not historical proof.",
+    "reduce_only_min_notional_exempt": true,
+    "rule_sensitivity": "current public Binance -4164 reduce-only notional exemption; not historical 2024 evidence",
+    "source_reference": "https://developers.binance.com/en/docs/products/derivatives-trading-portfolio-margin/error-code",
+    "source_assumptions_sha256": "8489ad6ceb3ef852fb32e211bcbaf9b96aa6ad236a9a5575154fd6c37c3191bf"
+  },
+  "paired_scenarios": [
+    {
+      "name": "fixed-1x-cap",
+      "leverage": "1",
+      "starting_balance": "10000",
+      "risk_budget_notional": "100000",
+      "max_notional": "100000"
+    },
+    {
+      "name": "fixed-10x-cap",
+      "leverage": "10",
+      "starting_balance": "10000",
+      "risk_budget_notional": "100000",
+      "max_notional": "100000"
+    }
+  ],
+  "fixed_actor_seed": 40,
+  "fill_model": "Binance best-quote scenario with displayed quote liquidity; zero synthetic BPS slippage",
+  "evaluation_fee_assumptions": {
+    "maker_fee": "0.0002",
+    "taker_fee": "0.0005"
+  },
+  "maintenance_margin_rate": "0.004",
+  "source_code_sha256": {
+    "qa/td3_leverage_funding_diagnostic.py": "2bf8e0b6862424497931ca8535916bc0b5754d8e9a56f3e62371e712ecc995d7",
+    "packages/data/src/rles_data/io.py": "d2a6397d6f7695227a44e956dccb38398e33c79114c4d52a4dd1be2e58646378",
+    "packages/orchestrator/src/rles_orchestrator/research_access.py": "d186dd933024285b656c433f9a3e0e5e9b0d18c66e7a0df198d30df5653dbaa5",
+    "packages/research/src/rles_research/access.py": "386fedb110c4c326d025a55481c8bb79dbe4e7c8d6aff7d29939ae3ed502ae41",
+    "packages/orchestrator/src/rles_orchestrator/application.py": "00189d5347ffb07f96500df0ff39c468c1bb1be5f289a8f8fe94f41c9b9d4026",
+    "packages/gym_bridge/src/rles_gym_bridge/historical.py": "214c54e5e08d24093d7c3f442533974ce69535280391a6165cc17713e3104b3c",
+    "packages/gym_bridge/src/rles_gym_bridge/episode.py": "b05f179356c0544d1802bd4336ceeaea0a6868ddae8b115525700ef9f13f6423",
+    "packages/nautilus_adapter/src/rles_nautilus_adapter/perpetual.py": "7c2c31eedbf8fd0ecfa1102f34a39bd909c919e623f64fb92b197b6864045f46",
+    "packages/nautilus_adapter/src/rles_nautilus_adapter/session.py": "ec6fd714bb3ea54524c3f5fb40cd71be1ef8a188e8c934e34a25cafb14e9722a",
+    "packages/execution/src/rles_execution/planner.py": "b4da0a330c87cd2d711e4e6623a6828e6c3900ffe8ab613977a15e56996e550a",
+    "packages/rl_sb3/src/rles_rl_sb3/actor.py": "8b17486a0963ecd75947a663cd7428c42eead19a8e342163f53571b4db5df021"
+  },
+  "frozen_training_rules_sha256": "68ded253b4d9336ed37a2de48682eb0faa53fe0aa31db8aa7dba5aab8797e01a",
+  "evaluation_rules_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\real-ethusdt-scenario\\scenario-rules-reduce-only-r2.json"
+}

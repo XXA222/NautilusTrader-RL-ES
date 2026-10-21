@@ -199,6 +199,10 @@ class NativeESCandidateSession:
             drawdowns: list[float] = []
             native_step_evidence: list[str] = []
             risk_interventions = 0
+            insolvency_seen = False
+            margin_facts_known = True
+            maintenance_breach_seen = False
+            liquidation_detected = False
             terminal_info: Mapping[str, object] | None = None
             for _ in range(self.episode_steps):
                 if self.l4_actor is not None:
@@ -215,6 +219,16 @@ class NativeESCandidateSession:
                     raise ValueError("invalid native episode step evidence")
                 if info.get("risk_intervention_components_known") is not True:
                     raise ValueError("native ES fitness requires classified soft and hard risk adjustments")
+                if type(info.get("insolvency")) is not bool:
+                    raise ValueError("native ES fitness requires explicit solvency facts")
+                insolvency_seen = insolvency_seen or bool(info["insolvency"])
+                if any(type(info.get(name)) is not bool for name in (
+                        "margin_facts_known", "maintenance_margin_breach",
+                        "native_liquidation_detected")):
+                    raise ValueError("native ES fitness requires explicit margin/liquidation facts")
+                margin_facts_known = margin_facts_known and bool(info["margin_facts_known"])
+                maintenance_breach_seen = maintenance_breach_seen or bool(info["maintenance_margin_breach"])
+                liquidation_detected = liquidation_detected or bool(info["native_liquidation_detected"])
                 native_step_evidence.append(evidence)
                 returns.append(float(info["r_econ"]))
                 drawdowns.append(float(info["drawdown"]))
@@ -230,16 +244,26 @@ class NativeESCandidateSession:
             if terminal_info is None:
                 raise ValueError("native candidate did not reach a settled terminal boundary")
             final_equity = float(cast(Any, terminal_info["native_equity"]))
-            if (not math.isfinite(final_equity) or final_equity < 0
+            if (not math.isfinite(final_equity)
                     or any(not math.isfinite(value) for value in (*returns, *drawdowns))):
                 raise ValueError("nonfinite native episode fitness facts")
             if not returns:
                 raise ValueError("native candidate episode contains no scored decisions")
+            if final_equity > 0 and not insolvency_seen:
+                try:
+                    realized_log_return = math.fsum(returns)
+                except OverflowError as exc:
+                    raise ValueError("native episode log returns do not reconcile to endpoint equity") from exc
+                endpoint_log_return = math.log(final_equity) - math.log(initial_equity)
+                if not math.isclose(realized_log_return, endpoint_log_return,
+                                    rel_tol=0.0, abs_tol=1e-8):
+                    raise ValueError("native episode log returns do not reconcile to endpoint equity")
             risk_intervention_rate = risk_interventions / len(returns)
             evidence_hash = _digest((
                 request.request_hash, request.account_isolation_id, initial_equity,
                 final_equity, returns, drawdowns, risk_interventions, len(returns),
-                risk_intervention_rate, native_step_evidence,
+                risk_intervention_rate, insolvency_seen, margin_facts_known,
+                maintenance_breach_seen, liquidation_detected, native_step_evidence,
             ))
             return {
                 "initial_equity": initial_equity, "final_equity": final_equity,
@@ -247,6 +271,10 @@ class NativeESCandidateSession:
                 "risk_intervention_count": risk_interventions,
                 "risk_intervention_steps": len(returns),
                 "risk_intervention_rate": risk_intervention_rate,
+                "insolvency": insolvency_seen,
+                "margin_facts_known": margin_facts_known,
+                "maintenance_margin_breach": maintenance_breach_seen,
+                "native_liquidation_detected": liquidation_detected,
                 "evidence_hash": evidence_hash,
                 "request_hash": request.request_hash,
                 "account_isolation_id": request.account_isolation_id,
@@ -261,3 +289,25 @@ class NativeESCandidateSession:
 def make_native_es_session(config: Mapping[str, object]) -> NativeESCandidateSession:
     """Public import target for ``CPUWorkerPool(factory_ref=...)``."""
     return NativeESCandidateSession(config)
+
+
+def make_registered_historical_es_env(*, env_config: dict, candidate_context: dict,
+                                      soft_risk_multipliers: dict) -> NautilusBarrierEnv:
+    """Build an ES Train environment from the parent-registered scoped market window."""
+    from rles_gym_bridge.historical import make_historical_es_env
+
+    registered_access = env_config.get("registered_train_access")
+    if registered_access is not None:
+        if not isinstance(registered_access, dict):
+            raise ValueError("ES worker Train access must be an object")
+        # Import lazily so the worker adapter remains independent at module import
+        # time; this path repeats the immutable registration idempotently in each
+        # process before decoding its scoped market rows.
+        from .application import _read_registered_train_store
+
+        prepared_store = _read_registered_train_store(registered_access)
+        env_config = {**env_config, "prepared_store": prepared_store}
+    return make_historical_es_env(
+        env_config=env_config, candidate_context=candidate_context,
+        soft_risk_multipliers=soft_risk_multipliers,
+    )

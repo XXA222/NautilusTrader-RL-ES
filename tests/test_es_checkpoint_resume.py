@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 from hashlib import sha256
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -76,7 +77,7 @@ def test_evolution_checkpoint_resume_matches_uninterrupted_candidate_stream(
     restored_seen: list[tuple[float, ...]] = []
     restored = _provider(algorithm, restored_seen)
     assert restored.resume(
-        checkpoint_path.rsplit("\\", 1)[0], attempt_id=f"{algorithm}-attempt",
+        str(Path(checkpoint_path).parent), attempt_id=f"{algorithm}-attempt",
         actor_signature=_ACTOR, dataset_hash=_DATASET, config_hash=_CONFIG,
     ) == 0
     assert torch.equal(restored._searcher.problem._generator.get_state(), saved_generator)
@@ -102,7 +103,7 @@ def test_evolution_checkpoint_resume_rejects_fingerprint_drift(tmp_path) -> None
                          actor_signature=_ACTOR, dataset_hash=_DATASET, config_hash=_CONFIG)
     restored = _provider("pgpe", [])
     with pytest.raises(ValueError, match="identity"):
-        restored.resume(path.rsplit("\\", 1)[0], attempt_id="fingerprint-attempt",
+        restored.resume(str(Path(path).parent), attempt_id="fingerprint-attempt",
                         actor_signature=_ACTOR, dataset_hash="d" * 64, config_hash=_CONFIG)
     assert restored._searcher is None
     assert restored._failed is True
@@ -111,7 +112,7 @@ def test_evolution_checkpoint_resume_rejects_fingerprint_drift(tmp_path) -> None
 
     changed_config = _provider("pgpe", [], seed=713)
     with pytest.raises(ValueError, match="configuration"):
-        changed_config.resume(path.rsplit("\\", 1)[0], attempt_id="fingerprint-attempt",
+        changed_config.resume(str(Path(path).parent), attempt_id="fingerprint-attempt",
                              actor_signature=_ACTOR, dataset_hash=_DATASET, config_hash=_CONFIG)
 
 
@@ -199,13 +200,13 @@ def test_batch_evaluation_budget_and_request_keys_resume_with_optimizer(tmp_path
     invalid_restore, _, _ = create_pair(empty_selection)
     with pytest.raises(ResearchLockError, match="differs from durable"):
         invalid_restore.resume(
-            path.rsplit("\\", 1)[0], attempt_id="checkpoint-attempt",
+            str(Path(path).parent), attempt_id="checkpoint-attempt",
             actor_signature=spec.signature, dataset_hash=_DATASET, config_hash=_CONFIG,
         )
 
     seed_globals()
     restored, restored_evaluator, restored_budget = create_pair(selection)
-    restored.resume(path.rsplit("\\", 1)[0], attempt_id="checkpoint-attempt",
+    restored.resume(str(Path(path).parent), attempt_id="checkpoint-attempt",
                     actor_signature=spec.signature, dataset_hash=_DATASET, config_hash=_CONFIG)
     assert restored_budget.consumed == 8
     assert restored_evaluator.evidence_hash == interrupted_evaluator.evidence_hash
@@ -218,4 +219,189 @@ def test_batch_evaluation_budget_and_request_keys_resume_with_optimizer(tmp_path
     assert restored_budget.consumed == 16
     assert ledger.evidence_summary("resume-protocol")["es_lane_request_count"] == 16
     assert restored_evaluator.signature == interrupted_evaluator.signature
+    assert restored_evaluator.evidence_hash == continuous_evaluator.evidence_hash
+
+
+def test_e2_exact_neutral_candidate_evidence_and_budget_resume_with_optimizer(tmp_path) -> None:
+    import torch
+    from types import SimpleNamespace
+    from rles_research.ledger import ResearchLedger, SelectionLedger
+
+    risk_space = SoftRiskSpace((
+        SoftRiskDimension("exposure_multiplier", 0.1, 1.0),
+        SoftRiskDimension("drawdown_throttle", 0.1, 1.0),
+    ))
+    dispatch_id = sha256(b"e2-neutral-resume-dispatch-v1").hexdigest()
+    ledger = ResearchLedger(tmp_path / "e2-neutral-selection.sqlite")
+    ledger.create("e2-neutral-protocol", "e2-neutral-run", validation_budget=1,
+                  hpo_budget=0, es_evaluation_budget=10)
+    selection = SelectionLedger(ledger, "e2-neutral-protocol")
+    reservation_spec = SimpleNamespace(
+        run_id="e2-neutral-run", attempt_id="e2-neutral-attempt",
+        stage_budget={"E2": SimpleNamespace(max_lane_requests=10)},
+    )
+
+    def dispatch(requests: tuple[CandidateRequest, ...]) -> tuple[CandidateResult, ...]:
+        return tuple(CandidateResult(
+            run_id=request.run_id, attempt_id=request.attempt_id,
+            generation=request.generation, candidate_id=request.candidate_id,
+            episode_id=request.episode_id, seed=request.seed,
+            request_hash=request.request_hash,
+            account_isolation_id=request.account_isolation_id,
+            fitness=100.0 if request.candidate_id == "neutral-r1" else -sum(
+                (value - 0.25) ** 2 for value in request.genome
+            ),
+            evidence_hash=sha256(request.request_hash.encode()).hexdigest(),
+        ) for request in requests)
+
+    def create_pair(durable_selection=None):
+        if durable_selection is None:
+            budget = EvaluationBudget(10)
+        else:
+            budget = EvaluationBudget(
+                10,
+                reserve_requests=lambda requests: durable_selection.reserve_lane_requests(
+                    reservation_spec, stage="E2", requests=requests,
+                ),
+                verify_requests=lambda keys: durable_selection.verify_lane_requests(
+                    reservation_spec, stage="E2", request_keys=keys,
+                ),
+                reservation_id=durable_selection.reservation_scope(
+                    reservation_spec, stage="E2",
+                ),
+            )
+        evaluator = GenerationLaneEvaluator(
+            run_id="e2-neutral-run", attempt_id="e2-neutral-attempt", fold_id="fold-0",
+            root_seed=442, episode_ids=("episode-a",), candidate_spec=risk_space,
+            dispatch=dispatch, budget=budget, dispatch_id=dispatch_id,
+            actor_signature=_ACTOR, include_neutral_baseline=True,
+        )
+        scalar_fitness = lambda _candidate, *, split: (_ for _ in ()).throw(AssertionError(split))
+        provider = EvoTorchProvider(
+            EvolutionConfig("cmaes", 4, 2, 184, max_evaluations=8), scalar_fitness,
+            batch_fitness=evaluator, batch_fitness_id=evaluator.signature,
+            risk_space=risk_space,
+        )
+        return provider, evaluator, budget
+
+    def seed_globals() -> None:
+        random.seed(555)
+        np.random.seed(555)
+        torch.manual_seed(555)
+
+    seed_globals()
+    continuous, continuous_evaluator, continuous_budget = create_pair()
+    continuous_result = continuous.evolve(dimension=2)
+    assert continuous_budget.consumed == 10  # (4 optimizer candidates + 1 neutral) * 2 generations
+    continuous_neutral = continuous_evaluator.best_neutral_baseline
+    assert continuous_neutral is not None and continuous_neutral[0] == 100.0
+
+    seed_globals()
+    interrupted, interrupted_evaluator, interrupted_budget = create_pair(selection)
+    partial = interrupted.evolve(dimension=2, generations=1)
+    assert partial.generations == 1 and partial.evaluations == 4
+    assert interrupted_budget.consumed == 5
+    assert ledger.evidence_summary("e2-neutral-protocol")["es_lane_request_count"] == 5
+    partial_neutral = interrupted_evaluator.best_neutral_baseline
+    assert partial_neutral is not None and partial_neutral[1] == 0
+    checkpoint = interrupted.save(
+        str(tmp_path / "e2-neutral-checkpoint"), attempt_id="e2-neutral-attempt",
+        actor_signature=_ACTOR, dataset_hash=_DATASET, config_hash=_CONFIG,
+    )
+
+    seed_globals()
+    restored, restored_evaluator, restored_budget = create_pair(selection)
+    restored.resume(
+        str(Path(checkpoint).parent), attempt_id="e2-neutral-attempt",
+        actor_signature=_ACTOR, dataset_hash=_DATASET, config_hash=_CONFIG,
+    )
+    assert restored_budget.consumed == 5
+    assert restored_evaluator.best_neutral_baseline == partial_neutral
+    assert restored_evaluator.evidence_hash == interrupted_evaluator.evidence_hash
+    result = restored.continue_evolution()
+    assert result == continuous_result
+    assert restored_budget.consumed == continuous_budget.consumed == 10
+    assert ledger.evidence_summary("e2-neutral-protocol")["es_lane_request_count"] == 10
+    assert restored_evaluator.best_neutral_baseline == continuous_neutral
+    assert restored_evaluator.evidence_hash == continuous_evaluator.evidence_hash
+    from rles_orchestrator.es_stage import _select_e2_candidate
+
+    selected_resumed = _select_e2_candidate(result, risk_space, restored_evaluator.best_neutral_baseline)
+    selected_continuous = _select_e2_candidate(
+        continuous_result, risk_space, continuous_evaluator.best_neutral_baseline,
+    )
+    assert selected_resumed == selected_continuous
+    assert selected_resumed.selected_candidate_kind == "neutral_r1"
+    assert selected_resumed.evaluations == 10
+
+
+def test_pre_neutral_e2_checkpoint_schema_resumes_without_charging_new_candidates(tmp_path) -> None:
+    import torch
+
+    risk_space = SoftRiskSpace((
+        SoftRiskDimension("exposure_multiplier", 0.1, 1.0),
+        SoftRiskDimension("drawdown_throttle", 0.1, 1.0),
+    ))
+    dispatch_id = sha256(b"legacy-e2-checkpoint-dispatch-v1").hexdigest()
+
+    def dispatch(requests: tuple[CandidateRequest, ...]) -> tuple[CandidateResult, ...]:
+        return tuple(CandidateResult(
+            run_id=request.run_id, attempt_id=request.attempt_id,
+            generation=request.generation, candidate_id=request.candidate_id,
+            episode_id=request.episode_id, seed=request.seed,
+            request_hash=request.request_hash,
+            account_isolation_id=request.account_isolation_id,
+            fitness=-sum((value - 0.4) ** 2 for value in request.genome),
+            evidence_hash=sha256(request.request_hash.encode()).hexdigest(),
+        ) for request in requests)
+
+    def create_pair():
+        budget = EvaluationBudget(8)
+        evaluator = GenerationLaneEvaluator(
+            run_id="legacy-e2-run", attempt_id="legacy-e2-attempt", fold_id="fold-legacy",
+            root_seed=913, episode_ids=("episode-a",), candidate_spec=risk_space,
+            dispatch=dispatch, budget=budget, dispatch_id=dispatch_id,
+            actor_signature=_ACTOR, include_neutral_baseline=False,
+        )
+        scalar_fitness = lambda _candidate, *, split: (_ for _ in ()).throw(AssertionError(split))
+        provider = EvoTorchProvider(
+            EvolutionConfig("cmaes", 4, 2, 281, max_evaluations=8), scalar_fitness,
+            batch_fitness=evaluator, batch_fitness_id=evaluator.signature,
+            risk_space=risk_space,
+        )
+        return provider, evaluator, budget
+
+    def seed_globals() -> None:
+        random.seed(144)
+        np.random.seed(144)
+        torch.manual_seed(144)
+
+    seed_globals()
+    continuous, continuous_evaluator, continuous_budget = create_pair()
+    continuous_result = continuous.evolve(dimension=2)
+    assert continuous_budget.consumed == 8
+    assert continuous_evaluator.checkpoint_state()["schema"] == 3
+    assert continuous_evaluator.best_neutral_baseline is None
+
+    seed_globals()
+    interrupted, interrupted_evaluator, interrupted_budget = create_pair()
+    partial = interrupted.evolve(dimension=2, generations=1)
+    assert partial.evaluations == 4 and interrupted_budget.consumed == 4
+    checkpoint = interrupted.save(
+        str(tmp_path / "legacy-e2-checkpoint"), attempt_id="legacy-e2-attempt",
+        actor_signature=_ACTOR, dataset_hash=_DATASET, config_hash=_CONFIG,
+    )
+
+    seed_globals()
+    restored, restored_evaluator, restored_budget = create_pair()
+    restored.resume(
+        str(Path(checkpoint).parent), attempt_id="legacy-e2-attempt",
+        actor_signature=_ACTOR, dataset_hash=_DATASET, config_hash=_CONFIG,
+    )
+    assert restored_budget.consumed == 4
+    assert restored_evaluator.checkpoint_state()["schema"] == 3
+    assert restored_evaluator.best_neutral_baseline is None
+    result = restored.continue_evolution()
+    assert result == continuous_result
+    assert restored_budget.consumed == continuous_budget.consumed == 8
     assert restored_evaluator.evidence_hash == continuous_evaluator.evidence_hash

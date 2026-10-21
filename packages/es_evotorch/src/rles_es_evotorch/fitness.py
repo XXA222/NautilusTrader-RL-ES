@@ -73,3 +73,104 @@ class FitnessSpec:
             max_drawdown=max(float(value) for value in drawdowns),
             risk_intervention_rate=risk_intervention_rate,
         )
+
+
+@dataclass(frozen=True)
+class FitnessDecision:
+    """Auditable result of constraint-first candidate scoring."""
+
+    score: float
+    feasible: bool
+    rejection_reason: str | None
+
+
+@dataclass(frozen=True)
+class ConstraintPriorityFitnessSpec:
+    """Versioned, bounded economic ranking after terminal solvency screening.
+
+    The score range is (-1, 1) for feasible episodes and exactly -2 for
+    terminal insolvency. This keeps feasibility lexicographically ahead of
+    any finite economic outcome without treating HardRisk interventions as
+    violations or allowing an unbounded return to overwhelm the constraint.
+    """
+
+    return_weight: float = 1.0
+    tail_weight: float = 1.0
+    drawdown_weight: float = 1.0
+    protocol: str = "constraint_priority_train_inner_v1"
+
+    def __post_init__(self) -> None:
+        for name in ("return_weight", "tail_weight", "drawdown_weight"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+                raise ValueError(f"{name} must be finite and nonnegative")
+        if self.return_weight <= 0 or self.protocol != "constraint_priority_train_inner_v1":
+            raise ValueError("constraint-priority protocol and positive return weight are required")
+
+    def evaluate_episode(self, *, split: str, initial_equity: float, final_equity: float,
+                         step_log_returns: Sequence[float], drawdowns: Sequence[float],
+                         risk_intervention_rate: float, tail_fraction: float,
+                         insolvency: bool | None = None,
+                         maintenance_margin_breach: bool | None = None,
+                         native_liquidation_detected: bool | None = None) -> FitnessDecision:
+        # Reuse the legacy input validation and exact native-fact aggregation,
+        # while explicitly removing intervention count from the objective.
+        if (isinstance(final_equity, bool) or not isinstance(final_equity, (int, float))
+                or not math.isfinite(final_equity)):
+            raise ValueError("episode final equity must be a finite real number")
+        # A negative terminal account balance is a valid bankruptcy fact in a
+        # futures account. The legacy economic scorer requires nonnegative
+        # equity, so clamp only its unused score input; feasibility below still
+        # uses the original value and rejects every terminal balance <= 0.
+        economic_final_equity = max(float(final_equity), 0.0)
+        economics = FitnessSpec(
+            return_weight=self.return_weight,
+            tail_weight=self.tail_weight,
+            drawdown_weight=self.drawdown_weight,
+            risk_intervention_weight=0.0,
+        ).score_episode(
+            split=split, initial_equity=initial_equity, final_equity=economic_final_equity,
+            step_log_returns=step_log_returns, drawdowns=drawdowns,
+            risk_intervention_rate=risk_intervention_rate, tail_fraction=tail_fraction,
+        )
+        constraint_facts = (insolvency, maintenance_margin_breach, native_liquidation_detected)
+        if any(value is not None and type(value) is not bool for value in constraint_facts):
+            raise ValueError("native feasibility facts must be Boolean when provided")
+        reasons = []
+        if final_equity <= 0 or insolvency is True:
+            reasons.append("episode_insolvency_detected")
+        if maintenance_margin_breach is True:
+            reasons.append("maintenance_margin_breach_detected")
+        if native_liquidation_detected is True:
+            reasons.append("native_liquidation_detected")
+        if reasons:
+            return FitnessDecision(score=-2.0, feasible=False,
+                                   rejection_reason="+".join(reasons))
+        bounded = math.tanh(economics)
+        if not math.isfinite(bounded):
+            raise OverflowError("nonfinite bounded economic fitness")
+        if self.protocol == "constraint_priority_train_inner_v2":
+            bounded = min(max(bounded, math.nextafter(-1.0, 0.0)),
+                          math.nextafter(1.0, 0.0))
+        return FitnessDecision(score=bounded, feasible=True, rejection_reason=None)
+
+    def score_episode(self, **facts: object) -> float:
+        """Score-compatible wrapper for callers that do not need the reason."""
+        decision = self.evaluate_episode(**facts)  # type: ignore[arg-type]
+        return decision.score
+
+
+@dataclass(frozen=True)
+class FeasibilityFirstFitnessSpec(ConstraintPriorityFitnessSpec):
+    """Candidate-level feasibility ordering; incompatible with v1 checkpoints."""
+
+    protocol: str = "constraint_priority_train_inner_v2"
+
+    def __post_init__(self) -> None:
+        for name in ("return_weight", "tail_weight", "drawdown_weight"):
+            value = getattr(self, name)
+            if (isinstance(value, bool) or not isinstance(value, (int, float))
+                    or not math.isfinite(value) or value < 0):
+                raise ValueError(f"{name} must be finite and nonnegative")
+        if self.return_weight <= 0 or self.protocol != "constraint_priority_train_inner_v2":
+            raise ValueError("feasibility-first protocol and positive return weight are required")

@@ -1,0 +1,144 @@
+{
+  "schema": "rles.stage60-fixed-regime-preregistration.v1",
+  "status": "frozen_before_diagnostic_replay",
+  "objective": "Re-run the already-used Stage58 Train-only PPO recipe to emit v4 diagnostics using fixed cross-window volatility boundaries; no model selection or evaluation.",
+  "supersedes": {
+    "stage59_preregistration": {
+      "path": "D:\\Program Files\\NautilusTrader_RL_ES\\docs\\audit_evidence\\20261017\\stage59_train_diagnostics_revision2\\preregistration.json",
+      "sha256": "2205e5084c004fd81c2580779305cabdef76174a2e374b08607e1b79cce0718f"
+    },
+    "stage59_analysis": {
+      "path": "D:\\Program Files\\NautilusTrader_RL_ES\\docs\\audit_evidence\\20261017\\stage59_train_diagnostics_analysis.json",
+      "sha256": "395b2e2e314fda0a9cb219271c71704df9f2cfa68ad301561d1d967f95526acc"
+    }
+  },
+  "source_stage58_verification_sha256": "a869f4adcbfa8cfada3b8ae988896b443a50fa22db953842669a504aa09a73c9",
+  "source_stage59_preregistration_sha256": "2205e5084c004fd81c2580779305cabdef76174a2e374b08607e1b79cce0718f",
+  "frozen_inputs": {
+    "base_config": {
+      "path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-stage57-action-econ-bins-seed102-20261016\\config.json",
+      "sha256": "cc6f909b593da4c5d4de663ab0c497d36e621e356681c9983f4d68affeee32cf"
+    },
+    "market": {
+      "path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-expanded-market-stage-20261014\\expanded-market-v2\\market.parquet",
+      "sha256": "06323e909997909dee35b4abf1543444ae230f30cbc1f672ded033b3bc41fe70"
+    },
+    "market_completion": {
+      "path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-expanded-market-stage-20261014\\expanded-market-v2\\market.parquet.COMPLETED.json",
+      "sha256": "44a76ea72f06ca050a2faf0adff7b7c99a05fab935dc82c28ec24c25dcf8a768"
+    },
+    "scenario_rules": {
+      "path": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-expanded-market-stage-20261014\\scenario-rules-2024-onwards.json",
+      "sha256": "690292b508ce722d6ba2f5b9fb745671f56fc396d2026943fd36668e9028c93b"
+    }
+  },
+  "source_code_sha256": {
+    "packages/gym_bridge/src/rles_gym_bridge/env.py": "e98aa714a659f5f79c9776f8cb71aad517dda9ac7932cec0ba8ab2ce9cd67372",
+    "packages/gym_bridge/src/rles_gym_bridge/historical.py": "a70eb0faaa9aa7ecc7522729b44b1a57d4cf349d3cf09e0d1a9675050539dd3e",
+    "packages/rl_sb3/src/rles_rl_sb3/provider.py": "f047f8cda227620abaf813ef36d29b68b0d7cd61435b6925bca0f1efeb373bce",
+    "packages/orchestrator/src/rles_orchestrator/rl_stage.py": "b3ffa8400dca68f14f50d72747df4b1d3dcbc9493150f6f5e58f5293ed4655eb",
+    "packages/orchestrator/src/rles_orchestrator/application.py": "c289e0dd97cbbb9c0f8694063c08ba030d3dd21dd45979873563388ea9a60a2c",
+    "qa/preregister_stage60_fixed_regimes.py": "a907967e69b2f9056a1c95a47f36af5892c357084a1d05a03cf160db0bff66ea",
+    "qa/analyze_stage60_fixed_regimes.py": "c767e8e29a530d333a9aeb8a7bfdfdebcd7d0ad20e2fea8c5db459db0e3a28bd"
+  },
+  "reused_train_dates": [
+    "2024-01-01",
+    "2024-09-01",
+    "2025-05-01",
+    "2026-01-01"
+  ],
+  "windows": [
+    {
+      "window_id": 1,
+      "start_date_utc": "2024-01-01",
+      "market_start_ns": 1704067260001000000,
+      "market_end_ns": 1704559260001000000,
+      "steps": 8192,
+      "episodes": 1,
+      "seed": 102,
+      "config": {
+        "path": "D:\\Program Files\\NautilusTrader_RL_ES\\docs\\audit_evidence\\20261017\\stage60_fixed_regimes\\window-01-2024-01-01.config.json",
+        "sha256": "fe2677a8204382a36f408414c9e7cc6a8d7b141ead7f0027ddcc07fb0e02d00a"
+      },
+      "output": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-stage60-fixed-regimes-train-only-20261017\\window-01-2024-01-01\\run"
+    },
+    {
+      "window_id": 2,
+      "start_date_utc": "2024-09-01",
+      "market_start_ns": 1725148860001000000,
+      "market_end_ns": 1725640860001000000,
+      "steps": 8192,
+      "episodes": 1,
+      "seed": 102,
+      "config": {
+        "path": "D:\\Program Files\\NautilusTrader_RL_ES\\docs\\audit_evidence\\20261017\\stage60_fixed_regimes\\window-02-2024-09-01.config.json",
+        "sha256": "04fce6807982033b9b9a0159b65ddc16d1a6034df4468b52df9da776a469cae1"
+      },
+      "output": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-stage60-fixed-regimes-train-only-20261017\\window-02-2024-09-01\\run"
+    },
+    {
+      "window_id": 3,
+      "start_date_utc": "2025-05-01",
+      "market_start_ns": 1746057660001000000,
+      "market_end_ns": 1746549660001000000,
+      "steps": 8192,
+      "episodes": 1,
+      "seed": 102,
+      "config": {
+        "path": "D:\\Program Files\\NautilusTrader_RL_ES\\docs\\audit_evidence\\20261017\\stage60_fixed_regimes\\window-03-2025-05-01.config.json",
+        "sha256": "268481f2056e6391fe3555be7e53444b5477645964fa1967af1e2702d0630162"
+      },
+      "output": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-stage60-fixed-regimes-train-only-20261017\\window-03-2025-05-01\\run"
+    },
+    {
+      "window_id": 4,
+      "start_date_utc": "2026-01-01",
+      "market_start_ns": 1767225660001000000,
+      "market_end_ns": 1767717660001000000,
+      "steps": 8192,
+      "episodes": 1,
+      "seed": 102,
+      "config": {
+        "path": "D:\\Program Files\\NautilusTrader_RL_ES\\docs\\audit_evidence\\20261017\\stage60_fixed_regimes\\window-04-2026-01-01.config.json",
+        "sha256": "6d4592d907b03c9768fab9eea3361b52c9f052145b26b3e09d7e38ac7c53b701"
+      },
+      "output": "D:\\Program Files\\NautilusTrader_RL_ES\\.tmp\\rl-stage60-fixed-regimes-train-only-20261017\\window-04-2026-01-01\\run"
+    }
+  ],
+  "evaluation_queries": {
+    "validation": 0,
+    "test": 0,
+    "holdout": 0,
+    "outer_2026": 0
+  },
+  "fixed_policy": {
+    "algorithm": "PPO",
+    "seed": 102,
+    "steps_per_window": 8192,
+    "environment_count": 1,
+    "episode_steps": 8192,
+    "purpose": "train_inner_diagnostic_only_no_selection_no_validation",
+    "expected_learning_schema": "rles.r1-learning.v4"
+  },
+  "regime_policy": {
+    "volatility_feature": "volatility_5m",
+    "volatility_scheme": "fixed_absolute_volatility_upper_closed_v1",
+    "volatility_ratio_upper_closed_cuts": [
+      0.00025,
+      0.0005,
+      0.001
+    ],
+    "trend_feature": "return_15m, fallback return_5m then return_1m",
+    "trend_scheme": "signed_feature_v1",
+    "funding_feature": "last_settled_funding",
+    "funding_scheme": "signed_feature_v1",
+    "economic_contribution": "per-step native r_econ sum and mean",
+    "threshold_source": "fixed round raw-ratio engineering scales; not fitted, tuned, or used by policy",
+    "limitations": [
+      "all four windows were previously used Train data and are not independent evidence",
+      "scenario-only costs and rules remain unchanged",
+      "fixed bins improve descriptive comparability but do not validate regime predictive value",
+      "no Validation, Test, Holdout, or outer-2026 query is allowed in this replay"
+    ]
+  }
+}

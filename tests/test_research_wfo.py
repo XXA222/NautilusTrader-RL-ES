@@ -11,8 +11,15 @@ import pytest
 from rles_data.core import DAY_NS, MINUTE_NS, DataError, Window, digest
 from rles_data.features import Scaler
 from rles_data.folds import bind_fold_scaler, build_folds
-from rles_orchestrator.wfo_application import _candidate, _coverage, _with_window
+from rles_orchestrator.wfo_application import (
+    _candidate, _candidate_feature_identity, _coverage, _dsr_trial_count_evidence, _with_window,
+)
 from rles_research.wfo import FoldBoundaryError, FoldRequest, plan_folds, validate_l2_manifest
+
+
+def _market_source_identity() -> dict:
+    return {"schema_version": "0.4.1", "snapshot_hash": "a" * 64,
+            "file_sha256": "b" * 64, "marker_sha256": "c" * 64, "events": 1}
 
 pytestmark = pytest.mark.unit
 
@@ -46,6 +53,10 @@ def test_wfo_candidate_deadband_is_applied_and_bound_to_its_environment(tmp_path
     assert base["environment"] is environment
     assert base["environment"]["execution"]["deadband"] == "0.01"
     assert "deadband" not in candidate
+    explicit_flat = _candidate(base, {"candidate_id": "explicit-flat", "zero_target_policy": "close"},
+                               tmp_path / "flat")
+    assert explicit_flat["environment"]["execution"]["zero_target_policy"] == "close"
+    assert "zero_target_policy" not in explicit_flat
     train_environment = _with_window(
         candidate["environment"], start_ns=10, end_ns=20, coverage_policy={"marker": "train"},
     )
@@ -57,11 +68,29 @@ def test_wfo_candidate_deadband_is_applied_and_bound_to_its_environment(tmp_path
         tmp_path / "scheduled",
     )
     assert scheduled["environment"]["feature_profile"] == "causal_mtf_v3"
+    position_clocks = _candidate(
+        base, {"candidate_id": "ppo-native-position-clocks", "feature_profile": "causal_mtf_v4"},
+        tmp_path / "position-clocks",
+    )
+    assert position_clocks["environment"]["feature_profile"] == "causal_mtf_v4"
+    daily_features = _candidate(
+        base, {"candidate_id": "ppo-causal-mtf-v5", "feature_profile": "causal_mtf_v5"},
+        tmp_path / "daily-features",
+    )
+    assert daily_features["environment"]["feature_profile"] == "causal_mtf_v5"
 
     with pytest.raises(DataError, match="deadband is invalid"):
         _candidate(base, {"candidate_id": "bad", "deadband": "1.01"}, tmp_path / "bad")
     with pytest.raises(DataError, match="decimal string or integer"):
         _candidate(base, {"candidate_id": "float", "deadband": 0.05}, tmp_path / "float")
+
+
+def test_wfo_candidate_feature_identity_binds_v5_profile():
+    feature_hash = "a" * 64
+    v4 = _candidate_feature_identity("causal_mtf_v4", feature_hash)
+    v5 = _candidate_feature_identity("causal_mtf_v5", feature_hash)
+    assert v4 != v5
+    assert _candidate_feature_identity("causal_mtf_v5", feature_hash) == v5
 
 
 @pytest.mark.artifact_restore
@@ -99,6 +128,32 @@ def test_final_retrain_resume_checkpoint_uses_latest_completed_supported_stage(t
 
     (run_root / "E2" / "generation-00000001" / "attempt-1" / "COMPLETED").unlink()
     assert _latest_final_retrain_checkpoint(run_root, "A4").name == "step-000000000032"
+
+
+def test_dsr_trial_count_evidence_limits_claim_to_frozen_protocol_candidates() -> None:
+    from rles_research.statistics import candidate_set_sha256
+
+    evidence = _dsr_trial_count_evidence(["candidate-a", "candidate-b"], {
+        "trial_count_inventory": {
+            "raw_query_counts": {"validation": 4, "test": 0},
+            "observed_candidate_ids": ["candidate-a", "candidate-b"],
+            "observed_fold_ids": ["fold-0", "fold-1"],
+            "es_lane_request_count": 12,
+            "stage_receipt_count": 3,
+        },
+    }, {"protocol_registered_attempt_count": 2,
+        "project_registered_attempt_count": 5, "attempts": []})
+    assert evidence["status"] == "partial"
+    assert evidence["dsr_effective_trials"] == 2
+    assert evidence["candidate_set_sha256"] == candidate_set_sha256(["candidate-a", "candidate-b"])
+    assert "not canonicalized" in evidence["deduplication"]
+    assert "not modeled" in evidence["dependence_assumption"]
+    assert evidence["protocol_observed_usage"]["raw_query_counts"]["validation"] == 4
+    assert evidence["project_historical_effective_trials"]["status"] == "not_estimated"
+    assert "standalone application training attempts" in evidence[
+        "project_historical_effective_trials"
+    ]["reason"]
+    assert evidence["project_trial_attempt_inventory"]["project_registered_attempt_count"] == 5
 
 
 def _ns(value: datetime) -> int:
@@ -311,7 +366,8 @@ def test_wfo_invalid_worker_policy_cannot_consume_queries(tmp_path, monkeypatch,
         "selection": {}, "bootstrap": {}, "pbo_max_partitions": 0,
         "reviewer_approval_sha": "", "cost_stress_validation": False,
     }
-    monkeypatch.setattr(wfo_application, "read_curated", lambda _path: pytest.fail("data read"))
+    monkeypatch.setattr(wfo_application, "read_curated_window",
+                        lambda *_args, **_kwargs: pytest.fail("data read"))
     monkeypatch.setattr(wfo_application, "ResearchLedger", lambda _path: pytest.fail("query ledger opened"))
     output = tmp_path / "must-not-start"
     with pytest.raises(DataError, match="worker memory policy"):
@@ -331,7 +387,8 @@ def test_wfo_invalid_rl_sampling_cannot_read_data_or_open_query_ledger(tmp_path,
         "selection": {}, "bootstrap": {}, "pbo_max_partitions": 0,
         "reviewer_approval_sha": "", "cost_stress_validation": False,
     }
-    monkeypatch.setattr(wfo_application, "read_curated", lambda _path: pytest.fail("data read"))
+    monkeypatch.setattr(wfo_application, "read_curated_window",
+                        lambda *_args, **_kwargs: pytest.fail("data read"))
     monkeypatch.setattr(wfo_application, "ResearchLedger", lambda _path: pytest.fail("query ledger opened"))
     output = tmp_path / "must-not-start"
     with pytest.raises(DataError, match="explicit fixed episode steps"):
@@ -346,16 +403,50 @@ def test_wfo_invalid_rl_sampling_cannot_read_data_or_open_query_ledger(tmp_path,
 def test_wfo_suspends_validation_protocol_on_keyboard_interrupt(tmp_path, monkeypatch) -> None:
     import rles_orchestrator.wfo_application as wfo_application
     from rles_orchestrator.wfo_application import run_wfo
+    from rles_research.access import ProjectResearchRegistry
     from rles_research.ledger import ResearchLedger
 
     _research, manifests, _dataset_hash, _feature_hash = _paired_folds()
     manifest = manifests[0]
+    access_order: list[str] = []
+    source_identity = _market_source_identity()
+    original_record_development = wfo_application.research_access.record_development
+    registry = ProjectResearchRegistry(tmp_path / "project-research.sqlite")
+    original_reserve_intent = registry.reserve_query_intent
+    original_start_intents = registry.start_query_intents
+
+    def record_development(*args, **kwargs):
+        assert kwargs["source_identity"] == source_identity
+        access_order.append("registered")
+        return original_record_development(*args, **kwargs)
+
+    def read_market(_path, start_ns, end_ns, **_kwargs):
+        assert start_ns == settings["data_start_ns"]
+        assert end_ns == settings["holdout_end_ns"]
+        access_order.append("payload")
+        return SimpleNamespace(events=(), snapshot_hash="a" * 64)
+
+    def reserve_intent(**kwargs):
+        assert kwargs["identity"]["source_sha256"] == source_identity["snapshot_hash"]
+        access_order.append("intent-reserved")
+        return original_reserve_intent(**kwargs)
+
+    def start_intents(**kwargs):
+        access_order.append("intent-started")
+        return original_start_intents(**kwargs)
+
     monkeypatch.setattr(wfo_application, "CuratedStore",
                         lambda _events: SimpleNamespace(snapshot_hash="a" * 64))
-    monkeypatch.setattr(wfo_application, "read_curated", lambda _path: SimpleNamespace(events=()))
+    monkeypatch.setattr(wfo_application, "read_curated_window", read_market)
+    monkeypatch.setattr(wfo_application, "curated_source_identity",
+                        lambda _path: (access_order.append("metadata") or source_identity))
+    monkeypatch.setattr(wfo_application.research_access, "record_development", record_development)
+    monkeypatch.setattr(wfo_application.research_access, "project_registry", lambda: registry)
+    monkeypatch.setattr(registry, "reserve_query_intent", reserve_intent)
+    monkeypatch.setattr(registry, "start_query_intents", start_intents)
     monkeypatch.setattr(wfo_application, "load_rules", lambda _path: ())
     monkeypatch.setattr(wfo_application, "historical_feature_spec",
-                        lambda _ages: SimpleNamespace(max_lookback_ns=1, hash="b" * 64))
+                        lambda _ages, **_kwargs: SimpleNamespace(max_lookback_ns=1, hash="b" * 64))
     monkeypatch.setattr(wfo_application, "build_folds", lambda **_kwargs: [manifest])
     monkeypatch.setattr(wfo_application, "_require_window", lambda *_args: None)
     monkeypatch.setattr(wfo_application, "_source_tree_hash", lambda _root: "c" * 64)
@@ -380,7 +471,7 @@ def test_wfo_suspends_validation_protocol_on_keyboard_interrupt(tmp_path, monkey
     }
     config = {
         "output": str(output),
-        "environment": {"market_path": "unused", "rules_path": "unused",
+        "environment": {"market_path": "unused", "rules_path": str(Path(__file__).resolve()),
                         "instrument": "ETHUSDT-PERP.SIM"},
         "wfo": settings,
     }
@@ -391,10 +482,19 @@ def test_wfo_suspends_validation_protocol_on_keyboard_interrupt(tmp_path, monkey
     with pytest.raises(KeyboardInterrupt):
         run_wfo(config, train_fn=interrupted)
 
+    assert access_order == ["metadata", "registered", "intent-reserved",
+                            "intent-reserved", "intent-started", "payload"]
+
     ledger = ResearchLedger(output / "research.sqlite")
     assert ledger.state("interrupted-wfo")["state"] == "SUSPENDED"
     assert ledger.query_counts("interrupted-wfo") == {"validation": 1}
     assert ledger.verify_audit_chain()
+    attempts = wfo_application.research_access.project_registry().trial_attempt_summary(
+        "interrupted-wfo",
+    )
+    assert attempts["protocol_registered_attempt_count"] == 2
+    assert all(attempt["events"][-1]["status"] == "interrupted"
+               for attempt in attempts["attempts"])
     failure = json.loads((output / "FAILED.json").read_text(encoding="utf-8"))
     assert failure == {"error": "KeyboardInterrupt", "detail": "interrupted"}
 
@@ -410,9 +510,12 @@ def test_wfo_persists_validation_rejection_report_without_opening_test_or_holdou
     manifest = manifests[0]
     monkeypatch.setattr(wfo_application, "CuratedStore",
                         lambda _events: SimpleNamespace(snapshot_hash=dataset_hash))
-    monkeypatch.setattr(wfo_application, "read_curated", lambda _path: SimpleNamespace(events=()))
+    monkeypatch.setattr(wfo_application, "read_curated_window",
+                        lambda *_args, **_kwargs: SimpleNamespace(events=(), snapshot_hash="a" * 64))
+    monkeypatch.setattr(wfo_application, "curated_source_identity",
+                        lambda _path: _market_source_identity())
     monkeypatch.setattr(wfo_application, "load_rules", lambda _path: ())
-    def feature_spec(_ages, profile="legacy"):
+    def feature_spec(_ages, profile="legacy", **_kwargs):
         selected_hash = feature_hash if profile == "legacy" else "e" * 64
         return SimpleNamespace(max_lookback_ns=MINUTE_NS, hash=selected_hash)
 
@@ -451,7 +554,7 @@ def test_wfo_persists_validation_rejection_report_without_opening_test_or_holdou
     }
     config = {
         "output": str(output),
-        "environment": {"market_path": "unused", "rules_path": "unused",
+        "environment": {"market_path": "unused", "rules_path": str(Path(__file__).resolve()),
                         "instrument": "ETHUSDT-PERP.SIM", "execution": _execution_config()},
         "wfo": settings,
     }
@@ -503,6 +606,12 @@ def test_wfo_persists_validation_rejection_report_without_opening_test_or_holdou
     assert ledger.state("rejected-wfo")["state"] == "ABORTED"
     assert ledger.query_counts("rejected-wfo") == {"validation": 2}
     assert ledger.verify_audit_chain()
+    attempts = wfo_application.research_access.project_registry().trial_attempt_summary("rejected-wfo")
+    assert attempts["protocol_registered_attempt_count"] == 2
+    assert {attempt["seed"] for attempt in attempts["attempts"]} == {1, 2}
+    assert all(attempt["feature_sha256"] for attempt in attempts["attempts"])
+    assert all(attempt["events"][-1]["status"] == "not_selected"
+               for attempt in attempts["attempts"])
 
 
 @pytest.mark.short_wfo
@@ -516,10 +625,13 @@ def test_wfo_stress_validation_gate_blocks_candidates_before_test(tmp_path, monk
     manifest = manifests[0]
     monkeypatch.setattr(wfo_application, "CuratedStore",
                         lambda _events: SimpleNamespace(snapshot_hash=dataset_hash))
-    monkeypatch.setattr(wfo_application, "read_curated", lambda _path: SimpleNamespace(events=()))
+    monkeypatch.setattr(wfo_application, "read_curated_window",
+                        lambda *_args, **_kwargs: SimpleNamespace(events=(), snapshot_hash="a" * 64))
+    monkeypatch.setattr(wfo_application, "curated_source_identity",
+                        lambda _path: _market_source_identity())
     monkeypatch.setattr(wfo_application, "load_rules", lambda _path: ())
     monkeypatch.setattr(wfo_application, "historical_feature_spec",
-                        lambda _ages: SimpleNamespace(max_lookback_ns=MINUTE_NS, hash=feature_hash))
+                        lambda _ages, **_kwargs: SimpleNamespace(max_lookback_ns=MINUTE_NS, hash=feature_hash))
     monkeypatch.setattr(wfo_application, "build_folds", lambda **_kwargs: (manifest,))
     monkeypatch.setattr(wfo_application, "_require_window", lambda *_args: None)
     monkeypatch.setattr(wfo_application, "_source_tree_hash", lambda _root: "c" * 64)
@@ -554,7 +666,7 @@ def test_wfo_stress_validation_gate_blocks_candidates_before_test(tmp_path, monk
     }
     config = {
         "output": str(output),
-        "environment": {"market_path": "unused", "rules_path": "unused",
+        "environment": {"market_path": "unused", "rules_path": str(Path(__file__).resolve()),
                         "instrument": "ETHUSDT-PERP.SIM", "execution": _execution_config()},
         "wfo": settings,
     }
@@ -579,7 +691,15 @@ def test_wfo_stress_validation_gate_blocks_candidates_before_test(tmp_path, monk
         })
         return {"output": str(run_output)}
 
-    def stress_loss(_run: dict, _bundle: Path, **_window: dict) -> dict:
+    def stress_loss(_run: dict, bundle: Path, *, validation_access, **window: dict) -> dict:
+        identity = validation_access.identity
+        assert identity["split"] == "validation"
+        assert identity["mode"] == "stress"
+        assert identity["candidate_id"] == _run["wfo_candidate_id"]
+        assert identity["fold_id"] == _run["wfo_fold_id"]
+        assert identity["start_ns"] == window["start_ns"]
+        assert identity["end_ns"] == window["end_ns"]
+        validation_access.consume(bundle_sha256=_verify_file(bundle / "bundle.json"))
         return {
             "execution_mode": "stress", "terminal_flat": True,
             "metrics": {"net_return": -0.001, "max_drawdown": 0.02, "turnover_ratio": 0.1},
@@ -619,10 +739,13 @@ def test_wfo_resumes_completed_validation_boundary_without_retraining_or_recharg
     manifest = manifests[0]
     monkeypatch.setattr(wfo_application, "CuratedStore",
                         lambda _events: SimpleNamespace(snapshot_hash=dataset_hash))
-    monkeypatch.setattr(wfo_application, "read_curated", lambda _path: SimpleNamespace(events=()))
+    monkeypatch.setattr(wfo_application, "read_curated_window",
+                        lambda *_args, **_kwargs: SimpleNamespace(events=(), snapshot_hash="a" * 64))
+    monkeypatch.setattr(wfo_application, "curated_source_identity",
+                        lambda _path: _market_source_identity())
     monkeypatch.setattr(wfo_application, "load_rules", lambda _path: ())
     monkeypatch.setattr(wfo_application, "historical_feature_spec",
-                        lambda _ages: SimpleNamespace(max_lookback_ns=MINUTE_NS, hash=feature_hash))
+                        lambda _ages, **_kwargs: SimpleNamespace(max_lookback_ns=MINUTE_NS, hash=feature_hash))
     monkeypatch.setattr(wfo_application, "build_folds", lambda **_kwargs: (manifest,))
     monkeypatch.setattr(wfo_application, "_require_window", lambda *_args: None)
     monkeypatch.setattr(wfo_application, "_source_tree_hash", lambda _root: "c" * 64)
@@ -655,13 +778,23 @@ def test_wfo_resumes_completed_validation_boundary_without_retraining_or_recharg
     }
     config = {
         "output": str(output),
-        "environment": {"market_path": "unused", "rules_path": "unused",
+        "environment": {"market_path": "unused", "rules_path": str(Path(__file__).resolve()),
                         "instrument": "ETHUSDT-PERP.SIM"},
         "wfo": settings,
     }
     train_calls: list[str] = []
+    validation_accesses = []
 
-    def train_candidate(run: dict) -> dict:
+    def train_candidate(run: dict, *, evaluate: bool = True,
+                        validation_access=None) -> dict:
+        scope = None
+        if validation_access is not None:
+            scope = validation_access.identity
+            assert scope["split"] == run["evaluation"]["split"] == "validation"
+            assert scope["start_ns"] == run["evaluation"]["start_ns"]
+            assert scope["end_ns"] == run["evaluation"]["end_ns"]
+            assert scope["candidate_id"] == run["wfo_candidate_id"]
+            assert scope["fold_id"] == run["wfo_fold_id"]
         candidate_id = Path(run["output"]).name
         train_calls.append(candidate_id)
         run_output = Path(run["output"])
@@ -689,6 +822,11 @@ def test_wfo_resumes_completed_validation_boundary_without_retraining_or_recharg
                 "train_window_hash": digest(score_window), "sample_count": 10,
             }},
         })
+        if validation_access is not None:
+            validation_access.consume(bundle_sha256=bundle_hash)
+            assert validation_access.consumed
+            assert validation_access.identity["bundle_sha256"] == bundle_hash
+            validation_accesses.append(scope["query_id"])
         report_hash = _write_verified(run_output / "report.json", {
             "metrics": {
                 "net_return": -0.01, "max_drawdown": 0.01, "turnover_ratio": 0.1,
@@ -763,10 +901,13 @@ def test_wfo_resumes_after_persisted_fold_test_without_replaying_one_shot_test(
     _research, manifests, dataset_hash, feature_hash = _paired_folds()
     monkeypatch.setattr(wfo_application, "CuratedStore",
                         lambda _events: SimpleNamespace(snapshot_hash=dataset_hash))
-    monkeypatch.setattr(wfo_application, "read_curated", lambda _path: SimpleNamespace(events=()))
+    monkeypatch.setattr(wfo_application, "read_curated_window",
+                        lambda *_args, **_kwargs: SimpleNamespace(events=(), snapshot_hash="a" * 64))
+    monkeypatch.setattr(wfo_application, "curated_source_identity",
+                        lambda _path: _market_source_identity())
     monkeypatch.setattr(wfo_application, "load_rules", lambda _path: ())
     monkeypatch.setattr(wfo_application, "historical_feature_spec",
-                        lambda _ages: SimpleNamespace(max_lookback_ns=MINUTE_NS, hash=feature_hash))
+                        lambda _ages, **_kwargs: SimpleNamespace(max_lookback_ns=MINUTE_NS, hash=feature_hash))
     monkeypatch.setattr(wfo_application, "build_folds", lambda **_kwargs: manifests)
     monkeypatch.setattr(wfo_application, "_require_window", lambda *_args: None)
     monkeypatch.setattr(wfo_application, "_source_tree_hash", lambda _root: "c" * 64)
@@ -802,7 +943,7 @@ def test_wfo_resumes_after_persisted_fold_test_without_replaying_one_shot_test(
     }
     config = {
         "output": str(output),
-        "environment": {"market_path": "unused", "rules_path": "unused",
+        "environment": {"market_path": "unused", "rules_path": str(Path(__file__).resolve()),
                         "instrument": "ETHUSDT-PERP.SIM", "execution": _execution_config()},
         "wfo": settings,
     }
@@ -886,9 +1027,18 @@ def test_wfo_resumes_after_persisted_fold_test_without_replaying_one_shot_test(
             }), encoding="utf-8")
         return {"output": str(run_output)}
 
-    def backtest_candidate(_run: dict, bundle_root: Path) -> dict:
+    def backtest_candidate(_run: dict, bundle_root: Path, *, evaluation_access) -> dict:
         stage = "holdout" if Path(bundle_root) == output / "final-retrain" else "test"
         backtest_calls.append(stage)
+        scope = evaluation_access.identity
+        assert scope["split"] == _run["evaluation"]["split"]
+        evaluation_access.consume(
+            bundle_sha=_verify_file(bundle_root / "bundle.json"),
+            split=_run["evaluation"]["split"],
+            start_ns=_run["evaluation"]["start_ns"],
+            end_ns=_run["evaluation"]["end_ns"],
+            market=scope["market"], mode=_run["evaluation"].get("mode", "base"),
+        )
         return account_report()
 
     baseline_calls = 0
@@ -896,14 +1046,24 @@ def test_wfo_resumes_after_persisted_fold_test_without_replaying_one_shot_test(
     def interrupt_after_first_durable_test(*_args, **_kwargs) -> dict:
         nonlocal baseline_calls
         baseline_calls += 1
-        if baseline_calls == 1:
+        if baseline_calls == 2:
             raise KeyboardInterrupt
         return {"B0": {"metrics": {"net_return": 0.0}}}
 
+    # Interrupt before the second baseline access is reserved. The first fixed
+    # baseline batch is complete, so resume must reuse both completion receipts.
+    original_authorize = wfo_application.authorize_evaluation
+
+    def interrupt_before_second_baseline(*args, **kwargs):
+        if kwargs.get("component") == "baselines" and baseline_calls == 1:
+            raise KeyboardInterrupt
+        return original_authorize(*args, **kwargs)
+
+    monkeypatch.setattr(wfo_application, "authorize_evaluation", interrupt_before_second_baseline)
     monkeypatch.setattr(wfo_application, "_baseline_reports", interrupt_after_first_durable_test)
     with pytest.raises(KeyboardInterrupt):
         run_wfo(config, train_fn=train_candidate, backtest_fn=backtest_candidate)
-    assert backtest_calls == ["test"]
+    assert backtest_calls == ["test", "test"]
     assert len(train_calls) == 4
     assert deadband_runs == ["0.05", "0.01", "0.05", "0.01"]
     first_test_report = output / "folds" / "60-15-15-0000" / "test" / "report.json"
@@ -914,6 +1074,7 @@ def test_wfo_resumes_after_persisted_fold_test_without_replaying_one_shot_test(
         return {"B0": {"metrics": {"net_return": 0.0}}}
 
     monkeypatch.setattr(wfo_application, "_baseline_reports", baseline_ok)
+    monkeypatch.setattr(wfo_application, "authorize_evaluation", original_authorize)
     with pytest.raises(KeyboardInterrupt):
         run_wfo(config, train_fn=train_candidate, backtest_fn=backtest_candidate, resume=True)
     ledger = ResearchLedger(output / "research.sqlite")
@@ -981,6 +1142,18 @@ def test_wfo_resumes_after_persisted_fold_test_without_replaying_one_shot_test(
     assert ResearchLedger(output / "research.sqlite").state("resumable-test-wfo")["state"] == "CLOSED"
 
     monkeypatch.setattr(wfo_application, "_write_verified", original_write_verified)
+    registry = wfo_application.research_access.project_registry()
+    registry.register_trial_attempt(
+        attempt_key="standalone-before-wfo-report",
+        protocol_id="standalone-application-training-v1", candidate_id="standalone-run",
+        recipe={"steps": 64}, feature_sha="e" * 64, seed=13,
+    )
+    registry.record_trial_attempt_event(
+        "standalone-before-wfo-report", event_key="standalone-started", status="started",
+    )
+    registry.record_trial_attempt_event(
+        "standalone-before-wfo-report", event_key="standalone-failed", status="failed",
+    )
     report = run_wfo(config, train_fn=train_candidate, backtest_fn=backtest_candidate, resume=True)
     _verify_file(output / "wfo-report.json")
     report = run_wfo(config, train_fn=train_candidate, backtest_fn=backtest_candidate, resume=True)
@@ -988,6 +1161,33 @@ def test_wfo_resumes_after_persisted_fold_test_without_replaying_one_shot_test(
     assert len(train_calls) == 6 and train_calls[-1] == "final-retrain-resumed"
     assert len(report["fold_tests"]) == 2
     assert report["conclusion"] == "PASS"
+    trial_evidence = report["deflated_sharpe"]["trial_count_evidence"]
+    assert trial_evidence["dsr_effective_trials"] == 2
+    assert trial_evidence["project_trial_attempt_inventory"][
+        "protocol_registered_attempt_count"] == 2
+    project_attempts = {
+        row["protocol_id"]: row
+        for row in trial_evidence["project_trial_attempt_inventory"]["project_protocol_inventory"]
+    }
+    assert project_attempts["standalone-application-training-v1"][
+        "lifecycle_event_counts"]["failed"] == 1
+    assert trial_evidence["project_historical_effective_trials"]["status"] == "not_estimated"
+    sensitivity = trial_evidence["current_protocol_sensitivity"]
+    assert sensitivity["effective_trial_count_range"] == [1, 2]
+    assert sensitivity["correlation_estimated"] is False
+    assert sensitivity["scenarios"][1]["dsr_probability"] == report["deflated_sharpe"]["dsr_probability"]
+    attempt_statuses = {
+        attempt["candidate_id"]: next(
+            event["status"] for event in attempt["events"]
+            if event["event_key"] == "validation-selection"
+        )
+        for attempt in trial_evidence["project_trial_attempt_inventory"]["attempts"]
+    }
+    assert attempt_statuses == {
+        candidate_id: "selected" if candidate_id == report["selection"]["candidate_id"]
+        else "not_selected"
+        for candidate_id in ("candidate-a", "candidate-b")
+    }
     ledger = ResearchLedger(output / "research.sqlite")
     assert ledger.state("resumable-test-wfo")["state"] == "CLOSED"
     assert ledger.query_counts("resumable-test-wfo") == {"validation": 4, "test": 2}

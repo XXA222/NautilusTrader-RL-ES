@@ -1,0 +1,77 @@
+{
+  "schema": "rles.low-capacity-forecast-plan.v1",
+  "date": "2026-10-16",
+  "split": "train_inner",
+  "scope": "development-only; no independent OOS claim",
+  "bundle": "D:\\Program Files\\NautilusTrader_RL_ES\\.artifacts\\audit-development-20261016\\models\\candidate-seed-102",
+  "bundle_sha256": "ea2ea516780f25756c7dae35636ee59eca7e3443a24259c6b58526b2536fec68",
+  "dataset_sha256": "258834aba27e77b0c97fbb4a5ca9fc6c18699f2f8d0d56c77812d1946bbc1adb",
+  "source": {
+    "market_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.artifacts\\audit-development-20261016\\data\\market.parquet",
+    "market_sha256": "06323e909997909dee35b4abf1543444ae230f30cbc1f672ded033b3bc41fe70",
+    "rules_path": "D:\\Program Files\\NautilusTrader_RL_ES\\.artifacts\\audit-development-20261016\\data\\scenario-rules.json",
+    "rules_sha256": "690292b508ce722d6ba2f5b9fb745671f56fc396d2026943fd36668e9028c93b"
+  },
+  "source_plan_sha256": "da29700ff7778510b89225502b60689e78fa9169538a950b0ac1f4fb8c21cfa5",
+  "feature_profile": "legacy",
+  "folds": [
+    {
+      "fold": 1,
+      "source_start_ns": 1722729600000000000,
+      "train_start_ns": 1722816000000000000,
+      "test_start_ns": 1738368000000000000,
+      "test_end_ns": 1740960000000000000,
+      "source_end_ns": 1740963600000000000
+    },
+    {
+      "fold": 2,
+      "source_start_ns": 1741046400000000000,
+      "train_start_ns": 1741132800000000000,
+      "test_start_ns": 1756684800000000000,
+      "test_end_ns": 1759276800000000000,
+      "source_end_ns": 1759280400000000000
+    },
+    {
+      "fold": 3,
+      "source_start_ns": 1759363200000000000,
+      "train_start_ns": 1759449600000000000,
+      "test_start_ns": 1775001600000000000,
+      "test_end_ns": 1777593600000000000,
+      "source_end_ns": 1777597200000000000
+    }
+  ],
+  "sample_interval_minutes": 5,
+  "horizons_minutes": [
+    5,
+    15,
+    60
+  ],
+  "training_days": 180,
+  "test_days": 30,
+  "purge_minutes": 60,
+  "label_max_lag_minutes": 2,
+  "model": {
+    "kind": "multi-output ridge, fit separately by horizon",
+    "alpha": 0.1,
+    "features": "all market fields from frozen feature profile",
+    "feature_scaling": "fold-local train-only mean and population standard deviation",
+    "intercept": true,
+    "random_seeds": []
+  },
+  "baselines": [
+    "zero-score",
+    "same-horizon causal momentum",
+    "same-horizon causal reversal"
+  ],
+  "round_trip_cost_bps": 12.0,
+  "cost_assumption": "2x 5bp taker fee + 2x 1bp bar slippage; scenario-only, not historical fact",
+  "selection": "none; report all folds/horizons without model tuning or promotion gate",
+  "label": "log(close at first available sample >= decision+H)/log(current visible close), in bps",
+  "guardrails": [
+    "future prices are labels only",
+    "test labels end within frozen Train boundary",
+    "test windows avoid all formally reserved Test/Holdout intervals",
+    "no training/feature fitting uses the test windows",
+    "forecast net-cost summaries are hurdle diagnostics, not execution replay"
+  ]
+}
