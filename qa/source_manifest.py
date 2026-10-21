@@ -117,6 +117,10 @@ def _workspace_identity(root: Path) -> dict[str, Any] | None:
         status = git("status", "--porcelain", "--untracked-files=all").decode(
             "utf-8",
         ).splitlines()
+        # The generated manifest cannot be clean while recording its own dirty
+        # status. Its content and tracked diff are already excluded below.
+        status = [row for row in status
+                  if row[3:].replace("\\", "/") != "qa/reports/source_manifest_current.json"]
         tracked_diff = git(
             "diff", "HEAD", "--binary", "--", ".",
             ":(exclude)qa/reports/source_manifest_current.json",

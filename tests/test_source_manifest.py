@@ -92,3 +92,30 @@ def test_source_identity_tracks_workspace_inputs_and_ignores_generated_reports(t
     (tmp_path / "packages" / "demo" / "module.py").write_text("VALUE = 2\n", encoding="utf-8")
     changed = _generate(tmp_path, manifest_path)
     assert changed["source_identity_sha256"] != first["source_identity_sha256"]
+
+
+def test_workspace_identity_does_not_report_the_manifest_as_dirty(tmp_path: Path) -> None:
+    (tmp_path / "packages" / "demo").mkdir(parents=True)
+    (tmp_path / "packages" / "demo" / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+    manifest_path = tmp_path / "qa" / "reports" / "source_manifest_current.json"
+    manifest_path.parent.mkdir(parents=True)
+    subprocess.run(["git", "init", str(tmp_path)], check=True,
+                   capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "tests@example.invalid"],
+                   check=True, capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "Test"],
+                   check=True, capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "packages/demo/module.py"],
+                   check=True, capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-m", "initial"],
+                   check=True, capture_output=True, text=True)
+
+    manifest = _generate(tmp_path, manifest_path)
+
+    assert manifest["workspace_git"]["tracked_worktree_clean"] is True
+    assert manifest["workspace_git"]["status_entries"] == []
+    subprocess.run(
+        [sys.executable, str(_GENERATOR), "--root", str(tmp_path),
+         "--output", str(manifest_path), "--verify"],
+        check=True, capture_output=True, text=True,
+    )

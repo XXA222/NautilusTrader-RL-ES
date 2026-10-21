@@ -1,7 +1,7 @@
 {
   "schema": "rles.source-manifest.v1",
-  "generated_at_utc": "2026-10-21T01:08:43.680485+00:00",
-  "source_identity_sha256": "de53723685b7b774ef16ea26b4b4bc1972ca9ceed05fcdba73ee7b4b643cfa9d",
+  "generated_at_utc": "2026-10-21T01:19:40.624300+00:00",
+  "source_identity_sha256": "11d5779674651cc221a5298593f7b2ee525d36aaf3c0634311a9044279286b63",
   "scope": {
     "included": [
       ".gitattributes",
@@ -1093,17 +1093,15 @@
   },
   "workspace_git": {
     "path": ".",
-    "commit": "49271d22c251cbc2656fe942ac3710c3b81f525f",
+    "commit": "449e54d1a35c2266feb5eccbd5b54f9c0bbdb912",
     "tracked_worktree_clean": false,
     "status_entries": [
-      " M docs/DEVELOPMENT_GOALS_REVIEW_20261017.md",
       " M docs/DEVELOPMENT_GOAL_CURRENT.md",
       " M docs/DEVELOPMENT_PLAN_20261017.md",
-      " M pyproject.toml",
-      " M qa/reports/source_manifest_current.json",
-      " M uv.lock"
+      " M qa/source_manifest.py",
+      " M tests/test_source_manifest.py"
     ],
-    "tracked_diff_sha256": "6bb4308c9dd97801ed442e6b5d63e05909aa6c8c6263755908d26fde46259b6a"
+    "tracked_diff_sha256": "b8c35c507de107540b4fd1fe6c28e518ad384bd1e8c9385e8b20d19b650ce5da"
   },
   "files": [
     {
@@ -1938,8 +1936,8 @@
     },
     {
       "path": "qa/source_manifest.py",
-      "size_bytes": 8119,
-      "sha256": "dc86bc57b201bbe49afdc4b9e281c033452e206a6646a5bdd52e2d1841f0dcf1"
+      "size_bytes": 8407,
+      "sha256": "84283511a0e43c311ad53e5089d46bdc8b10363695720adff98dc314c51a52cc"
     },
     {
       "path": "qa/td3_leverage_funding_diagnostic.py",
@@ -2513,8 +2511,8 @@
     },
     {
       "path": "tests/test_source_manifest.py",
-      "size_bytes": 4305,
-      "sha256": "fd511e06307efabdd8212da1ab6713b80aa9004eade578bbb978ec4d4cb4e0c0"
+      "size_bytes": 5762,
+      "sha256": "625dbf8168f5598f6c60a1d7218154614b9613dfbfe644e7e51a0e5186080628"
     },
     {
       "path": "tests/test_spawn_sb3_vec_env.py",
