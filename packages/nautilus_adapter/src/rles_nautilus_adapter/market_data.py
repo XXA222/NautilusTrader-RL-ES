@@ -113,6 +113,14 @@ class NativeMarketEventDecoder:
                     raise EngineBoundaryError("funding update next_funding_ns must follow the update")
                 if interval is not None and (type(interval) is not int or interval <= 0):
                     raise EngineBoundaryError("funding interval_minutes must be positive integer")
+                if payload.get("rate_semantics") == "last_settled_rate":
+                    if boundary is not None:
+                        raise EngineBoundaryError("last settled funding rate cannot schedule a future payment")
+                    # REST history carries both a realized settlement fact and
+                    # a last-settled feature update. Passing its interval to
+                    # Nautilus would infer another payment when ts_event lies
+                    # on an interval boundary, duplicating the settlement row.
+                    interval = None
             else:
                 boundary = payload.get("settlement_ns")
                 interval = payload.get("interval_minutes")

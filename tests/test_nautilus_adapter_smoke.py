@@ -803,10 +803,106 @@ def test_native_market_event_decoder_checks_index_quality_scope_and_funding_conf
     assert decoded_settlement.ts_event == 130
     assert decoded_settlement.ts_init == 140
     assert decoded_settlement.next_funding_ns == 141
+    settled_feature = decoder(market_event("settled-feature", "funding_update", 480, {
+        "instrument": str(instrument.id), "rate": "0.001",
+        "rate_semantics": "last_settled_rate", "interval_minutes": 480,
+    }, available_at=490))
+    assert settled_feature.interval is None
+    assert settled_feature.next_funding_ns is None
+    with pytest.raises(EngineBoundaryError, match="last settled funding rate cannot schedule"):
+        decoder(market_event("invalid-settled-feature", "funding_update", 500, {
+            "instrument": str(instrument.id), "rate": "0.001",
+            "rate_semantics": "last_settled_rate", "next_funding_ns": 600,
+        }))
     with pytest.raises(EngineBoundaryError, match="conflicting funding rates"):
         decoder(market_event("settlement-conflict", "funding_settlement", 200, {
             "instrument": str(instrument.id), "rate": "0.002", "settlement_ns": 200,
         }))
+
+
+@pytest.mark.parametrize("compact_history", [False, True])
+def test_delayed_rest_funding_settlement_is_charged_once_at_settlement_mark(
+    compact_history: bool,
+) -> None:
+    from dataclasses import replace
+
+    instrument = _perpetual_instrument()
+    submitter = NativePlanSubmitter(
+        instrument_id=str(instrument.id), quantity_unit="ETH",
+        quantity_increment=Decimal("0.001"), execution_spec_hash="e" * 64,
+        latency_model_id="latency-1",
+    )
+    decoder = NativeMarketEventDecoder(
+        instrument=instrument,
+        bar_type=BarType.from_str(f"{instrument.id}-1-MINUTE-LAST-EXTERNAL"),
+    )
+    session = EngineSession(
+        build_native=_perpetual_builder(submitter), submit_plan=submitter,
+        decode_event=decoder,
+        facts_reader=NativeFactsReader(
+            account_id=AccountId.from_str("SIM-001"), instrument_id=instrument.id,
+            currency="USDT", compact_history=compact_history,
+        ),
+        contract_snapshot_factory=lambda **facts: SimpleNamespace(**facts),
+        certified_barrier_protocol=EngineSession.BARRIER_PROTOCOL,
+    )
+    session.open(SimpleNamespace(dataset_hash="a" * 64, fold_hash="b" * 64,
+                                 config_hash="c" * 64))
+    try:
+        initial = session.bootstrap((_perpetual_batch(1),), decision_ts_ns=60_000_000_000)
+        entered = session.advance(
+            _perpetual_plan("delayed-funding-entry", "1.000"),
+            batches=(_perpetual_batch(2),), next_decision_ts_ns=120_000_000_000,
+        )
+        assert len(entered.positions) == 1
+        wait = replace(_perpetual_plan("delayed-funding-wait", "1.000"),
+                       action="NOOP", delta_qty=Decimal(0))
+        session.advance(
+            wait,
+            batches=(_perpetual_batch(3, ("mark", {
+                "instrument": str(instrument.id), "price": "1000.00",
+            })),),
+            next_decision_ts_ns=180_000_000_000,
+        )
+
+        settlement_ns = 480 * 60 * 1_000_000_000
+        delay_ns = 1_000_000
+        source_batch = _perpetual_batch(480, ("mark", {
+            "instrument": str(instrument.id), "price": "2000.00",
+        }), ("funding_settlement", {
+            "instrument": str(instrument.id), "rate": "0.001",
+            "interval_minutes": 480, "settlement_ns": settlement_ns,
+        }), ("funding_update", {
+            "instrument": str(instrument.id), "rate": "0.001",
+            "interval_minutes": 480, "rate_semantics": "last_settled_rate",
+        }))
+        delayed_events = tuple(replace(
+            event, ts_init_ns=settlement_ns + delay_ns,
+            available_at_ns=settlement_ns + delay_ns,
+        ) for event in source_batch.events)
+        available_ns = settlement_ns + delay_ns
+        pending = session.advance(
+            replace(wait, decision_id="delayed-funding-publish",
+                    plan_id="delayed-funding-publish", idempotency_key="delayed-funding-publish"),
+            batches=(VisibleBatch(available_ns, delayed_events, True),),
+            next_decision_ts_ns=available_ns,
+        )
+        assert pending.funding == ()
+
+        settled = session.advance(
+            replace(wait, decision_id="delayed-funding-post-settlement",
+                    plan_id="delayed-funding-post-settlement",
+                    idempotency_key="delayed-funding-post-settlement"),
+            batches=(_perpetual_batch(481),),
+            next_decision_ts_ns=481 * 60 * 1_000_000_000,
+        )
+        assert settled.mark == Decimal("2000.00")
+        assert len(settled.funding) == 1
+        assert Money.from_str(settled.funding[0]["pnl_change"]).as_decimal() == Decimal("-2.00")
+        assert settled.equity == (initial.equity + Decimal("1000.00")
+                                  - Decimal("1.00") - Decimal("2.00"))
+    finally:
+        session.close()
 
 
 def test_native_funding_event_deduplication_rejects_conflicting_records() -> None:

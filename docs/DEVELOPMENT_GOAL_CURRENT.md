@@ -40,3 +40,5 @@ instrument_rule 现执行严格字段 allowlist，避免 exchange leverage brack
 2026-10-21 测试环境修正：发现 `.venv` 原来安装的是 `.artifacts` 中的旧 `rles_gym_bridge` wheel，且 `uv sync --all-packages` 会卸掉测试写读 Parquet 所需的可选 `pyarrow`。根 `dev` 依赖现显式加入 `rles-data[arrow]` 并更新 lock；离线 workspace sync 后从本地 `packages/data/src` 导入源码且保留 pyarrow 25.0.1。杠杆/资金费率定向测试 26 passed；sync 后全量 **798 passed、5 CUDA-only skipped、53 warnings**；Ruff 和 MyPy 141 files 通过。该修正让标准开发同步具备可复现的完整测试依赖。
 
 随后修复 source manifest 将自身列为 dirty 状态的自引用问题，增加临时 Git 仓库端到端回归。当前生成器排除 manifest 自身的 status/diff，生成后可直接 `--verify`，并报告其余 tracked worktree 状态。最新全量 **799 passed、5 CUDA-only skipped、53 warnings**；全仓 Ruff 与 MyPy 141 files 通过。
+
+资金费审计又发现 Binance REST 历史同时产生 `funding_settlement` 结算事实与 `last_settled_rate` 特征；若将后者的 `interval_minutes` 交给 Nautilus，会按边界推断第二次付款。已将 last-settled update 限定为特征数据，禁止其安排账户结算；新增延迟发布的重复结算/结算 mark 原生账本回归。定向相关套件 **236 passed**；全量 **801 passed、5 CUDA-only skipped、53 warnings**；Ruff 与 MyPy 141 files 通过。11 wheels/11 sdists 已重建，11 wheels 和 5 个 entry points 的隔离 smoke 通过，wheel manifest `all_match=True`。

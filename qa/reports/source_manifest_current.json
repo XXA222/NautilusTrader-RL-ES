@@ -1,7 +1,7 @@
 {
   "schema": "rles.source-manifest.v1",
-  "generated_at_utc": "2026-10-21T01:19:40.624300+00:00",
-  "source_identity_sha256": "11d5779674651cc221a5298593f7b2ee525d36aaf3c0634311a9044279286b63",
+  "generated_at_utc": "2026-10-21T01:37:30.287180+00:00",
+  "source_identity_sha256": "50388a5f2d2104859d8ae344f3f730cb16fed256eddd95ab4acc6ee50874e95e",
   "scope": {
     "included": [
       ".gitattributes",
@@ -1093,15 +1093,15 @@
   },
   "workspace_git": {
     "path": ".",
-    "commit": "449e54d1a35c2266feb5eccbd5b54f9c0bbdb912",
+    "commit": "6d9873090408cac4cd7d05ee06d968ec253ef839",
     "tracked_worktree_clean": false,
     "status_entries": [
       " M docs/DEVELOPMENT_GOAL_CURRENT.md",
       " M docs/DEVELOPMENT_PLAN_20261017.md",
-      " M qa/source_manifest.py",
-      " M tests/test_source_manifest.py"
+      " M packages/nautilus_adapter/src/rles_nautilus_adapter/market_data.py",
+      " M tests/test_nautilus_adapter_smoke.py"
     ],
-    "tracked_diff_sha256": "b8c35c507de107540b4fd1fe6c28e518ad384bd1e8c9385e8b20d19b650ce5da"
+    "tracked_diff_sha256": "cb023b48a78b2a7ee752a5d12bf3fa4139938bac6af95102d9bde80b22c56c39"
   },
   "files": [
     {
@@ -1611,8 +1611,8 @@
     },
     {
       "path": "packages/nautilus_adapter/src/rles_nautilus_adapter/market_data.py",
-      "size_bytes": 8518,
-      "sha256": "dd8b49a2eaf1bb92cc1ea50d4c1a35486840aae3319125b28f3482839b30fe8f"
+      "size_bytes": 9097,
+      "sha256": "03925ba950bc28d88d5bd897391a93b66973dfe33a7a5da66dc5c08822b86986"
     },
     {
       "path": "packages/nautilus_adapter/src/rles_nautilus_adapter/perpetual.py",
@@ -2431,8 +2431,8 @@
     },
     {
       "path": "tests/test_nautilus_adapter_smoke.py",
-      "size_bytes": 38354,
-      "sha256": "df9c15acdb1b72d0c531a81bec7e7a5b38d6db5e53c6257721ba436583a64bf7"
+      "size_bytes": 42852,
+      "sha256": "fba5222839e433935cfd72cdcde8c0f7809f75d4c5b01ca40fa02bf0b7c9d44f"
     },
     {
       "path": "tests/test_orchestrator_workflow.py",
