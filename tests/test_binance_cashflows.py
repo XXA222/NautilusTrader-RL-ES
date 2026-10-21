@@ -168,6 +168,50 @@ def test_binance_off_barrier_transfer_uses_synchronous_equity_for_exact_twr() ->
     )
 
 
+def test_exact_twr_groups_same_time_flows_and_keeps_barrier_flows_separate() -> None:
+    payload = json.dumps([
+        {"incomeType": "TRANSFER", "income": "100", "asset": "USDT",
+         "time": 15, "tranId": 9101},
+        {"incomeType": "TRANSFER", "income": "-20", "asset": "USDT",
+         "time": 15, "tranId": 9102},
+        {"incomeType": "TRANSFER", "income": "10", "asset": "USDT",
+         "time": 20, "tranId": 9103},
+    ], separators=(",", ":"))
+    imported = import_binance_usdm_transfer_income(
+        payload, account_scope_id="subaccount-7", currency="USDT",
+        sample_barriers_ns=(10_000_000, 20_000_000, 30_000_000),
+    )
+    base = dict(currency="USDT", fills=(), funding=(), positions=(), orders=(),
+                liquidation_capability=True, liquidation_orders=())
+    snapshots = tuple(
+        SimpleNamespace(decision_ts_ns=timestamp, equity=Decimal(equity), **base)
+        for timestamp, equity in ((10_000_000, "1000"), (20_000_000, "1070"),
+                                  (30_000_000, "1100"))
+    )
+    point = {
+        "decision_ts_ns": 15_000_000,
+        "equity_after_cashflow": "1050",
+        "currency": "USDT",
+        "source_id": "account-equity-at-transfer-batch",
+        "source_sha256": "f" * 64,
+    }
+    report = native_report(
+        snapshots, fill_references={}, sample_interval_ns=10_000_000,
+        external_cashflows=imported.facts, cashflow_equity_points=(point,),
+    )
+
+    expected_first_period = (Decimal("970") / Decimal("1000")
+                             * Decimal("1060") / Decimal("1050") - 1)
+    expected_total = (Decimal("970") / Decimal("1000")
+                      * Decimal("1060") / Decimal("1050")
+                      * Decimal("1100") / Decimal("1070") - 1)
+    assert report["account_rows"][1]["external_cashflow"] == pytest.approx(90.0)
+    assert report["account_rows"][1]["cashflow_adjusted_return"] == pytest.approx(
+        float(expected_first_period),
+    )
+    assert report["metrics"]["net_return"] == pytest.approx(float(expected_total))
+
+
 @pytest.mark.parametrize("payload", [
     b"{bad json",
     b"{}",

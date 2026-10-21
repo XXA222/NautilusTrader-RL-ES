@@ -230,7 +230,7 @@ def _cashflow_period_returns(
     currency = ordered[0].currency
     grouped_flows: dict[int, Decimal] = {}
     signed_flows_by_barrier: dict[int, Decimal] = {}
-    event_times_by_barrier: dict[int, list[int]] = {}
+    event_times_by_barrier: dict[int, set[int]] = {}
     off_barrier_times: set[int] = set()
     for fact in facts:
         source_time = fact.get("source_event_time_ns")
@@ -246,7 +246,7 @@ def _cashflow_period_returns(
         grouped_flows[source_time] = grouped_flows.get(source_time, Decimal(0)) + signed
         if source_time != flow_time:
             off_barrier_times.add(source_time)
-            event_times_by_barrier.setdefault(flow_time, []).append(source_time)
+            event_times_by_barrier.setdefault(flow_time, set()).add(source_time)
         else:
             signed_flows_by_barrier[flow_time] = (
                 signed_flows_by_barrier.get(flow_time, Decimal(0)) + signed
