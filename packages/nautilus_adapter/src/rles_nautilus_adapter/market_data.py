@@ -153,6 +153,19 @@ class NativeMarketEventDecoder:
                 raise EngineBoundaryError("funding rate fields violate native event constraints") from exc
             if scheduled_key is not None:
                 self._scheduled_rates[scheduled_key] = rate
+            if kind == "funding_settlement" and "settlement_mark_price" in payload:
+                mark_price = self._decimal(payload, "settlement_mark_price")
+                if mark_price <= 0:
+                    raise EngineBoundaryError("native settlement mark price must be positive")
+                try:
+                    mark_update = MarkPriceUpdate(
+                        self.instrument.id, self.instrument.make_price(mark_price), ts_event, ts_init,
+                    )
+                except (TypeError, ValueError, OverflowError) as exc:
+                    raise EngineBoundaryError(
+                        "funding settlement mark exceeds native instrument precision"
+                    ) from exc
+                return mark_update, result
             return result
         if kind == "instrument_rule":
             raise EngineBoundaryError("instrument_rule belongs to frozen execution config, not market replay")

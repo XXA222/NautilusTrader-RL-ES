@@ -74,6 +74,8 @@ def validate_payload(kind: str, p: dict[str, Any], ts: int) -> None:
             settlement = require_ns(settlement_value)
             if settlement != ts:
                 raise DataError("funding settlement event time must equal settlement time")
+            if "settlement_mark_price" in p:
+                _number(p, "settlement_mark_price")
     elif kind == "instrument_rule":
         unsupported_fields = sorted(str(key) for key in p if key not in _INSTRUMENT_RULE_FIELDS)
         if unsupported_fields:

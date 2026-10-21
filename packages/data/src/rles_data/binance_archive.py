@@ -347,21 +347,29 @@ def funding_api_events(content: bytes, *, symbol: str, instrument: str, source_u
         raise DataError("funding API response is not valid JSON") from exc
     if not isinstance(rows, list) or not rows:
         raise DataError("funding API response must contain at least one settlement")
-    normalized: list[tuple[int, str]] = []
+    normalized: list[tuple[int, str, str]] = []
     for row in rows:
         if not isinstance(row, dict) or row.get("symbol") != symbol:
             raise DataError("funding API response contains an unexpected symbol or row")
-        ts_ms, rate = row.get("fundingTime"), row.get("fundingRate")
-        if type(ts_ms) is not int or ts_ms < 0 or not isinstance(rate, str):
-            raise DataError("funding API row has invalid timestamp or rate")
+        ts_ms, rate, mark_price = (row.get("fundingTime"), row.get("fundingRate"),
+                                   row.get("markPrice"))
+        if (type(ts_ms) is not int or ts_ms < 0 or not isinstance(rate, str)
+                or not isinstance(mark_price, str)):
+            raise DataError("funding API row has invalid timestamp, rate, or settlement mark")
+        try:
+            settlement_mark = Decimal(mark_price)
+        except InvalidOperation as exc:
+            raise DataError("funding API settlement mark is invalid") from exc
+        if not settlement_mark.is_finite() or settlement_mark <= 0:
+            raise DataError("funding API settlement mark must be finite and positive")
         if row.get("rateType") not in {"Regular", "Special"}:
             raise DataError("funding API row has an unknown rate type")
-        normalized.append((ts_ms * 1_000_000, rate))
+        normalized.append((ts_ms * 1_000_000, rate, mark_price))
     if any(current[0] <= previous[0] for previous, current in zip(normalized, normalized[1:])):
         raise DataError("funding API settlement timestamps must be strictly ascending")
 
     result: list[Event] = []
-    for index, (ts, rate) in enumerate(normalized):
+    for index, (ts, rate, mark_price) in enumerate(normalized):
         neighbor = normalized[index - 1][0] if index else normalized[index + 1][0]
         gap_ns = abs(ts - neighbor)
         minute_ns = 60 * 1_000_000_000
@@ -370,6 +378,7 @@ def funding_api_events(content: bytes, *, symbol: str, instrument: str, source_u
             raise DataError("funding API settlement gap must be within one second of whole minutes")
         for kind, payload in (
             ("funding_settlement", {"rate": rate, "settlement_ns": ts,
+                                    "settlement_mark_price": mark_price,
                                     "interval_minutes": interval_minutes}),
             ("funding_update", {"rate": rate, "rate_semantics": "last_settled_rate",
                                 "interval_minutes": interval_minutes}),

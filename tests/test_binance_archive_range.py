@@ -224,6 +224,9 @@ def test_funding_api_events_preserve_settlement_facts_and_observed_interval():
     assert [event.payload["settlement_ns"] for event in settlements] == [
         row["fundingTime"] * 1_000_000 for row in rows
     ]
+    assert [event.payload["settlement_mark_price"] for event in settlements] == [
+        row["markPrice"] for row in rows
+    ]
     assert all(event.payload["interval_minutes"] == 480 for event in settlements)
     assert all(event.payload["rate_semantics"] == "last_settled_rate" for event in updates)
     assert all(event.availability_source == Availability.DERIVED for event in events)

@@ -445,10 +445,12 @@ class EngineSession:
                     raise EngineBoundaryError("duplicate native source event identity")
                 seen.add(eid)
                 native = self._decode(event)
-                if native is None or type(getattr(native, "ts_init", None)) is not int \
-                        or native.ts_init != batch.timestamp_ns:
+                native_events = native if isinstance(native, tuple) else (native,)
+                if (not native_events or any(
+                        item is None or type(getattr(item, "ts_init", None)) is not int
+                        or item.ts_init != batch.timestamp_ns for item in native_events)):
                     raise EngineBoundaryError("decoded native event replay timestamp differs")
-                decoded.append(native)
+                decoded.extend(native_events)
             prepared.append((batch, tuple(decoded)))
         if not prepared or ts != end_ts_ns:
             raise EngineBoundaryError("next decision clock must have one complete final timestamp batch")

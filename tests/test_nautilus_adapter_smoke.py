@@ -797,9 +797,12 @@ def test_native_market_event_decoder_checks_index_quality_scope_and_funding_conf
     assert decoder(scheduled).next_funding_ns == 200
     late_settlement = market_event("published-settlement", "funding_settlement", 130, {
         "instrument": str(instrument.id), "rate": "0.001", "settlement_ns": 130,
-        "interval_minutes": 480,
+        "interval_minutes": 480, "settlement_mark_price": "2000.00",
     }, available_at=140)
-    decoded_settlement = decoder(late_settlement)
+    decoded_mark, decoded_settlement = decoder(late_settlement)
+    assert decoded_mark.value == instrument.make_price(2000.00)
+    assert decoded_mark.ts_event == 130
+    assert decoded_mark.ts_init == 140
     assert decoded_settlement.ts_event == 130
     assert decoded_settlement.ts_init == 140
     assert decoded_settlement.next_funding_ns == 141
@@ -867,11 +870,10 @@ def test_delayed_rest_funding_settlement_is_charged_once_at_settlement_mark(
 
         settlement_ns = 480 * 60 * 1_000_000_000
         delay_ns = 1_000_000
-        source_batch = _perpetual_batch(480, ("mark", {
-            "instrument": str(instrument.id), "price": "2000.00",
-        }), ("funding_settlement", {
+        source_batch = _perpetual_batch(480, ("funding_settlement", {
             "instrument": str(instrument.id), "rate": "0.001",
             "interval_minutes": 480, "settlement_ns": settlement_ns,
+            "settlement_mark_price": "2000.00",
         }), ("funding_update", {
             "instrument": str(instrument.id), "rate": "0.001",
             "interval_minutes": 480, "rate_semantics": "last_settled_rate",
