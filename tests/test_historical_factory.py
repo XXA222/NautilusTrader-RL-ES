@@ -105,10 +105,14 @@ def test_factory_applies_configured_high_leverage_to_native_account(tmp_path):
         notional = (
             Decimal(position["quantity"]) * snapshot.mark * factory.contract_spec.multiplier
         )
+        initial = snapshot.position_initial_margin
         maintenance = Decimal(snapshot.margins[0]["maintenance"].split()[0])
         assert notional > Decimal("10000")
         assert notional / snapshot.equity >= Decimal("1.99")
         assert notional <= Decimal("20000")
+        assert abs(initial / notional - Decimal("0.4")) < Decimal("0.0001")
+        observed = factory.observation_state(snapshot)
+        assert observed["account"]["initial_margin"] == pytest.approx(float(initial))
         assert abs(maintenance / notional - Decimal("0.35")) < Decimal("0.0001")
     finally:
         env.close()
@@ -174,9 +178,11 @@ def test_factory_applies_configured_high_leverage_to_native_account(tmp_path):
         position = snapshot.positions[0]
         notional = (Decimal(position["quantity"]) * snapshot.mark
                     * ten_x_factory.contract_spec.multiplier)
+        initial = snapshot.position_initial_margin
         maintenance = Decimal(snapshot.margins[0]["maintenance"].split()[0])
         assert notional / snapshot.equity > Decimal("2")
         assert notional / snapshot.equity <= Decimal("10")
+        assert abs(initial / notional - Decimal("0.1")) < Decimal("0.00001")
         assert abs(maintenance / notional - Decimal("0.004")) < Decimal("0.00001")
     finally:
         ten_x_env.close()
@@ -223,7 +229,9 @@ def test_flat_barrier_leverage_change_rebuilds_session_and_replays(tmp_path):
                              * factory.contract_spec.multiplier)
         assert position_notional / original._episode._snapshot.equity > 2.5
         native_margin = original._episode._snapshot.margins[0]
+        initial_margin = original._episode._snapshot.position_initial_margin
         maintenance_margin = Decimal(native_margin["maintenance"].split()[0])
+        assert abs(initial_margin / position_notional - Decimal("1") / Decimal("3")) < Decimal("0.001")
         assert abs(maintenance_margin / position_notional - Decimal("0.2")) < Decimal("0.001")
         with pytest.raises(RuntimeError, match="no open orders and no positions"):
             original.set_leverage("2")
@@ -1590,7 +1598,7 @@ def test_native_observation_exposes_pending_order_direction_and_size(tmp_path):
     )
     snapshot = SimpleNamespace(
         decision_ts_ns=6 * MINUTE_NS, equity=Decimal("10000"), currency="USDT",
-        mark=Decimal("1000"), positions=(),
+        mark=Decimal("1000"), positions=(), position_initial_margin=Decimal(0),
         orders=orders, all_orders=all_orders, margins=(),
         account_events=({"balances": ({"currency": "USDT", "total": "10000 USDT", "free": "9000 USDT"},)},),
     )

@@ -615,7 +615,13 @@ class HistoricalEnvironmentFactory:
         if snapshot.mark is None:
             raise DataError("native mark required for exposure observations")
         notional = signed_quantity(snapshot) * snapshot.mark * self.contract_spec.multiplier
-        initial = sum((_money(m["initial"]) for m in snapshot.margins), Decimal(0))
+        if snapshot.position_initial_margin is None:
+            raise DataError("native mark required to calculate position initial margin")
+        position_initial = Decimal(str(snapshot.position_initial_margin))
+        if not position_initial.is_finite() or position_initial < 0:
+            raise DataError("native position initial margin is invalid")
+        initial = (sum((_money(m["initial"]) for m in snapshot.margins), Decimal(0))
+                   + position_initial)
         maintenance = sum((_money(m["maintenance"]) for m in snapshot.margins), Decimal(0))
         submitted = Decimal(str(getattr(snapshot, "cumulative_submitted_qty", 0)))
         filled = Decimal(str(getattr(snapshot, "cumulative_filled_qty", 0)))

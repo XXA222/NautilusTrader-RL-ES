@@ -1,7 +1,7 @@
 {
   "schema": "rles.source-manifest.v1",
-  "generated_at_utc": "2026-10-21T05:10:04.191281+00:00",
-  "source_identity_sha256": "fc2a96cf2000f63f61d713e3bb08e21374041beaf5269c396bc875ea9192cf5c",
+  "generated_at_utc": "2026-10-21T05:42:41.314742+00:00",
+  "source_identity_sha256": "30d3d13c99eb4762d758435f0a6fd0a55ddaaa66118f8caceb0dafa9f901fb9a",
   "scope": {
     "included": [
       ".gitattributes",
@@ -341,15 +341,16 @@
   },
   "workspace_git": {
     "path": ".",
-    "commit": "fe039200f260aa1c6a98ac89ae731817fb380b0b",
+    "commit": "9c7ac9cad1cc0aa7b33d9323096fd4d59aac229f",
     "tracked_worktree_clean": false,
     "status_entries": [
       " M docs/DEVELOPMENT_GOAL_CURRENT.md",
       " M docs/DEVELOPMENT_PLAN_20261017.md",
       " M packages/gym_bridge/src/rles_gym_bridge/historical.py",
+      " M packages/nautilus_adapter/src/rles_nautilus_adapter/session.py",
       " M tests/test_historical_factory.py"
     ],
-    "tracked_diff_sha256": "865b3c97793d5767c75b6962456bb1b780d81893ad4088e40a6e57dcd3866e0a"
+    "tracked_diff_sha256": "8da3d631e5f9bdda5c20c1ed0c4442f9396208e532fd0c6a64d177fb01a6bfce"
   },
   "files": [
     {
@@ -819,8 +820,8 @@
     },
     {
       "path": "packages/gym_bridge/src/rles_gym_bridge/historical.py",
-      "size_bytes": 59390,
-      "sha256": "0b5a5a5f708c23dcd6b8d95b8ce62e06782d6f95f96e493a34b1334cf3e98ac3"
+      "size_bytes": 59788,
+      "sha256": "8d87933f20ce98a96024b6eec71183e0c723ab719ad25348bc28444547e9627e"
     },
     {
       "path": "packages/gym_bridge/src/rles_gym_bridge/l2_bridge.py",
@@ -869,8 +870,8 @@
     },
     {
       "path": "packages/nautilus_adapter/src/rles_nautilus_adapter/session.py",
-      "size_bytes": 37497,
-      "sha256": "36c4100b71594a5c1ee31d30c042a7bed51e597e1d46d00176a270dbda9b2490"
+      "size_bytes": 39315,
+      "sha256": "d7758308af878bbc3e865adeafbe4f4a3c8c090c73aa8c9aa0912c3a0d4f51d3"
     },
     {
       "path": "packages/nautilus_adapter/src/rles_nautilus_adapter/submitter.py",
@@ -1629,8 +1630,8 @@
     },
     {
       "path": "tests/test_historical_factory.py",
-      "size_bytes": 108736,
-      "sha256": "841012c6f9e41a8baf6e69075a7ea229f7729367120ef3968c26482ea26b7694"
+      "size_bytes": 109349,
+      "sha256": "574f50f3bd9053fc44933030281dcc60810b8b6e99a4227753a1d88c764dc4df"
     },
     {
       "path": "tests/test_l2_cli.py",

@@ -72,6 +72,7 @@ class NativeAccountFacts:
     orders_all: tuple[dict, ...]
     liquidation_orders: tuple[dict, ...] | None
     mark_price: Decimal | None
+    position_initial_margin: Decimal | None
     margins: tuple[dict, ...]
     mark_stale: bool
     liquidation_capability: bool
@@ -127,6 +128,7 @@ class NativeFactsReader:
         if mark is not None and (not mark.is_finite() or mark <= 0):
             raise EngineBoundaryError("invalid native mark")
         positions_all = tuple(cache.positions(**scope))
+        open_positions = tuple(cache.positions_open(**scope))
         if self.compact_history:
             # Do not call Position.to_dict() here: it materializes every fill,
             # adjustment, commission, venue order ID, and trade ID before the
@@ -135,12 +137,41 @@ class NativeFactsReader:
             positions = tuple(_position_ledger_record(
                 p, raw_mark, compact=True, include_pnl=self.include_position_pnl,
             )
-                              for p in cache.positions_open(**scope))
+                              for p in open_positions)
         else:
             positions = tuple(_position_ledger_record(
                 p, raw_mark, compact=False, include_pnl=self.include_position_pnl,
             )
-                              for p in cache.positions_open(**scope))
+                              for p in open_positions)
+        # Nautilus position snapshots carry maintenance margin, while initial
+        # margin rows are reserved for open orders. Calculate the open-position
+        # requirement too so downstream account observations include both.
+        position_initial_margin: Decimal | None = Decimal(0)
+        if open_positions:
+            if raw_mark is None:
+                position_initial_margin = None
+            else:
+                instrument = cache.instrument(self.instrument_id)
+                if instrument is None:
+                    raise EngineBoundaryError(
+                        "native instrument required to calculate position initial margin",
+                    )
+                position_initial_total = Decimal(0)
+                for position in open_positions:
+                    try:
+                        required = account.calculate_initial_margin(
+                            instrument, position.quantity, raw_mark, None,
+                        )
+                        amount = Decimal(str(required.as_decimal()))
+                    except (TypeError, ValueError, ArithmeticError) as exc:
+                        raise EngineBoundaryError(
+                            "native position initial margin calculation failed",
+                        ) from exc
+                    if (str(required.currency) != self.currency
+                            or not amount.is_finite() or amount < 0):
+                        raise EngineBoundaryError("native position initial margin is invalid")
+                    position_initial_total += amount
+                position_initial_margin = position_initial_total
         # Pending commands may be in-flight even when not yet classified open.
         # Union is by native client_order_id, never by array position.
         pending_by_id: dict[str, dict] = {}
@@ -218,7 +249,8 @@ class NativeFactsReader:
         margins = tuple(m.to_dict() for m in margin_values)
         facts = NativeAccountFacts(
             equity, self.currency, positions, orders, account.to_dict(), events, fills,
-            funding, all_orders, liquidation_orders, mark, margins, bool(native.is_stale),
+            funding, all_orders, liquidation_orders, mark, position_initial_margin, margins,
+            bool(native.is_stale),
             self.liquidation_capability, timestamp_ns,
         )
         if self.compact_history:
@@ -512,6 +544,7 @@ class EngineSession:
             funding=facts.funding_adjustments, all_orders=facts.orders_all,
             liquidation_orders=facts.liquidation_orders,
             margins=facts.margins, mark=facts.mark_price,
+            position_initial_margin=facts.position_initial_margin,
             liquidation_capability=facts.liquidation_capability,
             decision_ts_ns=facts.timestamp_ns,
         )
