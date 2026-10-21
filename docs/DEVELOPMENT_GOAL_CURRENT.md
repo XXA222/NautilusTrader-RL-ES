@@ -33,3 +33,6 @@ instrument_rule 现执行严格字段 allowlist，避免 exchange leverage brack
 
 
 2026-10-21 又修复了返佣事实被忽略的链路缺口：负 maker/taker fee 可通过规则校验；transition 保留负 commission；资金指标和线性权益对账按 signed fee 计算。买入与卖出返佣闭环回归通过。最新全量 **798 passed、5 skipped**，Ruff/MyPy 通过；11 wheels/11 sdists 构建、manifest `all_match=True`，隔离环境 11 包及 entry-point smoke 通过。source manifest 289 项，最终哈希记录于执行计划。真实交易所负费率是否出现在具体交易历史，仍需来源认证。
+
+
+2026-10-21 保证金档位接口审计：当前静态 native model 不消费分档 margin；Binance USDⓈ-M `/fapi/v1/leverageBracket` 为签名 USER_DATA，返回 `initialLeverage/notionalCap/notionalFloor/maintMarginRatio/cum`，且仅在账户档位调整时出现 `notionalCoef`。Nautilus Python API 当前只暴露 Standard/Leveraged 两个固定比率模型，没有 Python 自定义 MarginModel。故不能把账号档位放进 instrument_rule 后继续按单一比率撮合；需 Rust/native margin model 支持及账户/时间绑定的已认证档位历史。当前 allowlist 拒绝这些字段。详见执行记录末尾。
