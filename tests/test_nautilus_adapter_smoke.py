@@ -303,6 +303,60 @@ def _perpetual_batch(number: int, *extra_events: tuple[str, dict]) -> VisibleBat
     return VisibleBatch(timestamp, events, True)
 
 
+def test_native_session_rejects_duplicate_funding_settlement_before_decoding() -> None:
+    instrument = _perpetual_instrument()
+    decoded: list[str] = []
+
+    def decode(event: MarketEvent) -> SimpleNamespace:
+        decoded.append(event.event_id)
+        return SimpleNamespace(ts_init=event.ts_init_ns)
+
+    session = EngineSession(
+        build_native=lambda _episode: None,
+        submit_plan=lambda _engine, _plan: None,
+        decode_event=decode,
+        facts_reader=NativeFactsReader(
+            account_id=AccountId.from_str("SIM-001"), instrument_id=instrument.id,
+            currency="USDT",
+        ),
+        contract_snapshot_factory=lambda **facts: SimpleNamespace(**facts),
+        certified_barrier_protocol=EngineSession.BARRIER_PROTOCOL,
+    )
+    session._engine = object()
+    settlement = {
+        "instrument": str(instrument.id), "rate": "0.001",
+        "settlement_ns": 120_000_000_000,
+    }
+    batch = _perpetual_batch(
+        2, ("funding_settlement", settlement), ("funding_settlement", settlement),
+    )
+
+    with pytest.raises(EngineBoundaryError, match="duplicate native funding settlement boundary"):
+        session._preflight((batch,), end_ts_ns=batch.timestamp_ns)
+
+    assert decoded == []
+
+    class _FakeEngine:
+        def add_data(self, _events: list[SimpleNamespace]) -> None:
+            pass
+
+        def run(self, *, streaming: bool) -> None:
+            assert streaming is True
+
+        def clear_data(self) -> None:
+            pass
+
+    session._engine = _FakeEngine()
+    first_settlement = _perpetual_batch(2, ("funding_settlement", settlement))
+    prepared = session._preflight((first_settlement,), end_ts_ns=first_settlement.timestamp_ns)
+    session._replay(prepared)
+    decoded_after_first = len(decoded)
+    repeated_settlement = _perpetual_batch(3, ("funding_settlement", settlement))
+    with pytest.raises(EngineBoundaryError, match="duplicate native funding settlement boundary"):
+        session._preflight((repeated_settlement,), end_ts_ns=repeated_settlement.timestamp_ns)
+    assert len(decoded) == decoded_after_first
+
+
 def _quote_payload(bid: str, bid_qty: str, ask: str, ask_qty: str) -> tuple[str, dict]:
     return "best_quote", {"instrument": "ETHUSDT-PERP.SIM", "bid_price": bid,
                            "bid_qty": bid_qty, "ask_price": ask, "ask_qty": ask_qty,

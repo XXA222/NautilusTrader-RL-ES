@@ -376,6 +376,7 @@ class EngineSession:
         self._last_ts = 0
         self._action_ids: set[str] = set()
         self._event_ids: set[str] = set()
+        self._settlement_keys: set[tuple[str, int]] = set()
         self._fingerprint: str | None = None
 
     @property
@@ -434,16 +435,37 @@ class EngineSession:
         prepared: list[tuple[VisibleBatch, tuple[Any, ...]]] = []
         ts = self._last_ts
         seen: set[str] = set()
+        settlement_keys = set(self._settlement_keys)
+        ordered_batches: list[VisibleBatch] = []
         for batch in batches:
             if not isinstance(batch, VisibleBatch) or batch.timestamp_ns <= ts or batch.timestamp_ns > end_ts_ns:
                 raise EngineBoundaryError("unordered or incomplete timestamp batch")
             ts = batch.timestamp_ns
-            decoded: list[Any] = []
             for event in batch.events:
                 eid = str(event.event_id)
                 if eid in seen or eid in self._event_ids:
                     raise EngineBoundaryError("duplicate native source event identity")
                 seen.add(eid)
+                if getattr(event, "event_type", None) == "funding_settlement":
+                    payload = dict(event.payload.entries)
+                    instrument = payload.get("instrument")
+                    settlement_ns = payload.get("settlement_ns")
+                    if isinstance(instrument, str) and type(settlement_ns) is int:
+                        key = (instrument, settlement_ns)
+                        if key in settlement_keys:
+                            raise EngineBoundaryError("duplicate native funding settlement boundary")
+                        settlement_keys.add(key)
+            ordered_batches.append(batch)
+        if not ordered_batches or ts != end_ts_ns:
+            raise EngineBoundaryError("next decision clock must have one complete final timestamp batch")
+
+        # Validate identities, timestamps and settlement uniqueness for the whole
+        # decision interval before decoding. Funding decoders keep schedule state,
+        # so decoding an earlier duplicate before discovering a later one would
+        # leave a rejected interval with mutated decoder state.
+        for batch in ordered_batches:
+            decoded: list[Any] = []
+            for event in batch.events:
                 native = self._decode(event)
                 native_events = native if isinstance(native, tuple) else (native,)
                 if (not native_events or any(
@@ -452,8 +474,6 @@ class EngineSession:
                     raise EngineBoundaryError("decoded native event replay timestamp differs")
                 decoded.extend(native_events)
             prepared.append((batch, tuple(decoded)))
-        if not prepared or ts != end_ts_ns:
-            raise EngineBoundaryError("next decision clock must have one complete final timestamp batch")
         return tuple(prepared)
 
     def _replay(self, prepared: tuple[tuple[VisibleBatch, tuple[Any, ...]], ...]) -> None:
@@ -471,6 +491,13 @@ class EngineSession:
         for batch, _native_events in prepared:
             self._last_ts = batch.timestamp_ns
             self._event_ids.update(str(e.event_id) for e in batch.events)
+            for event in batch.events:
+                if getattr(event, "event_type", None) == "funding_settlement":
+                    payload = dict(event.payload.entries)
+                    instrument = payload.get("instrument")
+                    settlement_ns = payload.get("settlement_ns")
+                    if isinstance(instrument, str) and type(settlement_ns) is int:
+                        self._settlement_keys.add((instrument, settlement_ns))
 
     def _native_facts(self) -> NativeAccountFacts:
         if self._engine is None:
