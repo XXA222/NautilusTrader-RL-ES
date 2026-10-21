@@ -7,7 +7,7 @@
 ## 依据与当前基线
 
 - 输入：用户提供的《NautilusTrader-RL-ES 源码深度审计与后续开发建议》（2026-10-17）。报告依据远程提交 `c24d1bc4a47584f91a4c4db93bf77117d4e8341c` 做静态审计。将报告建议转化为本目标中的任务、依赖、验收条件和执行顺序；Codex 后续实际执行仍须遵守下文研究数据门禁。
-- 当前工作区含较多未提交开发成果。`DEVELOPMENT_PLAN_20261017.md` 记录了此前已做的 A01/A02/A03/A05/A08/A10 局部整改、142 项与 52 项定向测试，以及 gamma 配对实验未通过门禁的结果。本计划只规定**尚待完成或重新验收**的工作，不把报告中的旧基线描述直接当作当前代码事实。
+- 当前工作区的工程改动持续通过本地 Git 备份提交；最新提交及提交后 source manifest 以仓库状态为准。`DEVELOPMENT_PLAN_20261017.md` 记录历史实施，不能把旧测试数字或旧 HEAD 描述当作当前事实。本计划只规定**尚待完成或重新验收**的工作。
 - 所有历史费用、过滤规则、流动性和清算假设须保留来源与有效期。现有回放中的 scenario-only 结果不能表述为真实可交易盈利。正式 Test/Holdout 的已有访问记录继续有效；制定计划不消耗新的正式样本。
 - 初次编制目标时的只读核对确认：同时间戳归并已存在；E2 两维物理中性已有单测；`FitnessSpec` 仍采用加权惩罚，硬约束筛选未闭环；项目级访问登记已存在；DSR 仍使用当前候选数并注明范围。以前记录的 **142 passed / 52 passed** 是历史定向结果，不能作为当前全量或两平台 CI 通过证据；后续执行结果均以本目标对应的开发计划与证据为准。
 - 报告的 C/L 项优先核实现状；R/H 项必须保留待验证性质。不得将“可能导致亏损”“可能有性能瓶颈”直接写成已经复现的经济或性能结论。
@@ -23,6 +23,8 @@
 ## 2026-10-21 杠杆与项目范围复核
 
 按用户指示，RouteB `rles-world-model` 包及其 CLI/研究接线、配置、QA、测试和 wheel smoke 注册已移除；当前 workspace 有 **11** 个 RLES 包。杠杆风险限额现预留按执行配方估计的费用与滑点，避免成交成本降低权益后超出配置杠杆。杠杆仍只允许空仓且无订单时调整，随后重建 session 并重放。
+
+2026-10-21 后续资金费修复及全量验证以本文末尾的当前执行记录为准：Binance REST funding `markPrice` 已贯通到原生结算，最新 Windows suite 为 **801 passed、5 skipped、53 warnings**，11 个 workspace wheels 与 5 个 entry points 的隔离 smoke 已通过。
 
 严格 instrument_rule allowlist 后的最新本机验证：Windows 全量测试 **798 passed、5 CUDA-only skipped、53 dependency warnings**；Ruff 通过；MyPy **141 files** 通过。HardRiskGuard→Planner 反转先平仓和极端费用估计必须允许强制平仓的回归均通过。历史工厂对跨有效 instrument-rule 版本的窗口本就采取 fail-closed，本轮补了回归覆盖并删除重复检查。Windows staged-file 发布对硬链接的限制也已修复并纳入该全量回归。当前 11 wheels/11 sdists 已重建，wheel manifest `all_match=True`，隔离导入及 entry-point smoke 通过（包括最新 allowlist 变更和 signed-fee 修复）。规则、transition、指标和 linear-equity reconciliation 均保留负 commission rebate 的现金流符号。冻结策略 1x/10x 配对复放记录在 `docs/audit_evidence/20261020/td3_10x_funding/summary_r4.json`；它复用了已消费的 Validation 窗口并使用 scenario-only 交易规则，不能视为独立表现或历史规则证明。账户适用的分档保证金/清算经济、真实账户现金流、Hosted CI 与 Hedge Mode 仍是未闭合门禁；Binance bracket 是签名用户数据且包含账户调整系数，Nautilus Python 只暴露固定比率 margin models，模型实现边界详见最新执行记录。
 
@@ -59,7 +61,7 @@ M1.1 已通过实现等价验收。M1.2 默认保留旧 `FitnessSpec`；新 `con
 | 顺序 / ID | 对应审计项 | 当前状态 | 依赖 / 完成证据 |
 |---|---|---|---|
 | 01 / M0.1 | A08 | PARTIAL，等待已认证且覆盖可证明的真实现金流采集 | 显式外部现金流输入、身份/时间/来源哈希校验、Binance USDⓈ-M `TRANSFER` JSON 导入及平仓/持仓权益核对已有回归；分页归档入口校验 inclusive 页段连续覆盖、越界事件与潜在截断，manifest 绑定每页原始 SHA；乱序 native snapshots 按时间统一排列 fill/Funding/清算生命周期；清算订单累计 `filled_qty` 拒绝回退/超量；Transfer JSON 单页/分页解码拒绝重复对象键；核心金额边界现在不再删除逗号，畸形数值失败关闭。指标/清算近期联合回归 **83 passed**；真实账户账本核验仍待独立类型化来源；来源 SHA 不认证账户真实性或查询完整性 |
-| 02 / M0.2 | A10 | PARTIAL，本地 Windows PR/静态/当前源码分发验收通过；Hosted clean Linux/Windows CI 待运行 | 工作流按 `packages/*/pyproject.toml` 数量核对 wheels，避免新增包时再更新硬编码；wheel smoke 导入包根与全部已声明 entry point 并核对 wheel provenance。当前来源构建 **11 wheels/11 sdists、all_match=true**；最新隔离 smoke 覆盖 11/11 包及已声明 entry points。Windows 全量 selector **798 passed、5 CUDA-only skipped、53 warnings**，Ruff 与 `mypy packages qa` 通过 141 files。CUDA 跳过来自 CPU `.venv`；Hosted Linux/Windows CI 尚待归档分支推送后确认，本机结果不替代平台 CI |
+| 02 / M0.2 | A10 | PARTIAL，本地 Windows PR/静态/当前源码分发验收通过；Hosted clean Linux/Windows CI 待运行 | 工作流按 `packages/*/pyproject.toml` 数量核对 wheels；wheel smoke 导入包根与全部已声明 entry point 并核对 wheel provenance。当前来源构建 **11 wheels/11 sdists、all_match=true**；最新隔离 smoke 覆盖 11/11 包及 5 个 entry points。Windows 全量套件 **801 passed、5 CUDA-only skipped、53 warnings**；Ruff 通过，`mypy packages` 通过 105 source files。Hosted Linux/Windows CI 尚未运行；本机结果不替代平台 CI |
 | 03 / M0.3 | A04 | PARTIAL，项目权限与 Train-only 所有应用/worker 入口 scoped-reader 回归通过 | 权限回归覆盖身份、半开区间、并发、跨 owner/output 同 query 重开拒绝、崩溃/重试、历史导入、同 owner Test 重标拒绝、WFO 同 query 同 split/mode 组件例外及访问行身份/状态/删除保护；`validate`、Train-only `train`、`market-audit`、`diagnose-train`、R1 多环境 worker 和 E1/E2 候选 worker 都经 ledger-first scoped reader。最近新增 `purpose`、身份键与开发来源 `schema_version` 畸形输入校验，访问/WFO/CLI 回归 **128 passed**。正式 Evaluation 配置被 Train-only 入口读取前拒绝；登记启用前的历史访问覆盖仍无法证明 |
 | 04 / M1.1 | A01 | PASS，合成 Train-inner perpetual parity；E2 neutral and legacy restore regressions | 同一 frozen L4 actor 的基准 SoftRisk 与 `(1,1)` 逐步经济 trace、fills、Funding 和指标相同；新版 E2 中性候选的两代 checkpoint/resume 对照验证 evidence、durable ledger（5→10 requests）、预算与最终选择；pre-neutral E2 schema 3 恢复不插入额外候选（6 checkpoint tests passed） |
 | 05 / M1.2 | A02 | PARTIAL | v1 保持兼容；v2 候选级 lexicographic feasibility 排序令任何不可行 episode 的选择分数为 -2，并将可行分数严格约束在 (-1,1)，lane 拒绝越界可行响应。最新修复了有限负终值被旧输入校验挡在破产筛选之前的问题；constraint-priority v1/v2 与 installed worker 均覆盖 `final_equity < 0`。Compute-worker pool **30 passed**、native training/ES worker **29 passed**，独立 Validation 证据未满足，不能晋级新目标 |
