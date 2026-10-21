@@ -30,6 +30,8 @@
 
 待所有者核验的本地候选清理项：忽略的环境（`.venv*`、`.rles-python`）、生成缓存/构建结果（`.tmp`、`.artifacts`、`dist*`、`.uv-cache`、`.mypy_cache`、`.pytest_cache`、`.ruff_cache`）、`.codex-remote-attachments`，以及独立检出的上游 `nautilus_trader/`。未删除它们，因为可能保留复现输入或当前需要的依赖检出；详见最新开发执行记录。
 
+2026-10-21 再次从标准同步后的 workspace 环境验证：旧 `.venv` wheel 指向已移出当前源码状态的 `.artifacts` 构建目录；根开发依赖缺少 Arrow extra，造成测试数据层不完整。已将 `rles-data[arrow]` 加入根开发依赖并更新 lock。`uv sync --offline --all-packages` 后，定向杠杆/资金测试 **26 passed**，全量 **798 passed、5 CUDA-only skipped、53 warnings**，Ruff 与 MyPy 141 files 通过。分档保证金、真实账户现金流、Hedge Mode 与托管 CI 门禁仍未认证。
+
 **历史进度（2026-10-18，已被 2026-10-21 的项目范围复核 supersede）：** M0.1 原生金额解析及 M0.2 分发覆盖/manifest 范围当时已修复。该时点的 workspace 有 **12 个 RLES 包**，包括 `rles_world_model`；Windows 默认 selector 为 **669 passed、1 CUDA-only skipped、102 deselected、46 warnings**，Ruff 和 MyPy（148 files）通过，12 wheels/12 sdists 的 manifest 为 `all_match=true`。这些是 2026-10-18 的历史结果，不描述当前包数或当前测试状态。2026-10-21 按用户指示移除了 RouteB `rles_world_model` 包及接线；当前包数、最新本机验证和未关闭门禁以本文上方“2026-10-21 杠杆与项目范围复核”和 [当前目标入口](DEVELOPMENT_GOAL_CURRENT.md) 为准。该时点记录的 M0/M1/M2/M3/M4 外部依赖状态同样只代表当时进度；后续更新见开发执行记录。
 
 **最新工程进展：N04 supervised GPU quota 正常释放和后代保护回归已通过。** Windows Job 的 PID 清单同时含有 Python launcher parent 和实际 owner；现在释放前先确认共享 GPU 内核锁已空闲，并确认 Job 内其它活动 PID 都是 owner 的祖先，活动应用后代会令 quota release 拒绝。`tests/test_resource_recovery.py tests/test_compute_device.py` **27 passed**，Ruff 与 Windows MyPy 通过。N04 仍不构成 VRAM 上限或跨 OS-user/平台认证；下一项仍按任务表选择依赖已满足的真实代码缺口。

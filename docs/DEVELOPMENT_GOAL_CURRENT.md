@@ -36,3 +36,5 @@ instrument_rule 现执行严格字段 allowlist，避免 exchange leverage brack
 
 
 2026-10-21 保证金档位接口审计：当前静态 native model 不消费分档 margin；Binance USDⓈ-M `/fapi/v1/leverageBracket` 为签名 USER_DATA，返回 `initialLeverage/notionalCap/notionalFloor/maintMarginRatio/cum`，且仅在账户档位调整时出现 `notionalCoef`。Nautilus Python API 当前只暴露 Standard/Leveraged 两个固定比率模型，没有 Python 自定义 MarginModel。故不能把账号档位放进 instrument_rule 后继续按单一比率撮合；需 Rust/native margin model 支持及账户/时间绑定的已认证档位历史。当前 allowlist 拒绝这些字段。详见执行记录末尾。
+
+2026-10-21 测试环境修正：发现 `.venv` 原来安装的是 `.artifacts` 中的旧 `rles_gym_bridge` wheel，且 `uv sync --all-packages` 会卸掉测试写读 Parquet 所需的可选 `pyarrow`。根 `dev` 依赖现显式加入 `rles-data[arrow]` 并更新 lock；离线 workspace sync 后从本地 `packages/data/src` 导入源码且保留 pyarrow 25.0.1。杠杆/资金费率定向测试 26 passed；sync 后全量 **798 passed、5 CUDA-only skipped、53 warnings**；Ruff 和 MyPy 141 files 通过。该修正让标准开发同步具备可复现的完整测试依赖。

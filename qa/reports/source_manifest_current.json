@@ -1,7 +1,7 @@
 {
   "schema": "rles.source-manifest.v1",
-  "generated_at_utc": "2026-10-21T00:47:08.090581+00:00",
-  "source_identity_sha256": "989a96db7bbb0e9a3698f8f48e3fe060f6df652ebd5d48ea304a700f85bc8301",
+  "generated_at_utc": "2026-10-21T01:08:43.680485+00:00",
+  "source_identity_sha256": "de53723685b7b774ef16ea26b4b4bc1972ca9ceed05fcdba73ee7b4b643cfa9d",
   "scope": {
     "included": [
       ".gitattributes",
@@ -1093,15 +1093,17 @@
   },
   "workspace_git": {
     "path": ".",
-    "commit": "b35e3be0cd88c2df60776a326331ed929e17971c",
+    "commit": "49271d22c251cbc2656fe942ac3710c3b81f525f",
     "tracked_worktree_clean": false,
     "status_entries": [
       " M docs/DEVELOPMENT_GOALS_REVIEW_20261017.md",
       " M docs/DEVELOPMENT_GOAL_CURRENT.md",
       " M docs/DEVELOPMENT_PLAN_20261017.md",
-      " M qa/reports/source_manifest_current.json"
+      " M pyproject.toml",
+      " M qa/reports/source_manifest_current.json",
+      " M uv.lock"
     ],
-    "tracked_diff_sha256": "e1a6c615560a8bd16fbf303a48b7d07af131804b2e5ba17bd263c8352aaf4fe5"
+    "tracked_diff_sha256": "6bb4308c9dd97801ed442e6b5d63e05909aa6c8c6263755908d26fde46259b6a"
   },
   "files": [
     {
@@ -1856,8 +1858,8 @@
     },
     {
       "path": "pyproject.toml",
-      "size_bytes": 1792,
-      "sha256": "71e1a19bd9392af37f4bebb935e189a69beb0fc645984713ee9b5f12d39e7cbe"
+      "size_bytes": 1816,
+      "sha256": "53b3056121b7aa675c4bce691c7175a5a03ae609717a3eaabf210a0c1c59a3d2"
     },
     {
       "path": "qa/analyze_m13_stage_contribution.py",
@@ -2546,8 +2548,8 @@
     },
     {
       "path": "uv.lock",
-      "size_bytes": 210793,
-      "sha256": "5889ef96a6491b2292a61a3cd0739b1272178df798c9852ffc9e37b6c7e84d2d"
+      "size_bytes": 210916,
+      "sha256": "1872e46811a0b5e61d349d585ca3bef051f949201f7ea054548a542c3bc85611"
     }
   ]
 }
