@@ -69,6 +69,30 @@ def test_instrument_rule_requires_boolean_reduce_only_min_notional_capability() 
         validate_payload("instrument_rule", rule, 60_000_000_000)
 
 
+@pytest.mark.parametrize(
+    "field", ["margin_tiers", "leverageBrackets", "brackets", "notionalCap", "maintMarginRatio",
+              "maxLeverage", "unrecognized_metadata"],
+)
+def test_instrument_rule_rejects_unsupported_tiered_margin_facts(field: str) -> None:
+    rule = {
+        "instrument": "ETHUSDT",
+        "tick_size": "0.01",
+        "step_size": "0.001",
+        "min_notional": "5",
+        "min_qty": "0.001",
+        "maker_fee": "0.0002",
+        "taker_fee": "0.0005",
+        "initial_margin_rate": "1",
+        "maintenance_margin_rate": "0.004",
+        "effective_ns": 60_000_000_000,
+        "rule_version": "v1",
+        field: [{"notional_cap": "50000", "maintenance_rate": "0.01"}],
+    }
+
+    with pytest.raises(DataError, match="instrument_rule contains fields not consumed"):
+        validate_payload("instrument_rule", rule, 60_000_000_000)
+
+
 def test_latest_rule_index_matches_visible_filter_sort_and_conflict_semantics() -> None:
     instrument = "ETHUSDT"
 

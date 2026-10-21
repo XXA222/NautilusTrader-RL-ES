@@ -4,6 +4,12 @@ import re
 from typing import Any
 from .core import DataError, KINDS, MINUTE_NS, require_ns
 
+_INSTRUMENT_RULE_FIELDS = {
+    "instrument", "tick_size", "step_size", "min_notional", "min_qty", "maker_fee", "taker_fee",
+    "initial_margin_rate", "maintenance_margin_rate", "effective_ns", "valid_until_ns", "rule_version",
+    "contract_spec", "reduce_only_min_notional_exempt",
+}
+
 def _number(payload: dict[str, Any], key: str, *, allow_zero: bool = False,
             signed: bool = False) -> float:
     import math
@@ -69,6 +75,12 @@ def validate_payload(kind: str, p: dict[str, Any], ts: int) -> None:
             if settlement != ts:
                 raise DataError("funding settlement event time must equal settlement time")
     elif kind == "instrument_rule":
+        unsupported_fields = sorted(str(key) for key in p if key not in _INSTRUMENT_RULE_FIELDS)
+        if unsupported_fields:
+            raise DataError(
+                "instrument_rule contains fields not consumed by the static native rule model: "
+                + ", ".join(unsupported_fields)
+            )
         if ("reduce_only_min_notional_exempt" in p
                 and type(p["reduce_only_min_notional_exempt"]) is not bool):
             raise DataError("reduce_only_min_notional_exempt must be bool when provided")

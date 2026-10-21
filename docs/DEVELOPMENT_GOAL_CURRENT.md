@@ -23,8 +23,10 @@
 
 最新执行记录还修正了 A09 的线性 NETTING 杠杆边界：2x 以上不再受 `maintenance_rate * leverage <= 1` 这一模型伪限制。固定杠杆通过 `StandardMarginModel` 的初始保证金 `dated_initial_rate / leverage` 实现，维持保证金直接使用 dated rule；配置只在有效初始保证金不低于维持保证金时接受。空仓、无订单的 session 重建、replay v3 和 checkpoint 恢复不变。3x 含实际原生持仓/维持保证金回归通过。外部交易所分档保证金经济和 Hedge Mode 仍未认证；A09 真实规则/经济认证保持 `PARTIAL`。外部依赖状态见[任务索引](DEVELOPMENT_GOALS_REVIEW_20261017.md)和[最新执行记录](DEVELOPMENT_PLAN_20261017.md)。
 
-2026-10-21 复核新增了费用/滑点预留后的杠杆上限修正，移除了用户指定的 RouteB 包及接线；修复 Windows staged-file 原子发布后，全量套件 **788 passed、5 CUDA-only skipped、53 warnings**。HardRiskGuard→Planner 的反向开仓回归先平仓；费用估计无法保证任何非零仓位时，现在会禁止开仓但保留强制平仓路径。历史工厂跨 instrument-rule 生效边界的 fail-closed 行为原已存在，本轮补充回归并删除了重复判断。最新 11 wheels/11 sdists 已重建，wheel manifest `all_match=True`，11 个安装 wheel 的包与 entry point smoke 通过。Route A/B 文件处置、当前代码的 1x/10x 开发复放、Git 备份及尚未认证的外部门禁见任务索引与执行记录。当前状态仍是本机工程验证通过，非交易所真实经济认证或跨平台 Hosted CI 放行。
+2026-10-21 完成费用/滑点预留后的杠杆限额修正，移除了 RouteB 包及接线，并修复 Windows staged-file 原子发布。最新全量套件 **795 passed、5 CUDA-only skipped、53 warnings**；全量 Ruff 与 Windows MyPy（141 files）通过。11 wheels/11 sdists 已重建，wheel manifest `all_match=True`，11 个安装 wheel 及 entry point smoke 通过。杠杆仅在空仓、无订单后重建 session 才能修改。当前状态为本机工程验证通过，不等于交易所真实经济认证或跨平台 Hosted CI 放行。
 
-同日后续回归发现 Windows 受限环境禁止 `os.link`，影响 curated/RAW/marker 的原子发布。已改为 Windows 同卷原子 rename、POSIX 继续用 hard link；杠杆/Funding 相关六组回归 **182 passed**，Ruff、12-file MyPy 和 source manifest 验证通过。IO 修复后的最终本机全量测试、11 wheel/sdist 重建及隔离 wheel/entry-point smoke 均通过；更新后的 Git 备份仍待本轮最终文件确认后创建。
+Windows 原子发布现使用同卷 rename，POSIX 使用 hard link。 instrument_rule 严格字段 allowlist 拒绝当前静态模型无法消费的杠杆档位、notional caps 等字段。该变化后的定向测试 **146 passed**；随后全量测试 **795 passed、5 skipped**。最终 11 wheels/11 sdists、wheel manifest 与隔离 wheel/entry-point smoke 均通过。最新本地 Git 备份见本轮结束摘要。
+
+instrument_rule 现执行严格字段 allowlist，避免 exchange leverage brackets、notional caps、maintenance tiers 被静态 margin model 静默忽略；字段回归、历史工厂与 adapter **146 passed**。变化后全量套件 **795 passed、5 skipped**；11 wheels/11 sdists 重建、manifest 匹配和隔离导入 smoke 通过。Binance 会按名义区间和生效时点变更杠杆/保证金档位，故 fail-closed 修复不等于真实档位模型认证。
 
 外部门禁按执行记录保留：真实账户现金流来源与长窗对账、独立 Validation、兼容的 E1/R1/E2 阶段工件、真实历史深度、新授权独立市场窗口、干净交付 Hosted CI，以及 A09 真实标的规则、双向持仓和分档保证金经济认证。它们只限制各自依赖的验收，不得成为停止其它代码工作的理由。开始新一轮时必须复核这些状态是否变化。
