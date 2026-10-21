@@ -1589,7 +1589,8 @@ def test_native_observation_exposes_pending_order_direction_and_size(tmp_path):
         {"quantity": "1", "filled_qty": "0.5"},
     )
     snapshot = SimpleNamespace(
-        equity=Decimal("10000"), currency="USDT", mark=Decimal("1000"), positions=(),
+        decision_ts_ns=6 * MINUTE_NS, equity=Decimal("10000"), currency="USDT",
+        mark=Decimal("1000"), positions=(),
         orders=orders, all_orders=all_orders, margins=(),
         account_events=({"balances": ({"currency": "USDT", "total": "10000 USDT", "free": "9000 USDT"},)},),
     )
@@ -1598,6 +1599,16 @@ def test_native_observation_exposes_pending_order_direction_and_size(tmp_path):
     assert state["execution"]["pending_signed_exposure"] == pytest.approx(0.25)
     assert state["execution"]["pending_gross_exposure"] == pytest.approx(0.75)
     assert state["execution"]["fill_rate"] == pytest.approx(0.5)
+    assert state["risk"]["headroom"] > 0
+
+    no_free_margin = SimpleNamespace(**{
+        **vars(snapshot),
+        "account_events": ({"balances": ({
+            "currency": "USDT", "total": "10000 USDT", "free": "0 USDT",
+        },)},),
+    })
+    constrained = factory.observation_state(no_free_margin)
+    assert constrained["risk"]["headroom"] == 0
 
     invalid = SimpleNamespace(**{**vars(snapshot), "orders": ({"side": "UNKNOWN", "leaves_qty": "0.1"},)})
     with pytest.raises(DataError, match="pending order side/quantity"):

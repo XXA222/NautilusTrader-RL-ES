@@ -1,7 +1,7 @@
 {
   "schema": "rles.source-manifest.v1",
-  "generated_at_utc": "2026-10-21T04:58:03.593373+00:00",
-  "source_identity_sha256": "39f41d2c193c20379bf54ae172aff364e7c7bec5ffc359437efa1864ee94e649",
+  "generated_at_utc": "2026-10-21T05:10:04.191281+00:00",
+  "source_identity_sha256": "fc2a96cf2000f63f61d713e3bb08e21374041beaf5269c396bc875ea9192cf5c",
   "scope": {
     "included": [
       ".gitattributes",
@@ -341,10 +341,15 @@
   },
   "workspace_git": {
     "path": ".",
-    "commit": "976ea2bc10afb1dc98acc0a8360cfbcf01987520",
-    "tracked_worktree_clean": true,
-    "status_entries": [],
-    "tracked_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    "commit": "fe039200f260aa1c6a98ac89ae731817fb380b0b",
+    "tracked_worktree_clean": false,
+    "status_entries": [
+      " M docs/DEVELOPMENT_GOAL_CURRENT.md",
+      " M docs/DEVELOPMENT_PLAN_20261017.md",
+      " M packages/gym_bridge/src/rles_gym_bridge/historical.py",
+      " M tests/test_historical_factory.py"
+    ],
+    "tracked_diff_sha256": "865b3c97793d5767c75b6962456bb1b780d81893ad4088e40a6e57dcd3866e0a"
   },
   "files": [
     {
@@ -814,8 +819,8 @@
     },
     {
       "path": "packages/gym_bridge/src/rles_gym_bridge/historical.py",
-      "size_bytes": 58796,
-      "sha256": "214c54e5e08d24093d7c3f442533974ce69535280391a6165cc17713e3104b3c"
+      "size_bytes": 59390,
+      "sha256": "0b5a5a5f708c23dcd6b8d95b8ce62e06782d6f95f96e493a34b1334cf3e98ac3"
     },
     {
       "path": "packages/gym_bridge/src/rles_gym_bridge/l2_bridge.py",
@@ -1624,8 +1629,8 @@
     },
     {
       "path": "tests/test_historical_factory.py",
-      "size_bytes": 108342,
-      "sha256": "66b395ed832b4def5901b07356f4b8fc7b1b1ea23bcd7d73bf5f7b0295efe3ef"
+      "size_bytes": 108736,
+      "sha256": "841012c6f9e41a8baf6e69075a7ea229f7729367120ef3968c26482ea26b7694"
     },
     {
       "path": "tests/test_l2_cli.py",

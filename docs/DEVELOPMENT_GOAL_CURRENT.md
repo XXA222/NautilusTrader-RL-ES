@@ -64,3 +64,5 @@ off-barrier transfer 收益也加了默认防线：`native_report()` 默认拒�
 2026-10-21 增加精确 sample-barrier 转账回归：导入器保留的源时点与采样屏障一致时，native report 默认路径接受该现金流并给出零归因延迟及 `exact_sample_boundary` 模式；测试覆盖现金流剔除后的 TWR。定向现金流组 **16 passed**，目标 Ruff 通过。off-barrier 精确 TWR 和真实账户来源仍未认证。
 
 2026-10-21 为盘中转账实现精确 TWR 输入契约：`cashflow_equity_points` 要求每个非屏障转账时点提供同币种、带来源身份/哈希、且时间精度与转账源一致的转账后权益；收益在真实现金流时点前后分段链式计算，再汇总回固定屏障周期，保持既有年化频率。同刻存取款混合回归修复了权益点重复参与；现金流与原生 fill/Funding 同时戳存在顺序歧义时拒绝精确收益。Binance 源时间为毫秒精度，现按整个毫秒区间检查时间重叠；现金流/指标定向验证 **109 passed**。最新完整全量 **819 passed、5 CUDA-only skipped、53 warnings**；全仓 Ruff、MyPy 105 files、11 wheels/11 sdists、wheel manifest `all_match=True` 和 11 包/5 入口隔离 smoke 均通过。`net_return` 用盘中链式 TWR，波动率、Sharpe/Sortino 与回撤仍按采样周期聚合，不能显示周期内风险极值。真实账户事实和来源完整性尚未验证。
+
+2026-10-21 修正策略观察到的 `risk.headroom`：原值仅按权益和名义上限计算，会忽略原生可用保证金、DQ 杠杆降级及成交费/滑点准备金，可能高估可开仓额度。现在从相同 `HardRiskGuard` 取同向最大允许目标，回归验证可用保证金为零时 headroom 归零。工厂/原生执行/训练 episode 定向套件 **164 passed**；最新全量 **819 passed、5 CUDA-only skipped、53 warnings**；全仓 Ruff、MyPy 105 files、11 wheels/11 sdists、wheel manifest `all_match=True` 和 11 包/5 入口隔离 smoke 通过。该修复让展示额度与开仓硬限制一致，仍不包含账户专属交易所保证金分档。

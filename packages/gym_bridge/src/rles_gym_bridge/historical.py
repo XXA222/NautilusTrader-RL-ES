@@ -632,12 +632,22 @@ class HistoricalEnvironmentFactory:
             signed = leaves if side == "BUY" else -leaves
             pending_signed += signed * snapshot.mark * self.contract_spec.multiplier / self.budget
             pending_gross += leaves * snapshot.mark * self.contract_spec.multiplier / self.budget
-        cap = min(self.hard.max_notional, snapshot.equity * self.hard.max_leverage)
+        funding_available = bool(self.store.visible(snapshot.decision_ts_ns, "funding_update"))
+        direction = Decimal(-1) if notional < 0 else Decimal(1)
+        decision = HardRiskGuard(self.hard).apply(
+            direction, budget_notional=self.budget, equity=snapshot.equity,
+            free_margin=free, current_notional=notional, mark_available=True,
+            funding_available=funding_available, liquidation_capability=True,
+            data_quality_grade=self.quality.grade.value,
+            estimated_cost_rate=self.hard_execution_cost_rate,
+        )
+        allowed_notional = abs(decision.adjusted * self.budget)
+        headroom = max(Decimal(0), allowed_notional - abs(notional)) / self.budget
         return {
             "account": {"cash": float(cash), "free_margin": float(free), "initial_margin": float(initial),
                         "maintenance_margin": float(maintenance), "unrealized_pnl": float(snapshot.equity - cash),
                         "net_exposure": float(notional / self.budget), "position_quantity": float(signed_quantity(snapshot))},
-            "risk": {"headroom": float(max(Decimal(0), cap - abs(notional)) / self.budget)},
+            "risk": {"headroom": float(headroom)},
             "execution": {"pending_order_count": float(len(snapshot.orders)),
                           "pending_signed_exposure": float(pending_signed),
                           "pending_gross_exposure": float(pending_gross),
