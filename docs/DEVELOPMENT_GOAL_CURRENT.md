@@ -23,10 +23,13 @@
 
 最新执行记录还修正了 A09 的线性 NETTING 杠杆边界：2x 以上不再受 `maintenance_rate * leverage <= 1` 这一模型伪限制。固定杠杆通过 `StandardMarginModel` 的初始保证金 `dated_initial_rate / leverage` 实现，维持保证金直接使用 dated rule；配置只在有效初始保证金不低于维持保证金时接受。空仓、无订单的 session 重建、replay v3 和 checkpoint 恢复不变。3x 含实际原生持仓/维持保证金回归通过。外部交易所分档保证金经济和 Hedge Mode 仍未认证；A09 真实规则/经济认证保持 `PARTIAL`。外部依赖状态见[任务索引](DEVELOPMENT_GOALS_REVIEW_20261017.md)和[最新执行记录](DEVELOPMENT_PLAN_20261017.md)。
 
-2026-10-21 完成费用/滑点预留后的杠杆限额修正，移除了 RouteB 包及接线，并修复 Windows staged-file 原子发布。最新全量套件 **795 passed、5 CUDA-only skipped、53 warnings**；全量 Ruff 与 Windows MyPy（141 files）通过。11 wheels/11 sdists 已重建，wheel manifest `all_match=True`，11 个安装 wheel 及 entry point smoke 通过。杠杆仅在空仓、无订单后重建 session 才能修改。当前状态为本机工程验证通过，不等于交易所真实经济认证或跨平台 Hosted CI 放行。
+2026-10-21 完成费用/滑点预留后的杠杆限额修正，移除了 RouteB 包及接线，并修复 Windows staged-file 原子发布。严格字段和有符号手续费变更后的最新全量套件 **798 passed、5 CUDA-only skipped、53 warnings**；全量 Ruff 与 Windows MyPy（141 files）通过。11 wheels/11 sdists 已重建，wheel manifest `all_match=True`，11 个安装 wheel 及 entry point smoke 通过。负佣金返佣现由规则、transition 和经济报表按有符号资金流处理，杠杆成本预留仍只计正费用。杠杆仅在空仓、无订单后重建 session 才能修改。当前状态为本机工程验证通过，不等于交易所真实经济认证或跨平台 Hosted CI 放行。
 
-Windows 原子发布现使用同卷 rename，POSIX 使用 hard link。 instrument_rule 严格字段 allowlist 拒绝当前静态模型无法消费的杠杆档位、notional caps 等字段。该变化后的定向测试 **146 passed**；随后全量测试 **795 passed、5 skipped**。最终 11 wheels/11 sdists、wheel manifest 与隔离 wheel/entry-point smoke 均通过。最新本地 Git 备份见本轮结束摘要。
+返佣修复前的 allowlist 验收记录（历史运行）：Windows 原子发布使用同卷 rename，POSIX 使用 hard link；instrument_rule 严格字段 allowlist 拒绝当前静态模型无法消费的杠杆档位、notional caps 等字段。该变化后的定向测试 **146 passed**；随后全量测试 **795 passed、5 skipped**。最终 11 wheels/11 sdists、wheel manifest 与隔离 wheel/entry-point smoke 均通过。最新本地 Git 备份见本轮结束摘要。
 
 instrument_rule 现执行严格字段 allowlist，避免 exchange leverage brackets、notional caps、maintenance tiers 被静态 margin model 静默忽略；字段回归、历史工厂与 adapter **146 passed**。变化后全量套件 **795 passed、5 skipped**；11 wheels/11 sdists 重建、manifest 匹配和隔离导入 smoke 通过。Binance 会按名义区间和生效时点变更杠杆/保证金档位，故 fail-closed 修复不等于真实档位模型认证。
 
 外部门禁按执行记录保留：真实账户现金流来源与长窗对账、独立 Validation、兼容的 E1/R1/E2 阶段工件、真实历史深度、新授权独立市场窗口、干净交付 Hosted CI，以及 A09 真实标的规则、双向持仓和分档保证金经济认证。它们只限制各自依赖的验收，不得成为停止其它代码工作的理由。开始新一轮时必须复核这些状态是否变化。
+
+
+2026-10-21 又修复了返佣事实被忽略的链路缺口：负 maker/taker fee 可通过规则校验；transition 保留负 commission；资金指标和线性权益对账按 signed fee 计算。买入与卖出返佣闭环回归通过。最新全量 **798 passed、5 skipped**，Ruff/MyPy 通过；11 wheels/11 sdists 构建、manifest `all_match=True`，隔离环境 11 包及 entry-point smoke 通过。source manifest 289 项，最终哈希记录于执行计划。真实交易所负费率是否出现在具体交易历史，仍需来源认证。

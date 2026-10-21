@@ -103,7 +103,7 @@ class AccountFactsAccumulator:
         if self.last_ts != -1 and ts - self.last_ts != self.sample_interval_ns:
             raise MetricsError('irregular account sampling; annualization would be invalid')
         row = {key: _number(fact[key], key) for key in self._REQUIRED if key != 'ts_ns'}
-        if (row['equity'] <= 0 or row['turnover_notional'] < 0 or row['fee'] < 0
+        if (row['equity'] <= 0 or row['turnover_notional'] < 0
                 or (row['slippage_cost'] < 0 and not self.allow_price_improvement)):
             raise MetricsError('invalid account values / exhausted equity')
         if self.previous is None:

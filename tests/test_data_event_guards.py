@@ -69,6 +69,24 @@ def test_instrument_rule_requires_boolean_reduce_only_min_notional_capability() 
         validate_payload("instrument_rule", rule, 60_000_000_000)
 
 
+def test_instrument_rule_accepts_signed_fee_rebates() -> None:
+    rule = {
+        "instrument": "ETHUSDT",
+        "tick_size": "0.01",
+        "step_size": "0.001",
+        "min_notional": "5",
+        "min_qty": "0.001",
+        "maker_fee": "-0.0001",
+        "taker_fee": "0.0005",
+        "initial_margin_rate": "1",
+        "maintenance_margin_rate": "0.004",
+        "effective_ns": 60_000_000_000,
+        "rule_version": "v1",
+    }
+
+    validate_payload("instrument_rule", rule, 60_000_000_000)
+
+
 @pytest.mark.parametrize(
     "field", ["margin_tiers", "leverageBrackets", "brackets", "notionalCap", "maintMarginRatio",
               "maxLeverage", "unrecognized_metadata"],

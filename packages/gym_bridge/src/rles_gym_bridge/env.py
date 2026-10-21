@@ -123,8 +123,8 @@ def _native_transition_facts(snapshot: Any, *, after_ns: int,
         except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
             raise ContractNotReady("native fill economics are invalid") from exc
         parsed_fee_currency = commission_parts[1]
-        if not amount.is_finite() or amount < 0 or not parsed_fee_currency:
-            raise ContractNotReady("native commission must be finite and nonnegative")
+        if not amount.is_finite() or not parsed_fee_currency:
+            raise ContractNotReady("native commission must be finite with a currency")
         fees[parsed_fee_currency] = fees.get(parsed_fee_currency, Decimal(0)) + amount
         reference = references.get(client_order_id)
         row = dict(fill)

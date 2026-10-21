@@ -136,6 +136,35 @@ def test_native_report_reassembles_incremental_fill_and_funding_facts() -> None:
     assert "account_rows" not in compact_report
 
 
+def test_native_report_reconciles_signed_maker_fee_rebates() -> None:
+    opening = {"event_id": "fill-open", "client_order_id": "order-open", "order_side": "BUY",
+               "last_qty": "1", "last_px": "100", "commission": "-0.1 USDT"}
+    closing = {"event_id": "fill-close", "client_order_id": "order-close", "order_side": "SELL",
+               "last_qty": "1", "last_px": "101", "commission": "-0.1 USDT"}
+
+    def snapshot(timestamp, equity, *, mark=None, positions=(), fills=()):
+        return SimpleNamespace(
+            decision_ts_ns=timestamp, equity=Decimal(equity), currency="USDT", mark=mark,
+            fills=fills, funding=(), positions=positions, orders=(),
+            liquidation_capability=True, liquidation_orders=(), contract_multiplier=Decimal(1),
+        )
+
+    position = ({"side": "LONG", "quantity": "1", "multiplier": "1",
+                 "is_inverse": False, "settlement_currency": "USDT"},)
+    report = native_report(
+        (snapshot(1, "1000"), snapshot(11, "1000.1", mark=Decimal(100),
+                                      positions=position, fills=(opening,)),
+         snapshot(21, "1001.2", fills=(opening, closing))),
+        fill_references={"order-open": Decimal(100), "order-close": Decimal(101)},
+        sample_interval_ns=10, linear_equity_rounding=Decimal(0),
+    )
+
+    assert report["metrics"]["total_fee"] == pytest.approx(-0.2)
+    assert report["metrics"]["gross_return_before_reported_costs"] == pytest.approx(0.001)
+    assert report["equity_reconciliation"]["terminal_checked"] is True
+    assert report["equity_reconciliation"]["max_abs_residual"] == "0"
+
+
 @pytest.mark.parametrize("field, amount", (("commission", "1,2 USDT"),
                                             ("pnl_change", "1,2 USDT")))
 def test_native_money_rejects_malformed_grouping_separator(field: str, amount: str) -> None:

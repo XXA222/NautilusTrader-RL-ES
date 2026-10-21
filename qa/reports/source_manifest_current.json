@@ -1,7 +1,7 @@
 {
   "schema": "rles.source-manifest.v1",
-  "generated_at_utc": "2026-10-21T00:30:04.460169+00:00",
-  "source_identity_sha256": "c6a8eb450138d991ef732e1005d1c602b0db2b3cae3f250bbc6fc57afeea49a2",
+  "generated_at_utc": "2026-10-21T00:42:08.588405+00:00",
+  "source_identity_sha256": "2ecde2ad156e0d55eb6b0cdffddb8b80a606b5bbce0e3a9e28f044f71de7a4c9",
   "scope": {
     "included": [
       ".gitattributes",
@@ -333,17 +333,21 @@
   },
   "workspace_git": {
     "path": ".",
-    "commit": "5b7a46f35c4fe7d7ecaf95ffc37f9df66e34114a",
+    "commit": "622deb58d4df7228bd70ae076ff18895038e612c",
     "tracked_worktree_clean": false,
     "status_entries": [
       " M docs/DEVELOPMENT_GOALS_REVIEW_20261017.md",
       " M docs/DEVELOPMENT_GOAL_CURRENT.md",
       " M docs/DEVELOPMENT_PLAN_20261017.md",
       " M packages/data/src/rles_data/schemas.py",
+      " M packages/gym_bridge/src/rles_gym_bridge/env.py",
+      " M packages/research/src/rles_research/metrics.py",
       " M qa/reports/source_manifest_current.json",
-      " M tests/test_data_event_guards.py"
+      " M tests/test_data_event_guards.py",
+      " M tests/test_l3_l4_boundary.py",
+      " M tests/test_research_metrics.py"
     ],
-    "tracked_diff_sha256": "ea1f3357584848371ffa8ef210c6c851b6ea4056f1754d5ec78b193706b8f4e5"
+    "tracked_diff_sha256": "1b2e4e036ffb7145c293ca6275e0a499c02bd32e622c01f1524c5115e67c11ac"
   },
   "files": [
     {
@@ -713,8 +717,8 @@
     },
     {
       "path": "packages/data/src/rles_data/schemas.py",
-      "size_bytes": 6645,
-      "sha256": "8fe623927eb4f95218773f48e552d0b5df997e9a174e139a3b2c185b3087316d"
+      "size_bytes": 6858,
+      "sha256": "cc326d7af5c6f1ee176751ea3a41ddf894a199843cceeab917f7f82b0ca9d5ee"
     },
     {
       "path": "packages/es_evotorch/README.md",
@@ -803,8 +807,8 @@
     },
     {
       "path": "packages/gym_bridge/src/rles_gym_bridge/env.py",
-      "size_bytes": 33686,
-      "sha256": "b1d93dde7d789211075afdfec4203abc8f2d0cba9bcd6837649f96de1674a2dc"
+      "size_bytes": 33672,
+      "sha256": "427a59b43d620e16a3c46c74c920c499c62c400162492ef94aa725ea689919a3"
     },
     {
       "path": "packages/gym_bridge/src/rles_gym_bridge/episode.py",
@@ -988,8 +992,8 @@
     },
     {
       "path": "packages/research/src/rles_research/metrics.py",
-      "size_bytes": 7788,
-      "sha256": "5f2d0712f918eec821ef4f78e809aafd081b2634e1127fd56d763f469f1df196"
+      "size_bytes": 7770,
+      "sha256": "1cbbe00868a4cd0aa8b9de89411bef2277d347a995d38b81633a93fa899aed97"
     },
     {
       "path": "packages/research/src/rles_research/native_metrics.py",
@@ -1583,8 +1587,8 @@
     },
     {
       "path": "tests/test_data_event_guards.py",
-      "size_bytes": 6411,
-      "sha256": "1ce13236da9e7602bfb4c2b0ba8a9fd78356a7cf0f2e18c5ec184e68fb397c3c"
+      "size_bytes": 6920,
+      "sha256": "f9c924a06694d5d4613151d34498943d4f56c3c96142a7f0ad7bc9fbc950be38"
     },
     {
       "path": "tests/test_dependency_locks.py",
@@ -1638,8 +1642,8 @@
     },
     {
       "path": "tests/test_l3_l4_boundary.py",
-      "size_bytes": 4236,
-      "sha256": "8b6bec07bc294e06bbc3ff6a8f292745ca0d135b2636aacd28b666493f1834b2"
+      "size_bytes": 4851,
+      "sha256": "8b42a3a277dbf575b23f2c61799e43e135d6641bae77e9eb4f46cceed180d725"
     },
     {
       "path": "tests/test_l4_provider_smoke.py",
@@ -1713,8 +1717,8 @@
     },
     {
       "path": "tests/test_research_metrics.py",
-      "size_bytes": 42678,
-      "sha256": "54c9e5cac8461ed4a3756d92bc2a7b2f36d5bb536e03c82a9a47d9774a20ac8f"
+      "size_bytes": 44299,
+      "sha256": "627b8f3f741c10e9a2e09945bf4f1fdfc7ef06aaa17f18b076ff4cee4a4e14b1"
     },
     {
       "path": "tests/test_research_numeric_guards.py",

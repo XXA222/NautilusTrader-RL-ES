@@ -102,7 +102,11 @@ def validate_payload(kind: str, p: dict[str, Any], ts: int) -> None:
                 raise DataError("linear contract must settle in its quote currency")
         for key in ("tick_size", "step_size", "min_notional", "min_qty"):
             _number(p, key)
-        for key in ("maker_fee", "taker_fee", "initial_margin_rate", "maintenance_margin_rate"):
+        # Fee rates are signed cash flows: a negative maker/taker rate is a
+        # rebate. Margin rates remain nonnegative ratios.
+        for key in ("maker_fee", "taker_fee"):
+            _number(p, key, allow_zero=True, signed=True)
+        for key in ("initial_margin_rate", "maintenance_margin_rate"):
             _number(p, key, allow_zero=True)
         if _number(p, "initial_margin_rate", allow_zero=True) < _number(p, "maintenance_margin_rate", allow_zero=True):
             raise DataError("initial margin rate below maintenance rate")
