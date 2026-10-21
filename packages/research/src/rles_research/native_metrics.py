@@ -462,11 +462,20 @@ def native_report(snapshots: Sequence[Any], *, fill_references: Mapping[str, Dec
                   sample_interval_ns: int, allow_price_improvement: bool = False,
                   include_account_rows: bool = True,
                   external_cashflows: Sequence[Mapping[str, Any]] = (),
+                  allow_cashflow_barrier_attribution: bool = False,
                   linear_equity_rounding: Decimal | None = None) -> dict:
     """Build native economic metrics without inferring external account flows."""
-    if type(include_account_rows) is not bool:
-        raise MetricsError("include_account_rows must be Boolean")
+    if (type(include_account_rows) is not bool
+            or type(allow_cashflow_barrier_attribution) is not bool):
+        raise MetricsError("account-row and cashflow-attribution flags must be Boolean")
     ordered = _ordered_snapshots(snapshots)
+    _, cashflow_facts = _external_cashflows_by_time(external_cashflows, ordered)
+    cashflow_timing = _cashflow_timing(cashflow_facts)
+    if (cashflow_timing["return_timing_mode"] == "sample_barrier_attribution_only"
+            and not allow_cashflow_barrier_attribution):
+        raise MetricsError(
+            "off-barrier cashflows require explicit sample-barrier attribution opt-in",
+        )
     for item in ordered:
         _snapshot_records(item, "positions", "position")
         _snapshot_records(item, "orders", "order")
@@ -501,14 +510,13 @@ def native_report(snapshots: Sequence[Any], *, fill_references: Mapping[str, Dec
         for snapshot in ordered
     )
     liquidation_orders = _liquidation_order_facts(ordered) if observed else {}
-    _, cashflow_facts = _external_cashflows_by_time(external_cashflows, ordered)
     final_positions = _snapshot_records(final, "positions", "position")
     final_orders = _snapshot_records(final, "orders", "order")
     report = {"metrics": metrics, "fills": list(fill_facts.values()),
             "funding": list(funding_facts.values()),
             "terminal_flat": not final_positions and not final_orders,
             "external_cashflows": cashflow_facts,
-            "cashflow_timing": _cashflow_timing(cashflow_facts),
+            "cashflow_timing": cashflow_timing,
             "liquidations": len(liquidation_orders) if observed else None,
             "liquidations_observed": observed,
             "liquidation_orders": list(liquidation_orders.values()) if observed else None,

@@ -45,9 +45,16 @@ def test_binance_transfer_export_maps_to_native_cashflow_facts_and_reconciles() 
         for timestamp, equity in ((10_000_000, "1000"), (20_000_000, "1125.50"),
                                   (30_000_000, "1100.25"))
     )
+    with pytest.raises(MetricsError, match="explicit sample-barrier attribution opt-in"):
+        native_report(
+            snapshots, fill_references={}, sample_interval_ns=10_000_000,
+            external_cashflows=imported.facts, linear_equity_rounding=Decimal(0),
+        )
     report = native_report(
         snapshots, fill_references={}, sample_interval_ns=10_000_000,
-        external_cashflows=imported.facts, linear_equity_rounding=Decimal(0),
+        external_cashflows=imported.facts,
+        allow_cashflow_barrier_attribution=True,
+        linear_equity_rounding=Decimal(0),
     )
     assert report["equity_reconciliation"]["net_external_cashflow"] == "100.25"
     assert report["equity_reconciliation"]["max_abs_residual"] == "0"

@@ -58,3 +58,5 @@ REST funding 导入再补了单行边界：只有一条结算时，接口数据�
 2026-10-21 动态杠杆边界复核：session 重建会经原生工厂重复校验 `dated_initial_rate / leverage >= dated_maintenance_rate`，非法杠杆在关闭旧引擎前拒绝。新增 6x 对 20% maintenance 的拒绝及旧 engine/账户快照/replay 记录不变回归；同屏障再成功切到 3x，整段 replay 仍恢复一致。最新全量 **808 passed、5 skipped、53 warnings、437.74s**。Binance 账户级分档保证金/真实资金流水及 Hedge Mode 仍未认证。
 
 2026-10-21 账户转账时序审计：Binance transfer 逐条保留原始事件时间；报告记录屏障归属延迟、精确对齐数量及收益时序模式。若转账时间早于归属采样屏障，报告明确标记为 `sample_barrier_attribution_only`，不宣称精确 TWR。全量 **812 passed、5 CUDA-only skipped、53 warnings**；Ruff、MyPy 105 files、11 wheels/11 sdists 和 11 包/5 entry point smoke 通过。精确时点收益仍需独立的现金流 return contract 和带授权的类型化账户事实。
+
+off-barrier transfer 收益也加了默认防线：`native_report()` 默认拒绝将归属到后续屏障的转账作为精确单期收益；调用者必须明确传 `allow_cashflow_barrier_attribution=True` 才能生成标记为 approximation 的报告。累计线性权益对账不依赖区间内发生时点，仍可单独执行。最新全量 **812 passed、5 CUDA-only skipped、53 warnings**；Ruff/MyPy、11 wheels/11 sdists 与 11 包/5 入口 smoke 通过。精确 TWR 仍需真实事件时点的账户权益样本和类型化授权来源。
