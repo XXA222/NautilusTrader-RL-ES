@@ -1,7 +1,7 @@
 {
   "schema": "rles.source-manifest.v1",
-  "generated_at_utc": "2026-10-21T01:49:17.139443+00:00",
-  "source_identity_sha256": "27c3766db4f2400d95cf70dd3477795da47eebd152f5ed8d7beea7feef1049c3",
+  "generated_at_utc": "2026-10-21T04:08:00.590804+00:00",
+  "source_identity_sha256": "88221b6b3395fb1fb315615c05308a623339d36c42bac2de0b2def533be1dc6c",
   "scope": {
     "included": [
       ".gitattributes",
@@ -341,19 +341,15 @@
   },
   "workspace_git": {
     "path": ".",
-    "commit": "3eb8e9a3c605ea5da81bbf1090e4b7e178663e63",
+    "commit": "14a66e66edf7015e8d8706169187949e0e2922c7",
     "tracked_worktree_clean": false,
     "status_entries": [
+      " M docs/DEVELOPMENT_GOALS_REVIEW_20261017.md",
       " M docs/DEVELOPMENT_GOAL_CURRENT.md",
       " M docs/DEVELOPMENT_PLAN_20261017.md",
-      " M packages/data/src/rles_data/binance_archive.py",
-      " M packages/data/src/rles_data/schemas.py",
-      " M packages/nautilus_adapter/src/rles_nautilus_adapter/market_data.py",
-      " M packages/nautilus_adapter/src/rles_nautilus_adapter/session.py",
-      " M tests/test_binance_archive_range.py",
-      " M tests/test_nautilus_adapter_smoke.py"
+      " M tests/test_binance_cashflows.py"
     ],
-    "tracked_diff_sha256": "bd913087a928764b56f5f66bd789d76973433af226ac4a66908a73f6fb328a30"
+    "tracked_diff_sha256": "9e49070b016ec2bed3ea028215445c787c20ab0a2c33e4b0dd9437ce936d12e4"
   },
   "files": [
     {
@@ -578,8 +574,8 @@
     },
     {
       "path": "packages/compute_runtime/src/rles_compute_runtime/windows_recovery.py",
-      "size_bytes": 10417,
-      "sha256": "7d3b14f1ebfeaab4d207139f68ea56926457d6fb5a82289056d1406005c835f6"
+      "size_bytes": 11448,
+      "sha256": "45ca05da4e7629ae80f7da5d92df4cb5e345fb869a82f59cb076c591363fe3e6"
     },
     {
       "path": "packages/compute_runtime/src/rles_compute_runtime/workers.py",
@@ -683,8 +679,8 @@
     },
     {
       "path": "packages/data/src/rles_data/binance_archive.py",
-      "size_bytes": 39635,
-      "sha256": "f0ea35496047f2afb86cfaced69f623a901f330b5c5ec2cd5a293b45c8d4a5c1"
+      "size_bytes": 39678,
+      "sha256": "95340cfa06f3c09666c676534c5c4e245596d0c4ef275bf9c2a4139924c97f03"
     },
     {
       "path": "packages/data/src/rles_data/contracts.py",
@@ -693,8 +689,8 @@
     },
     {
       "path": "packages/data/src/rles_data/core.py",
-      "size_bytes": 38742,
-      "sha256": "570a3ec96864c1545ee5e225d1b8da212c0ca289bba8770569523fcaf470e1b5"
+      "size_bytes": 39130,
+      "sha256": "a2cb02b4cec376948cca3015bb266f99f2c082f07369a9339347e0aa3a73396c"
     },
     {
       "path": "packages/data/src/rles_data/coverage.py",
@@ -723,8 +719,8 @@
     },
     {
       "path": "packages/data/src/rles_data/schemas.py",
-      "size_bytes": 6955,
-      "sha256": "435de288c502ca6dd23cf6cb8eaaadbf113cccd32c7146eb44a5d15056648b4c"
+      "size_bytes": 7853,
+      "sha256": "6915f43e1feced15c8377b590e0d589480264dd49d219935db5ce7f6c5fd45f1"
     },
     {
       "path": "packages/es_evotorch/README.md",
@@ -863,8 +859,8 @@
     },
     {
       "path": "packages/nautilus_adapter/src/rles_nautilus_adapter/market_data.py",
-      "size_bytes": 9863,
-      "sha256": "bd5e917d15196b19a0a86f20f83f25ef172aa28102669780b69c3be8622c311d"
+      "size_bytes": 10569,
+      "sha256": "7d267271723aad65d8221efd924a4b1de1fdeb5c864ff2488ee8213ee53cf389"
     },
     {
       "path": "packages/nautilus_adapter/src/rles_nautilus_adapter/perpetual.py",
@@ -873,8 +869,8 @@
     },
     {
       "path": "packages/nautilus_adapter/src/rles_nautilus_adapter/session.py",
-      "size_bytes": 35833,
-      "sha256": "9c9ad94642a69a179b1b66a2e0fcc98556a3a5c9392993cb27a2d62a8e966374"
+      "size_bytes": 37497,
+      "sha256": "36c4100b71594a5c1ee31d30c042a7bed51e597e1d46d00176a270dbda9b2490"
     },
     {
       "path": "packages/nautilus_adapter/src/rles_nautilus_adapter/submitter.py",
@@ -988,8 +984,8 @@
     },
     {
       "path": "packages/research/src/rles_research/binance_cashflows.py",
-      "size_bytes": 12172,
-      "sha256": "0be8012fb167badacbb4d624e73776814fa072ff62ad521f51899587dd49977e"
+      "size_bytes": 12365,
+      "sha256": "6733412ec619c9564b045d8cdda44631a59b03ca09f8c583acc03655b9810155"
     },
     {
       "path": "packages/research/src/rles_research/ledger.py",
@@ -1003,8 +999,8 @@
     },
     {
       "path": "packages/research/src/rles_research/native_metrics.py",
-      "size_bytes": 27973,
-      "sha256": "ed291785d3e9e1e928946072a28d554ed5389e925f7b8f44e52a486f45679845"
+      "size_bytes": 29884,
+      "sha256": "06b304bd3b9ce63a569b11b7b6a4a69350f95e0731d45cf2bb92247f96506a03"
     },
     {
       "path": "packages/research/src/rles_research/numeric.py",
@@ -1553,13 +1549,13 @@
     },
     {
       "path": "tests/test_binance_archive_range.py",
-      "size_bytes": 27496,
-      "sha256": "76f9305af308c7d08732c81895419bfb79199113b21a6520e994173502f54e7c"
+      "size_bytes": 29531,
+      "sha256": "b5cd417b336f960f2a6f3b5f6aecb81b84004ae82bbe8de8e6bfb1d8ebc779fc"
     },
     {
       "path": "tests/test_binance_cashflows.py",
-      "size_bytes": 7198,
-      "sha256": "461e93f88b6d2fcb4aae11d569dbd6b48420d947408b91270c8d010f3f3a48bd"
+      "size_bytes": 9799,
+      "sha256": "0f58f74ded8c7d501b549257243e09828a5f19a7463015f1637fdae1612ac073"
     },
     {
       "path": "tests/test_compute_device.py",
@@ -1593,8 +1589,8 @@
     },
     {
       "path": "tests/test_data_event_guards.py",
-      "size_bytes": 6920,
-      "sha256": "f9c924a06694d5d4613151d34498943d4f56c3c96142a7f0ad7bc9fbc950be38"
+      "size_bytes": 7913,
+      "sha256": "9ae1eeef615fa9a56c9d125748b8abf8333f19b3f52f7954a016d1c8273f939e"
     },
     {
       "path": "tests/test_dependency_locks.py",
@@ -1603,8 +1599,8 @@
     },
     {
       "path": "tests/test_economic_coverage.py",
-      "size_bytes": 5279,
-      "sha256": "710c5f4ee66d8b591002a55ac9f78425d9ed9171668c5e742b5ee492f1d17509"
+      "size_bytes": 5850,
+      "sha256": "d6649b80eaba2e3ba314c78678e1d6eaf5758b327abc0edbe1c03fb84088fb2c"
     },
     {
       "path": "tests/test_es_actor_input_scaling.py",
@@ -1633,8 +1629,8 @@
     },
     {
       "path": "tests/test_historical_factory.py",
-      "size_bytes": 108042,
-      "sha256": "9f7523e8b840bf1833b918dafee9d92998f1674116a20eb8f62736b18729da7d"
+      "size_bytes": 108342,
+      "sha256": "66b395ed832b4def5901b07356f4b8fc7b1b1ea23bcd7d73bf5f7b0295efe3ef"
     },
     {
       "path": "tests/test_l2_cli.py",
@@ -1683,8 +1679,8 @@
     },
     {
       "path": "tests/test_nautilus_adapter_smoke.py",
-      "size_bytes": 43004,
-      "sha256": "106436736af89de9a351dbaddfba4395334ad676f9beffc2bfb6ec84f6495d94"
+      "size_bytes": 45394,
+      "sha256": "fa6bd048f569a401ecb8e2b4b5f60facfc192f4085bdf805d262f965832a41bb"
     },
     {
       "path": "tests/test_orchestrator_workflow.py",
@@ -1703,8 +1699,8 @@
     },
     {
       "path": "tests/test_real_golden_ethusdt.py",
-      "size_bytes": 9185,
-      "sha256": "ec792c9e798e9398e08365ce69ea861d7e8147773e61b5bb5d2f502d260d15f0"
+      "size_bytes": 9182,
+      "sha256": "1e47b7c16092cdf058f30678d008b115e3959da061cb63a1776126a97a4b5280"
     },
     {
       "path": "tests/test_registered_train_window_read.py",
@@ -1723,8 +1719,8 @@
     },
     {
       "path": "tests/test_research_metrics.py",
-      "size_bytes": 44299,
-      "sha256": "627b8f3f741c10e9a2e09945bf4f1fdfc7ef06aaa17f18b076ff4cee4a4e14b1"
+      "size_bytes": 45264,
+      "sha256": "d00fc10367fe1f2465c20b47201ceff1a6f25e4f7cf2aef80ae506da40662a30"
     },
     {
       "path": "tests/test_research_numeric_guards.py",
@@ -1738,8 +1734,8 @@
     },
     {
       "path": "tests/test_resource_recovery.py",
-      "size_bytes": 19625,
-      "sha256": "c0707128ce2e75870d8230f3af4629fc5401900c88bc33725dc84db5f0800fca"
+      "size_bytes": 20082,
+      "sha256": "3036739d6f177aa54aa35022cb026671ff7d23237fd2d23f2eef869e2dc19fac"
     },
     {
       "path": "tests/test_reward_scale.py",

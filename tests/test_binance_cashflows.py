@@ -71,6 +71,41 @@ def test_binance_transfer_export_maps_to_native_cashflow_facts_and_reconciles() 
     assert any("not exact time-weighted" in item for item in imported.limitations)
 
 
+def test_binance_transfer_exactly_on_sample_barrier_uses_default_twr_path() -> None:
+    payload = json.dumps([{
+        "incomeType": "TRANSFER", "income": "100", "asset": "USDT",
+        "time": 20, "tranId": 9003,
+    }], separators=(",", ":"))
+    imported = import_binance_usdm_transfer_income(
+        payload, account_scope_id="subaccount-7", currency="USDT",
+        sample_barriers_ns=(10_000_000, 20_000_000, 30_000_000),
+    )
+    assert imported.facts[0]["source_event_time_ns"] == 20_000_000
+    assert imported.facts[0]["decision_ts_ns"] == 20_000_000
+
+    base = dict(currency="USDT", fills=(), funding=(), positions=(), orders=(),
+                liquidation_capability=True, liquidation_orders=())
+    snapshots = tuple(
+        SimpleNamespace(decision_ts_ns=timestamp, equity=Decimal(equity), **base)
+        for timestamp, equity in ((10_000_000, "1000"), (20_000_000, "1100"),
+                                  (30_000_000, "1100"))
+    )
+    report = native_report(
+        snapshots, fill_references={}, sample_interval_ns=10_000_000,
+        external_cashflows=imported.facts, linear_equity_rounding=Decimal(0),
+    )
+
+    assert report["cashflow_timing"] == {
+        "source_event_time_count": 1,
+        "source_event_time_complete": True,
+        "source_event_time_exact_barrier_count": 1,
+        "max_attribution_lag_ns": 0,
+        "exact_sample_boundary_timing": True,
+        "return_timing_mode": "exact_sample_boundary",
+    }
+    assert report["metrics"]["net_return"] == pytest.approx(0.0)
+
+
 @pytest.mark.parametrize("payload", [
     b"{bad json",
     b"{}",
