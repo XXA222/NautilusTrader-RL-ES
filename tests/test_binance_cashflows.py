@@ -36,6 +36,7 @@ def test_binance_transfer_export_maps_to_native_cashflow_facts_and_reconciles() 
     assert [fact["amount"] for fact in imported.facts] == ["125.50", "25.25"]
     assert [fact["decision_ts_ns"] for fact in imported.facts] == [20_000_000, 30_000_000]
     assert [fact["source_event_time_ns"] for fact in imported.facts] == [15_000_000, 25_000_000]
+    assert {fact["source_event_time_resolution_ns"] for fact in imported.facts} == {1_000_000}
     assert imported.event_time_range_ns == (15_000_000, 25_000_000)
 
     base = dict(currency="USDT", fills=(), funding=(), positions=(), orders=(),
@@ -145,6 +146,13 @@ def test_binance_off_barrier_transfer_uses_synchronous_equity_for_exact_twr() ->
             external_cashflows=imported.facts,
             cashflow_equity_points=({**point, "decision_ts_ns": 16_000_000},),
         )
+    untimed = ({key: value for key, value in imported.facts[0].items()
+                if key != "source_event_time_resolution_ns"},)
+    with pytest.raises(MetricsError, match="requires source event time resolution"):
+        native_report(
+            snapshots, fill_references={}, sample_interval_ns=10_000_000,
+            external_cashflows=untimed, cashflow_equity_points=(point,),
+        )
     report = native_report(
         snapshots, fill_references={}, sample_interval_ns=10_000_000,
         external_cashflows=imported.facts, cashflow_equity_points=(point,),
@@ -210,6 +218,45 @@ def test_exact_twr_groups_same_time_flows_and_keeps_barrier_flows_separate() -> 
         float(expected_first_period),
     )
     assert report["metrics"]["net_return"] == pytest.approx(float(expected_total))
+
+
+@pytest.mark.parametrize(("event_field", "event", "message"), [
+    ("fills", {"ts_event": 15_000_000}, "timestamp precision overlaps a native fill"),
+    ("fills", {"ts_event": 15_500_000}, "timestamp precision overlaps a native fill"),
+    ("funding", {"ts_event": 15_000_000}, "timestamp precision overlaps a native fill"),
+    ("fills", {"event_id": "missing-time"}, "requires timestamps on all native fill events"),
+])
+def test_exact_twr_rejects_unordered_simultaneous_native_events(
+        event_field: str, event: dict[str, int | str], message: str) -> None:
+    payload = json.dumps([{
+        "incomeType": "TRANSFER", "income": "100", "asset": "USDT",
+        "time": 15, "tranId": 9201,
+    }], separators=(",", ":"))
+    imported = import_binance_usdm_transfer_income(
+        payload, account_scope_id="subaccount-7", currency="USDT",
+        sample_barriers_ns=(10_000_000, 20_000_000, 30_000_000),
+    )
+    base = dict(currency="USDT", fills=(), funding=(), positions=(), orders=(),
+                liquidation_capability=True, liquidation_orders=())
+    snapshots = [
+        SimpleNamespace(decision_ts_ns=timestamp, equity=Decimal(equity), **base)
+        for timestamp, equity in ((10_000_000, "1000"), (20_000_000, "1100"),
+                                  (30_000_000, "1100"))
+    ]
+    setattr(snapshots[1], event_field, (event,))
+    point = {
+        "decision_ts_ns": 15_000_000,
+        "equity_after_cashflow": "1050",
+        "currency": "USDT",
+        "source_id": "account-equity-at-transfer",
+        "source_sha256": "9" * 64,
+    }
+
+    with pytest.raises(MetricsError, match=message):
+        native_report(
+            tuple(snapshots), fill_references={}, sample_interval_ns=10_000_000,
+            external_cashflows=imported.facts, cashflow_equity_points=(point,),
+        )
 
 
 @pytest.mark.parametrize("payload", [

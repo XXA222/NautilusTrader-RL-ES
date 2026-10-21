@@ -1,7 +1,7 @@
 {
   "schema": "rles.source-manifest.v1",
-  "generated_at_utc": "2026-10-21T04:31:24.090691+00:00",
-  "source_identity_sha256": "d1fca118e177cd5ccc7918358b3a92784a21c4190b05b4561310dac6c5bf6edc",
+  "generated_at_utc": "2026-10-21T04:48:52.271590+00:00",
+  "source_identity_sha256": "d31f7d18946f73b7346d21b6bcf92688cd43ff7c62a164a8ad9090644237cae9",
   "scope": {
     "included": [
       ".gitattributes",
@@ -341,16 +341,17 @@
   },
   "workspace_git": {
     "path": ".",
-    "commit": "a60845e37b7ba3c938d4041f324e0d3b3e694551",
+    "commit": "a049be6c012327391f69cf18d69f9a5fe85a2fee",
     "tracked_worktree_clean": false,
     "status_entries": [
       " M docs/DEVELOPMENT_GOALS_REVIEW_20261017.md",
       " M docs/DEVELOPMENT_GOAL_CURRENT.md",
       " M docs/DEVELOPMENT_PLAN_20261017.md",
+      " M packages/research/src/rles_research/binance_cashflows.py",
       " M packages/research/src/rles_research/native_metrics.py",
       " M tests/test_binance_cashflows.py"
     ],
-    "tracked_diff_sha256": "3e13cf39e966e9a721ac10844fa39247df3fe458e564cb28a6e216a9b95ab930"
+    "tracked_diff_sha256": "4147c715aa75cb71350338b116f8e3a93661560d95b8d75666856ec48c957205"
   },
   "files": [
     {
@@ -985,8 +986,8 @@
     },
     {
       "path": "packages/research/src/rles_research/binance_cashflows.py",
-      "size_bytes": 12365,
-      "sha256": "6733412ec619c9564b045d8cdda44631a59b03ca09f8c583acc03655b9810155"
+      "size_bytes": 12708,
+      "sha256": "e73834412bae17b78fbc086a1c78d3150fff0e55527f89a0434a2509b091cb94"
     },
     {
       "path": "packages/research/src/rles_research/ledger.py",
@@ -1000,8 +1001,8 @@
     },
     {
       "path": "packages/research/src/rles_research/native_metrics.py",
-      "size_bytes": 36171,
-      "sha256": "1219b9125e21f962bc9ce5c41f0017c88eecb50ab989da49968f587a1d1b614f"
+      "size_bytes": 39016,
+      "sha256": "1710f8f3b41c5f5dfc3882273ba7ce0f0c145895a15eb0847d8f7d730a41c9ac"
     },
     {
       "path": "packages/research/src/rles_research/numeric.py",
@@ -1555,8 +1556,8 @@
     },
     {
       "path": "tests/test_binance_cashflows.py",
-      "size_bytes": 14728,
-      "sha256": "732736995c74297a54cd7e90cbb3665f8ae2032ab729512bb62c9e9997207af1"
+      "size_bytes": 17042,
+      "sha256": "7b15fe883d0fa544db09a861b1568d104cd376135af44a78807f9aea0f0541d5"
     },
     {
       "path": "tests/test_compute_device.py",

@@ -114,6 +114,7 @@ def import_binance_usdm_transfer_income(
             "event_id": event_id,
             "decision_ts_ns": barriers[barrier_index],
             "source_event_time_ns": event_time_ns,
+            "source_event_time_resolution_ns": 1_000_000,
             "currency": currency,
             "kind": "DEPOSIT" if amount > 0 else "WITHDRAWAL",
             "amount": str(abs(amount)),
@@ -140,7 +141,8 @@ def import_binance_usdm_transfer_income(
             "A response payload hash identifies bytes but does not authenticate its origin or prove query completeness.",
             "The caller must verify the signed query scope, pagination/window coverage, and account identity.",
             "Events are attributed to the first sample barrier at or after the exchange event time.",
-            "When event time precedes that barrier, sample-period returns use barrier attribution, not exact time-weighted cashflow timing.",
+            "Exchange event timestamps have millisecond resolution. Off-barrier exact time-weighted returns require source-synchronous account equity facts; same-millisecond native fills or funding events are rejected when their order is unknown.",
+            "Without source-synchronous equity, the caller must opt into sample-barrier attribution for off-barrier returns; those returns are not exact time-weighted returns.",
         ),
     )
 

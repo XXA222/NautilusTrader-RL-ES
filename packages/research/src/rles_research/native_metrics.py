@@ -1,7 +1,7 @@
 """Map detached native snapshots into regular economic metric increments."""
 from __future__ import annotations
 
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from decimal import Decimal, InvalidOperation
 from collections.abc import Iterator, Sequence as SequenceABC
 from itertools import groupby
@@ -178,6 +178,10 @@ def _external_cashflows_by_time(cashflows: Sequence[Mapping[str, Any]],
                 type(source_timestamp) is not int
                 or source_timestamp <= first_time or source_timestamp > timestamp):
             raise MetricsError("external cashflow source time must precede or equal its assigned barrier")
+        source_resolution = fact.get("source_event_time_resolution_ns")
+        if source_resolution is not None and (
+                type(source_resolution) is not int or source_resolution <= 0):
+            raise MetricsError("external cashflow source time resolution must be a positive integer")
         if fact.get("currency") != currency:
             raise MetricsError("external cashflow currency differs from native account")
         if not isinstance(kind, str) or kind not in {"DEPOSIT", "WITHDRAWAL"}:
@@ -214,6 +218,46 @@ def _cashflow_timing(facts: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         "exact_sample_boundary_timing": exact,
         "return_timing_mode": mode,
     }
+
+
+def _validate_cashflow_event_order(
+        snapshots: Sequence[Any], facts: Sequence[Mapping[str, Any]]) -> None:
+    """Reject native cash events inside a transfer's timestamp precision interval."""
+    resolutions: dict[int, int] = {}
+    for fact in facts:
+        timestamp = fact.get("source_event_time_ns")
+        resolution = fact.get("source_event_time_resolution_ns")
+        if type(timestamp) is not int:
+            raise MetricsError("exact cashflow TWR requires source event time for every flow")
+        if type(resolution) is not int or resolution <= 0:
+            raise MetricsError("exact cashflow TWR requires source event time resolution for every flow")
+        previous = resolutions.get(timestamp)
+        if previous is not None and previous != resolution:
+            raise MetricsError("same-time cashflows have conflicting source time resolutions")
+        resolutions[timestamp] = resolution
+    intervals = sorted((timestamp, timestamp + resolution)
+                       for timestamp, resolution in resolutions.items())
+    if any(right[0] < left[1] for left, right in zip(intervals, intervals[1:])):
+        raise MetricsError("cashflow source time precision intervals overlap")
+    interval_starts = [start for start, _end in intervals]
+    ordered = _ordered_snapshots(snapshots)
+    for snapshot in ordered:
+        for field, label in (("fills", "fill"), ("funding", "funding")):
+            for event in _snapshot_records(snapshot, field, label):
+                if not isinstance(event, Mapping):
+                    raise MetricsError(f"native {label} event must be a timestamped mapping")
+                event_time = event.get("ts_event")
+                if type(event_time) is not int or event_time < 0:
+                    raise MetricsError(
+                        f"exact cashflow TWR requires timestamps on all native {label} events",
+                    )
+                interval_index = bisect_right(interval_starts, event_time) - 1
+                if (interval_index >= 0
+                        and event_time < intervals[interval_index][1]):
+                    raise MetricsError(
+                        "cashflow timestamp precision overlaps a native fill or funding event; "
+                        "their order is not available",
+                    )
 
 
 def _cashflow_period_returns(
@@ -591,6 +635,10 @@ def native_report(snapshots: Sequence[Any], *, fill_references: Mapping[str, Dec
             "off-barrier cashflows require source-synchronous event equity or explicit "
             "sample-barrier attribution opt-in",
         )
+    if (cashflow_facts
+            and (cashflow_equity_points
+                 or cashflow_timing["return_timing_mode"] == "exact_sample_boundary")):
+        _validate_cashflow_event_order(ordered, cashflow_facts)
     for item in ordered:
         _snapshot_records(item, "positions", "position")
         _snapshot_records(item, "orders", "order")
