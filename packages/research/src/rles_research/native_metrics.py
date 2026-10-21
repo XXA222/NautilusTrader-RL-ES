@@ -273,6 +273,7 @@ def _cashflow_period_returns(
         raise MetricsError("regular native barriers required for cashflow time-weighted returns")
     currency = ordered[0].currency
     grouped_flows: dict[int, Decimal] = {}
+    flow_resolutions: dict[int, int] = {}
     signed_flows_by_barrier: dict[int, Decimal] = {}
     event_times_by_barrier: dict[int, set[int]] = {}
     off_barrier_times: set[int] = set()
@@ -286,6 +287,13 @@ def _cashflow_period_returns(
                 or barriers[assigned_index] != flow_time):
             raise MetricsError("cashflow event is not assigned to its first following barrier")
         amount = _decimal(fact["amount"], "external cashflow amount")
+        resolution = fact.get("source_event_time_resolution_ns")
+        if type(resolution) is not int or resolution <= 0:
+            raise MetricsError("exact cashflow TWR requires source event time resolution")
+        previous_resolution = flow_resolutions.get(source_time)
+        if previous_resolution is not None and previous_resolution != resolution:
+            raise MetricsError("same-time cashflows have conflicting source time resolutions")
+        flow_resolutions[source_time] = resolution
         signed = amount if fact["kind"] == "DEPOSIT" else -amount
         grouped_flows[source_time] = grouped_flows.get(source_time, Decimal(0)) + signed
         if source_time != flow_time:
@@ -313,6 +321,10 @@ def _cashflow_period_returns(
         if (not isinstance(source_hash, str) or len(source_hash) != 64
                 or any(character not in "0123456789abcdef" for character in source_hash)):
             raise MetricsError("cashflow event equity source SHA-256 required")
+        point_resolution = raw.get("source_event_time_resolution_ns")
+        if (type(point_resolution) is not int
+                or point_resolution != flow_resolutions[timestamp]):
+            raise MetricsError("cashflow event equity time resolution must match the transfer")
         equity = _decimal(raw.get("equity_after_cashflow"), "event equity after cashflow")
         if equity <= 0:
             raise MetricsError("cashflow event equity after cashflow must be positive")
@@ -615,6 +627,10 @@ def native_report(snapshots: Sequence[Any], *, fill_references: Mapping[str, Dec
     ordered = _ordered_snapshots(snapshots)
     _, cashflow_facts = _external_cashflows_by_time(external_cashflows, ordered)
     cashflow_timing = _cashflow_timing(cashflow_facts)
+    if (cashflow_facts
+            and (cashflow_equity_points
+                 or cashflow_timing["return_timing_mode"] == "exact_sample_boundary")):
+        _validate_cashflow_event_order(ordered, cashflow_facts)
     period_returns: dict[int, float] = {}
     if cashflow_equity_points:
         period_returns = _cashflow_period_returns(
@@ -635,10 +651,6 @@ def native_report(snapshots: Sequence[Any], *, fill_references: Mapping[str, Dec
             "off-barrier cashflows require source-synchronous event equity or explicit "
             "sample-barrier attribution opt-in",
         )
-    if (cashflow_facts
-            and (cashflow_equity_points
-                 or cashflow_timing["return_timing_mode"] == "exact_sample_boundary")):
-        _validate_cashflow_event_order(ordered, cashflow_facts)
     for item in ordered:
         _snapshot_records(item, "positions", "position")
         _snapshot_records(item, "orders", "order")

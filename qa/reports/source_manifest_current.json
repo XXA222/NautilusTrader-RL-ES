@@ -1,7 +1,7 @@
 {
   "schema": "rles.source-manifest.v1",
-  "generated_at_utc": "2026-10-21T04:48:52.271590+00:00",
-  "source_identity_sha256": "d31f7d18946f73b7346d21b6bcf92688cd43ff7c62a164a8ad9090644237cae9",
+  "generated_at_utc": "2026-10-21T04:57:47.439486+00:00",
+  "source_identity_sha256": "68b425a0d8ae4c01ad44a2e05b104d1187319da3be042f87f19614412dd69c19",
   "scope": {
     "included": [
       ".gitattributes",
@@ -341,17 +341,15 @@
   },
   "workspace_git": {
     "path": ".",
-    "commit": "a049be6c012327391f69cf18d69f9a5fe85a2fee",
+    "commit": "f5b86b01f74defafed00a4b0369f80507491981f",
     "tracked_worktree_clean": false,
     "status_entries": [
-      " M docs/DEVELOPMENT_GOALS_REVIEW_20261017.md",
       " M docs/DEVELOPMENT_GOAL_CURRENT.md",
       " M docs/DEVELOPMENT_PLAN_20261017.md",
-      " M packages/research/src/rles_research/binance_cashflows.py",
       " M packages/research/src/rles_research/native_metrics.py",
       " M tests/test_binance_cashflows.py"
     ],
-    "tracked_diff_sha256": "4147c715aa75cb71350338b116f8e3a93661560d95b8d75666856ec48c957205"
+    "tracked_diff_sha256": "0dd49764422755259c4504985500d51da10dd92a749f9cfc48a45607efe0d4b3"
   },
   "files": [
     {
@@ -1001,8 +999,8 @@
     },
     {
       "path": "packages/research/src/rles_research/native_metrics.py",
-      "size_bytes": 39016,
-      "sha256": "1710f8f3b41c5f5dfc3882273ba7ce0f0c145895a15eb0847d8f7d730a41c9ac"
+      "size_bytes": 39846,
+      "sha256": "a6c9135167ff4b191be784bcc9cc325701e575f0950e3cd163b4d66cd2820283"
     },
     {
       "path": "packages/research/src/rles_research/numeric.py",
@@ -1556,8 +1554,8 @@
     },
     {
       "path": "tests/test_binance_cashflows.py",
-      "size_bytes": 17042,
-      "sha256": "7b15fe883d0fa544db09a861b1568d104cd376135af44a78807f9aea0f0541d5"
+      "size_bytes": 17532,
+      "sha256": "aef50ca234323bab86187e3aec0fc3281ff657abc745f82c310da554ca385aac"
     },
     {
       "path": "tests/test_compute_device.py",

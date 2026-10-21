@@ -126,6 +126,7 @@ def test_binance_off_barrier_transfer_uses_synchronous_equity_for_exact_twr() ->
     point = {
         "decision_ts_ns": 15_000_000,
         "equity_after_cashflow": "1050",
+        "source_event_time_resolution_ns": 1_000_000,
         "currency": "USDT",
         "source_id": "account-equity-at-transfer",
         "source_sha256": "e" * 64,
@@ -145,6 +146,12 @@ def test_binance_off_barrier_transfer_uses_synchronous_equity_for_exact_twr() ->
             snapshots, fill_references={}, sample_interval_ns=10_000_000,
             external_cashflows=imported.facts,
             cashflow_equity_points=({**point, "decision_ts_ns": 16_000_000},),
+        )
+    with pytest.raises(MetricsError, match="time resolution must match the transfer"):
+        native_report(
+            snapshots, fill_references={}, sample_interval_ns=10_000_000,
+            external_cashflows=imported.facts,
+            cashflow_equity_points=({**point, "source_event_time_resolution_ns": 1},),
         )
     untimed = ({key: value for key, value in imported.facts[0].items()
                 if key != "source_event_time_resolution_ns"},)
@@ -199,6 +206,7 @@ def test_exact_twr_groups_same_time_flows_and_keeps_barrier_flows_separate() -> 
     point = {
         "decision_ts_ns": 15_000_000,
         "equity_after_cashflow": "1050",
+        "source_event_time_resolution_ns": 1_000_000,
         "currency": "USDT",
         "source_id": "account-equity-at-transfer-batch",
         "source_sha256": "f" * 64,
@@ -247,6 +255,7 @@ def test_exact_twr_rejects_unordered_simultaneous_native_events(
     point = {
         "decision_ts_ns": 15_000_000,
         "equity_after_cashflow": "1050",
+        "source_event_time_resolution_ns": 1_000_000,
         "currency": "USDT",
         "source_id": "account-equity-at-transfer",
         "source_sha256": "9" * 64,
