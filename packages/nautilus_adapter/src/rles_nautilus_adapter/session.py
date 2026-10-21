@@ -83,16 +83,20 @@ class NativeFactsReader:
 
     def __init__(self, *, account_id: Any, instrument_id: Any, currency: str,
                  liquidation_capability: bool = False,
-                 compact_history: bool = False) -> None:
+                 compact_history: bool = False,
+                 include_position_pnl: bool = False) -> None:
         if account_id is None or instrument_id is None or not currency:
             raise ValueError("native account/instrument/base currency required")
         if type(liquidation_capability) is not bool:
             raise TypeError("liquidation capability must be certified Boolean")
         if type(compact_history) is not bool:
             raise TypeError("native cache history compaction must be Boolean")
+        if type(include_position_pnl) is not bool:
+            raise TypeError("native position PnL capture flag must be Boolean")
         self.account_id, self.instrument_id, self.currency = account_id, instrument_id, currency
         self.liquidation_capability = liquidation_capability
         self.compact_history = compact_history
+        self.include_position_pnl = include_position_pnl
         self._latest_account_event: dict | None = None
         self._funding_initialized = False
         self._position_last_updates: dict[tuple[str, int], int] = {}
@@ -117,16 +121,26 @@ class NativeFactsReader:
             raise EngineBoundaryError("native account base currency differs from episode currency")
         cache = engine.cache
         scope = {"instrument_id": self.instrument_id, "account_id": self.account_id}
+        from nautilus_trader.model import PriceType
+        raw_mark = cache.price(self.instrument_id, PriceType.MARK)
+        mark = Decimal(str(raw_mark.as_decimal())) if raw_mark is not None else None
+        if mark is not None and (not mark.is_finite() or mark <= 0):
+            raise EngineBoundaryError("invalid native mark")
         positions_all = tuple(cache.positions(**scope))
         if self.compact_history:
             # Do not call Position.to_dict() here: it materializes every fill,
             # adjustment, commission, venue order ID, and trade ID before the
             # caller can discard them. Long episodes would repeatedly allocate
             # the entire open-position history at every decision timestamp.
-            positions = tuple(_compact_position_record(p)
+            positions = tuple(_position_ledger_record(
+                p, raw_mark, compact=True, include_pnl=self.include_position_pnl,
+            )
                               for p in cache.positions_open(**scope))
         else:
-            positions = tuple(p.to_dict() for p in cache.positions_open(**scope))
+            positions = tuple(_position_ledger_record(
+                p, raw_mark, compact=False, include_pnl=self.include_position_pnl,
+            )
+                              for p in cache.positions_open(**scope))
         # Pending commands may be in-flight even when not yet classified open.
         # Union is by native client_order_id, never by array position.
         pending_by_id: dict[str, dict] = {}
@@ -202,11 +216,6 @@ class NativeFactsReader:
         native_margins = account.margins()
         margin_values = native_margins.values() if isinstance(native_margins, Mapping) else native_margins
         margins = tuple(m.to_dict() for m in margin_values)
-        from nautilus_trader.model import PriceType
-        raw_mark = cache.price(self.instrument_id, PriceType.MARK)
-        mark = Decimal(str(raw_mark.as_decimal())) if raw_mark is not None else None
-        if mark is not None and (not mark.is_finite() or mark <= 0):
-            raise EngineBoundaryError("invalid native mark")
         facts = NativeAccountFacts(
             equity, self.currency, positions, orders, account.to_dict(), events, fills,
             funding, all_orders, liquidation_orders, mark, margins, bool(native.is_stale),
@@ -309,6 +318,35 @@ def _compact_position_record(position: Any) -> dict:
         "realized_return": position.realized_return,
         "realized_pnl": str(realized_pnl) if realized_pnl is not None else None,
     }
+
+
+def _position_ledger_record(position: Any, last_price: Any, *, compact: bool,
+                            include_pnl: bool) -> dict:
+    """Retain Nautilus-calculated mark PnL and notional in the same native currencies."""
+    record = _compact_position_record(position) if compact else position.to_dict()
+    if not include_pnl:
+        return record
+    if last_price is None:
+        raise EngineBoundaryError("native mark required to read open-position PnL")
+    try:
+        unrealized = position.unrealized_pnl(last_price)
+        notional = position.notional_value(last_price)
+        unrealized_value = Decimal(str(unrealized.as_decimal()))
+        notional_value = Decimal(str(notional.as_decimal()))
+        unrealized_currency = unrealized.currency.code
+        notional_currency = notional.currency.code
+    except (TypeError, ValueError, ArithmeticError) as exc:
+        raise EngineBoundaryError("native position PnL/notional calculation failed") from exc
+    if (not unrealized_value.is_finite() or not notional_value.is_finite() or notional_value <= 0
+            or not unrealized_currency or not notional_currency):
+        raise EngineBoundaryError("native position PnL/notional facts are invalid")
+    record.update({
+        "unrealized_pnl": str(unrealized),
+        "unrealized_pnl_currency": unrealized_currency,
+        "notional_value": str(notional),
+        "notional_currency": notional_currency,
+    })
+    return record
 
 class EngineSession:
     """One immutable fold -> one native engine. No reset across folds/candidates."""

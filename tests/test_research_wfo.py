@@ -12,7 +12,7 @@ from rles_data.core import DAY_NS, MINUTE_NS, DataError, Window, digest
 from rles_data.features import Scaler
 from rles_data.folds import bind_fold_scaler, build_folds
 from rles_orchestrator.wfo_application import (
-    _candidate, _coverage, _dsr_trial_count_evidence, _with_window,
+    _candidate, _candidate_feature_identity, _coverage, _dsr_trial_count_evidence, _with_window,
 )
 from rles_research.wfo import FoldBoundaryError, FoldRequest, plan_folds, validate_l2_manifest
 
@@ -68,11 +68,29 @@ def test_wfo_candidate_deadband_is_applied_and_bound_to_its_environment(tmp_path
         tmp_path / "scheduled",
     )
     assert scheduled["environment"]["feature_profile"] == "causal_mtf_v3"
+    position_clocks = _candidate(
+        base, {"candidate_id": "ppo-native-position-clocks", "feature_profile": "causal_mtf_v4"},
+        tmp_path / "position-clocks",
+    )
+    assert position_clocks["environment"]["feature_profile"] == "causal_mtf_v4"
+    daily_features = _candidate(
+        base, {"candidate_id": "ppo-causal-mtf-v5", "feature_profile": "causal_mtf_v5"},
+        tmp_path / "daily-features",
+    )
+    assert daily_features["environment"]["feature_profile"] == "causal_mtf_v5"
 
     with pytest.raises(DataError, match="deadband is invalid"):
         _candidate(base, {"candidate_id": "bad", "deadband": "1.01"}, tmp_path / "bad")
     with pytest.raises(DataError, match="decimal string or integer"):
         _candidate(base, {"candidate_id": "float", "deadband": 0.05}, tmp_path / "float")
+
+
+def test_wfo_candidate_feature_identity_binds_v5_profile():
+    feature_hash = "a" * 64
+    v4 = _candidate_feature_identity("causal_mtf_v4", feature_hash)
+    v5 = _candidate_feature_identity("causal_mtf_v5", feature_hash)
+    assert v4 != v5
+    assert _candidate_feature_identity("causal_mtf_v5", feature_hash) == v5
 
 
 @pytest.mark.artifact_restore
@@ -428,7 +446,7 @@ def test_wfo_suspends_validation_protocol_on_keyboard_interrupt(tmp_path, monkey
     monkeypatch.setattr(registry, "start_query_intents", start_intents)
     monkeypatch.setattr(wfo_application, "load_rules", lambda _path: ())
     monkeypatch.setattr(wfo_application, "historical_feature_spec",
-                        lambda _ages: SimpleNamespace(max_lookback_ns=1, hash="b" * 64))
+                        lambda _ages, **_kwargs: SimpleNamespace(max_lookback_ns=1, hash="b" * 64))
     monkeypatch.setattr(wfo_application, "build_folds", lambda **_kwargs: [manifest])
     monkeypatch.setattr(wfo_application, "_require_window", lambda *_args: None)
     monkeypatch.setattr(wfo_application, "_source_tree_hash", lambda _root: "c" * 64)
@@ -497,7 +515,7 @@ def test_wfo_persists_validation_rejection_report_without_opening_test_or_holdou
     monkeypatch.setattr(wfo_application, "curated_source_identity",
                         lambda _path: _market_source_identity())
     monkeypatch.setattr(wfo_application, "load_rules", lambda _path: ())
-    def feature_spec(_ages, profile="legacy"):
+    def feature_spec(_ages, profile="legacy", **_kwargs):
         selected_hash = feature_hash if profile == "legacy" else "e" * 64
         return SimpleNamespace(max_lookback_ns=MINUTE_NS, hash=selected_hash)
 
@@ -613,7 +631,7 @@ def test_wfo_stress_validation_gate_blocks_candidates_before_test(tmp_path, monk
                         lambda _path: _market_source_identity())
     monkeypatch.setattr(wfo_application, "load_rules", lambda _path: ())
     monkeypatch.setattr(wfo_application, "historical_feature_spec",
-                        lambda _ages: SimpleNamespace(max_lookback_ns=MINUTE_NS, hash=feature_hash))
+                        lambda _ages, **_kwargs: SimpleNamespace(max_lookback_ns=MINUTE_NS, hash=feature_hash))
     monkeypatch.setattr(wfo_application, "build_folds", lambda **_kwargs: (manifest,))
     monkeypatch.setattr(wfo_application, "_require_window", lambda *_args: None)
     monkeypatch.setattr(wfo_application, "_source_tree_hash", lambda _root: "c" * 64)
@@ -673,7 +691,15 @@ def test_wfo_stress_validation_gate_blocks_candidates_before_test(tmp_path, monk
         })
         return {"output": str(run_output)}
 
-    def stress_loss(_run: dict, _bundle: Path, **_window: dict) -> dict:
+    def stress_loss(_run: dict, bundle: Path, *, validation_access, **window: dict) -> dict:
+        identity = validation_access.identity
+        assert identity["split"] == "validation"
+        assert identity["mode"] == "stress"
+        assert identity["candidate_id"] == _run["wfo_candidate_id"]
+        assert identity["fold_id"] == _run["wfo_fold_id"]
+        assert identity["start_ns"] == window["start_ns"]
+        assert identity["end_ns"] == window["end_ns"]
+        validation_access.consume(bundle_sha256=_verify_file(bundle / "bundle.json"))
         return {
             "execution_mode": "stress", "terminal_flat": True,
             "metrics": {"net_return": -0.001, "max_drawdown": 0.02, "turnover_ratio": 0.1},
@@ -719,7 +745,7 @@ def test_wfo_resumes_completed_validation_boundary_without_retraining_or_recharg
                         lambda _path: _market_source_identity())
     monkeypatch.setattr(wfo_application, "load_rules", lambda _path: ())
     monkeypatch.setattr(wfo_application, "historical_feature_spec",
-                        lambda _ages: SimpleNamespace(max_lookback_ns=MINUTE_NS, hash=feature_hash))
+                        lambda _ages, **_kwargs: SimpleNamespace(max_lookback_ns=MINUTE_NS, hash=feature_hash))
     monkeypatch.setattr(wfo_application, "build_folds", lambda **_kwargs: (manifest,))
     monkeypatch.setattr(wfo_application, "_require_window", lambda *_args: None)
     monkeypatch.setattr(wfo_application, "_source_tree_hash", lambda _root: "c" * 64)
@@ -757,8 +783,18 @@ def test_wfo_resumes_completed_validation_boundary_without_retraining_or_recharg
         "wfo": settings,
     }
     train_calls: list[str] = []
+    validation_accesses = []
 
-    def train_candidate(run: dict) -> dict:
+    def train_candidate(run: dict, *, evaluate: bool = True,
+                        validation_access=None) -> dict:
+        scope = None
+        if validation_access is not None:
+            scope = validation_access.identity
+            assert scope["split"] == run["evaluation"]["split"] == "validation"
+            assert scope["start_ns"] == run["evaluation"]["start_ns"]
+            assert scope["end_ns"] == run["evaluation"]["end_ns"]
+            assert scope["candidate_id"] == run["wfo_candidate_id"]
+            assert scope["fold_id"] == run["wfo_fold_id"]
         candidate_id = Path(run["output"]).name
         train_calls.append(candidate_id)
         run_output = Path(run["output"])
@@ -786,6 +822,11 @@ def test_wfo_resumes_completed_validation_boundary_without_retraining_or_recharg
                 "train_window_hash": digest(score_window), "sample_count": 10,
             }},
         })
+        if validation_access is not None:
+            validation_access.consume(bundle_sha256=bundle_hash)
+            assert validation_access.consumed
+            assert validation_access.identity["bundle_sha256"] == bundle_hash
+            validation_accesses.append(scope["query_id"])
         report_hash = _write_verified(run_output / "report.json", {
             "metrics": {
                 "net_return": -0.01, "max_drawdown": 0.01, "turnover_ratio": 0.1,
@@ -866,7 +907,7 @@ def test_wfo_resumes_after_persisted_fold_test_without_replaying_one_shot_test(
                         lambda _path: _market_source_identity())
     monkeypatch.setattr(wfo_application, "load_rules", lambda _path: ())
     monkeypatch.setattr(wfo_application, "historical_feature_spec",
-                        lambda _ages: SimpleNamespace(max_lookback_ns=MINUTE_NS, hash=feature_hash))
+                        lambda _ages, **_kwargs: SimpleNamespace(max_lookback_ns=MINUTE_NS, hash=feature_hash))
     monkeypatch.setattr(wfo_application, "build_folds", lambda **_kwargs: manifests)
     monkeypatch.setattr(wfo_application, "_require_window", lambda *_args: None)
     monkeypatch.setattr(wfo_application, "_source_tree_hash", lambda _root: "c" * 64)
@@ -986,9 +1027,18 @@ def test_wfo_resumes_after_persisted_fold_test_without_replaying_one_shot_test(
             }), encoding="utf-8")
         return {"output": str(run_output)}
 
-    def backtest_candidate(_run: dict, bundle_root: Path) -> dict:
+    def backtest_candidate(_run: dict, bundle_root: Path, *, evaluation_access) -> dict:
         stage = "holdout" if Path(bundle_root) == output / "final-retrain" else "test"
         backtest_calls.append(stage)
+        scope = evaluation_access.identity
+        assert scope["split"] == _run["evaluation"]["split"]
+        evaluation_access.consume(
+            bundle_sha=_verify_file(bundle_root / "bundle.json"),
+            split=_run["evaluation"]["split"],
+            start_ns=_run["evaluation"]["start_ns"],
+            end_ns=_run["evaluation"]["end_ns"],
+            market=scope["market"], mode=_run["evaluation"].get("mode", "base"),
+        )
         return account_report()
 
     baseline_calls = 0

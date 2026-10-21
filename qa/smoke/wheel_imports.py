@@ -11,7 +11,7 @@ import sys
 MODULES = (
     'rles_contracts', 'rles_data', 'rles_nautilus_adapter', 'rles_execution',
     'rles_risk', 'rles_gym_bridge', 'rles_rl_sb3', 'rles_es_evotorch',
-    'rles_orchestrator', 'rles_compute_runtime', 'rles_research', 'rles_world_model',
+    'rles_orchestrator', 'rles_compute_runtime', 'rles_research',
 )
 
 

@@ -1,5 +1,6 @@
 """Strict source event schema validation, shared by DTOs and Parquet ingestion."""
 from __future__ import annotations
+import re
 from typing import Any
 from .core import DataError, KINDS, MINUTE_NS, require_ns
 
@@ -71,6 +72,22 @@ def validate_payload(kind: str, p: dict[str, Any], ts: int) -> None:
         if ("reduce_only_min_notional_exempt" in p
                 and type(p["reduce_only_min_notional_exempt"]) is not bool):
             raise DataError("reduce_only_min_notional_exempt must be bool when provided")
+        if "contract_spec" in p:
+            spec = p["contract_spec"]
+            required = {"raw_symbol", "base_currency", "quote_currency", "settlement_currency",
+                        "is_inverse", "multiplier"}
+            if not isinstance(spec, dict) or set(spec) != required:
+                raise DataError("contract_spec must contain the complete frozen unit schema")
+            for key in ("raw_symbol", "base_currency", "quote_currency", "settlement_currency"):
+                value = spec[key]
+                if (not isinstance(value, str)
+                        or re.fullmatch(r"[A-Z0-9][A-Z0-9._/-]{0,31}", value) is None):
+                    raise DataError(f"contract_spec {key} is invalid")
+            if type(spec["is_inverse"]) is not bool:
+                raise DataError("contract_spec is_inverse must be bool")
+            _number(spec, "multiplier")
+            if not spec["is_inverse"] and spec["settlement_currency"] != spec["quote_currency"]:
+                raise DataError("linear contract must settle in its quote currency")
         for key in ("tick_size", "step_size", "min_notional", "min_qty"):
             _number(p, key)
         for key in ("maker_fee", "taker_fee", "initial_margin_rate", "maintenance_margin_rate"):

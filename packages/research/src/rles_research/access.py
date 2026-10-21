@@ -209,6 +209,23 @@ class ProjectResearchRegistry:
         with self._tx() as c:
             return self._reserve_record(c, key, expected)
 
+    def verify_reservation(self, *, key: str, token: str, owner: str, market: str,
+                           family: str, start_ns: int, end_ns: int,
+                           purpose: str, identity: dict) -> None:
+        """Verify an existing project reservation without opening data access."""
+        expected = self._scope(key=key, owner=owner, market=market, family=family,
+                               start_ns=start_ns, end_ns=end_ns, purpose=purpose,
+                               identity=identity)
+        if (purpose != "development" or not isinstance(token, str) or not token):
+            raise ResearchLockError("registered development reservation receipt required")
+        with self._tx() as c:
+            row = c.execute(
+                "SELECT owner,market,family,start_ns,end_ns,purpose,identity,token,state "
+                "FROM access WHERE access_key=?", (key,),
+            ).fetchone()
+        if row is None or row[:7] != expected or row[7] != token or row[8] != "recorded":
+            raise ResearchLockError("development reservation receipt is absent or mismatched")
+
     def reserve_query_intent(self, *, protocol_id: str, intent_id: str, owner: str,
                              market: str, family: str, start_ns: int, end_ns: int,
                              purpose: str, identity: dict) -> None:

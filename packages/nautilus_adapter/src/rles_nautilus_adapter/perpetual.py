@@ -6,6 +6,8 @@ from hashlib import sha256
 from types import SimpleNamespace
 from typing import Any, Callable, Mapping
 
+from rles_data.contracts import InstrumentContractSpec
+
 from .bootstrap import NativeBootConfiguration, PublicBacktestBuilder
 from .market_data import NativeMarketEventDecoder
 from .session import EngineBoundaryError, EngineSession, NativeFactsReader
@@ -76,11 +78,13 @@ def _effective_fee_rates(rule: Mapping[str, Any], execution: Any, mode: str) -> 
 
 
 def make_perpetual_session(*, rule: Mapping[str, Any], execution: Any, mode: str,
-                           starting_balance: Decimal, base_currency: str = "ETH",
-                           quote_currency: str = "USDT",
+                           starting_balance: Decimal, contract_spec: InstrumentContractSpec | None = None,
+                           leverage: Decimal = Decimal("1"),
+                           base_currency: str | None = None, quote_currency: str | None = None,
                            record_snapshot: Callable[[Any], None] | None = None,
                            record_fill_reference: Callable | None = None,
-                           compact_native_history: bool = False) -> EngineSession:
+                           compact_native_history: bool = False,
+                           include_position_pnl: bool = False) -> EngineSession:
     """Fresh native models/engine for one episode; caller supplies verified rules."""
     from nautilus_trader.execution import DefaultFillModel, MakerTakerFeeModel, StaticLatencyModel
     from nautilus_trader.model import (
@@ -94,19 +98,44 @@ def make_perpetual_session(*, rule: Mapping[str, Any], execution: Any, mode: str
     if not isinstance(price_exponent, int) or not isinstance(size_exponent, int):
         raise ValueError("finite decimal increments required")
     instrument_id = InstrumentId.from_str(rule["instrument"])
+    contract_spec = contract_spec or InstrumentContractSpec.from_rule_payload(
+        rule, instrument_id=str(instrument_id),
+    )
+    if contract_spec.instrument_id != str(instrument_id):
+        raise ValueError("contract spec instrument identity mismatch")
+    if type(leverage) is not Decimal or not leverage.is_finite() or leverage < 1:
+        raise ValueError("fixed account leverage must be a finite Decimal >= 1")
+    initial_margin_rate = Decimal(rule["initial_margin_rate"])
+    maintenance_margin_rate = Decimal(rule["maintenance_margin_rate"])
+    # Encode fixed account leverage in initial margin while preserving the
+    # dated maintenance rate. LeveragedMarginModel divides both rates by
+    # leverage, which both changes the exchange maintenance requirement and
+    # artificially caps leverage when maintenance_rate * leverage exceeds 1.
+    effective_initial_margin_rate = initial_margin_rate / leverage
+    if (initial_margin_rate <= 0
+            or effective_initial_margin_rate < maintenance_margin_rate):
+        raise ValueError("fixed leverage would reduce initial margin below dated maintenance margin")
+    if ((base_currency is not None and base_currency != contract_spec.base_currency)
+            or (quote_currency is not None and quote_currency != contract_spec.quote_currency)):
+        raise ValueError("explicit currencies differ from frozen contract spec")
+    if contract_spec.is_inverse:
+        raise ValueError("inverse perpetual replay is not certified by this adapter")
+    base_currency, quote_currency = contract_spec.base_currency, contract_spec.quote_currency
     quote = Currency.from_str(quote_currency)
+    settlement = Currency.from_str(contract_spec.settlement_currency)
     if str(instrument_id.venue) != "SIM" or starting_balance <= 0:
         raise ValueError("offline perpetual replay requires SIM venue and positive capital")
     instrument = CryptoPerpetual(
-        instrument_id=instrument_id, raw_symbol=Symbol(base_currency + quote_currency),
+        instrument_id=instrument_id, raw_symbol=Symbol(contract_spec.raw_symbol),
         base_currency=Currency.from_str(base_currency), quote_currency=quote,
-        settlement_currency=quote, is_inverse=False,
+        settlement_currency=settlement, is_inverse=contract_spec.is_inverse,
         price_precision=max(0, -price_exponent),
         size_precision=max(0, -size_exponent),
         price_increment=Price.from_str(str(price_tick)), size_increment=Quantity.from_str(str(size_step)),
+        multiplier=Quantity.from_str(str(contract_spec.multiplier)),
         min_quantity=Quantity.from_str(str(rule["min_qty"])),
         min_notional=Money.from_str(f"{rule['min_notional']} {quote_currency}"),
-        margin_init=Decimal(rule["initial_margin_rate"]), margin_maint=Decimal(rule["maintenance_margin_rate"]),
+        margin_init=effective_initial_margin_rate, margin_maint=maintenance_margin_rate,
         ts_event=rule["effective_ns"], ts_init=rule["effective_ns"],
     )
     latency, fill = execution.latency(mode), execution.fill(mode)
@@ -142,6 +171,7 @@ def make_perpetual_session(*, rule: Mapping[str, Any], execution: Any, mode: str
         venue_kwargs=({
             "venue": instrument_id.venue, "oms_type": OmsType.NETTING, "account_type": AccountType.MARGIN,
             "starting_balances": [Money.from_str(f"{starting_balance} {quote_currency}")], "base_currency": quote,
+            "default_leverage": leverage,
             "margin_model": StandardMarginModel(),
             "fee_model": MakerTakerFeeModel(maker_fee, taker_fee),
             "fill_model": (DefaultFillModel(prob_fill_on_limit=1.0, prob_slippage=0.0, random_seed=0)
@@ -158,6 +188,7 @@ def make_perpetual_session(*, rule: Mapping[str, Any], execution: Any, mode: str
     ))
 
     def snapshot_factory(**facts):
+        facts["contract_multiplier"] = contract_spec.multiplier
         snapshot = SimpleNamespace(**facts)
         if record_snapshot is not None:
             record_snapshot(snapshot)
@@ -170,7 +201,8 @@ def make_perpetual_session(*, rule: Mapping[str, Any], execution: Any, mode: str
         facts_reader=NativeFactsReader(account_id=AccountId.from_str("SIM-001"),
                                        instrument_id=instrument.id, currency=quote_currency,
                                        liquidation_capability=True,
-                                       compact_history=compact_native_history),
+                                       compact_history=compact_native_history,
+                                       include_position_pnl=include_position_pnl),
         contract_snapshot_factory=snapshot_factory,
         certified_barrier_protocol=EngineSession.BARRIER_PROTOCOL,
         prepare_submit=prepare_quote_reference if quote_execution else None,

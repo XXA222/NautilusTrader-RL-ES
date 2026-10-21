@@ -14,7 +14,8 @@ from pathlib import Path
 from typing import Any
 
 
-_SOURCE_ROOTS = ("packages", "tests", "configs", "ci", "packaging", "requirements", "qa/smoke")
+_SOURCE_ROOTS = ("packages", "tests", "configs", "ci", "packaging", "requirements",
+                 "qa/smoke")
 _ROOT_FILES = (
     ".gitattributes",
     ".python-version",
@@ -33,6 +34,7 @@ _ROOT_FILES = (
     "qa/m13_stage_contribution_20261017.py",
     "qa/analyze_m13_stage_contribution.py",
     "qa/research_trial_inventory.py",
+    "qa/td3_leverage_funding_diagnostic.py",
 )
 _EXCLUDED_PARTS = {"__pycache__", "build", "dist", ".pytest_cache", ".mypy_cache", ".tmp"}
 _EXCLUDED_SUFFIXES = {".pyc", ".pyo"}
@@ -57,8 +59,9 @@ def _source_files(root: Path) -> list[Path]:
                 part in _EXCLUDED_PARTS or part.startswith((".venv", "dist"))
                 for part in path.relative_to(root).parts
             )
-            if (path.is_file() and not path.is_symlink()
-                    and not generated_component
+            if generated_component:
+                continue
+            if (not path.is_symlink() and path.is_file()
                     and path.suffix not in _EXCLUDED_SUFFIXES
                     and ".egg-info" not in path.as_posix()):
                 files.add(path)
@@ -98,6 +101,37 @@ def _upstream_identity(root: Path) -> dict[str, Any] | None:
     }
 
 
+def _workspace_identity(root: Path) -> dict[str, Any] | None:
+    """Bind the manifest to the main checkout and report its working-tree state."""
+    def git(*args: str) -> bytes:
+        result = subprocess.run(
+            ["git", "-c", f"safe.directory={root}", "-C", str(root), *args],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        return result.stdout
+
+    try:
+        commit = git("rev-parse", "HEAD").decode("ascii").strip()
+        status = git("status", "--porcelain", "--untracked-files=all").decode(
+            "utf-8",
+        ).splitlines()
+        tracked_diff = git(
+            "diff", "HEAD", "--binary", "--", ".",
+            ":(exclude)qa/reports/source_manifest_current.json",
+        )
+    except (OSError, subprocess.CalledProcessError, UnicodeError):
+        return None
+    return {
+        "path": ".",
+        "commit": commit,
+        "tracked_worktree_clean": not any(not row.startswith("??") for row in status),
+        "status_entries": status,
+        "tracked_diff_sha256": _sha256(tracked_diff),
+    }
+
+
 def build_manifest(root: Path, *, generated_at_utc: str | None = None) -> dict[str, Any]:
     root = root.resolve()
     files = [
@@ -109,7 +143,8 @@ def build_manifest(root: Path, *, generated_at_utc: str | None = None) -> dict[s
         for path in _source_files(root)
     ]
     upstream = _upstream_identity(root)
-    identity = {"files": files, "upstream_nautilus": upstream}
+    workspace = _workspace_identity(root)
+    identity = {"files": files, "workspace_git": workspace, "upstream_nautilus": upstream}
     identity_sha = _sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode())
     installed = sorted(
         ({"name": dist.metadata.get("Name", ""), "version": dist.version} for dist in distributions()),
@@ -132,6 +167,7 @@ def build_manifest(root: Path, *, generated_at_utc: str | None = None) -> dict[s
             "installed_distributions": installed,
         },
         "upstream_nautilus": upstream,
+        "workspace_git": workspace,
         "files": files,
     }
 
@@ -153,6 +189,7 @@ def main(argv: list[str] | None = None) -> int:
         matches = (
             previous.get("source_identity_sha256") == fresh["source_identity_sha256"]
             and previous.get("files") == fresh["files"]
+            and previous.get("workspace_git") == fresh["workspace_git"]
             and previous.get("upstream_nautilus") == fresh["upstream_nautilus"]
         )
         if not matches:

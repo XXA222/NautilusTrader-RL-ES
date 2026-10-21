@@ -324,7 +324,17 @@ def test_native_episode_replay_restores_account_observation_reward_and_step_budg
             actual = restored.step(action)
             assert np.array_equal(expected[0], actual[0])
             assert expected[1:4] == actual[1:4]
-            assert expected[4] == actual[4]
+            def without_random_event_ids(value):
+                if isinstance(value, dict):
+                    return {key: without_random_event_ids(item) for key, item in value.items()
+                            if key != "event_id"}
+                if isinstance(value, tuple):
+                    return tuple(without_random_event_ids(item) for item in value)
+                if isinstance(value, list):
+                    return [without_random_event_ids(item) for item in value]
+                return value
+
+            assert without_random_event_ids(expected[4]) == without_random_event_ids(actual[4])
         assert actual[2] is True and actual[3] is False  # Settled end retains the restored budget.
     finally:
         continuous.close()

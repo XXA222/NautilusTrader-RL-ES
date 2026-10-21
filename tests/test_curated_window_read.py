@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from hashlib import sha256
 import json
+import os
 from pathlib import Path
 
 import pytest
 
 from rles_data.core import Availability, CuratedStore, DataError, Event, MINUTE_NS
 import rles_data.io as curated_io
-from rles_data.io import curated_source_identity, read_curated, read_curated_window, write_curated
+from rles_data.io import (curated_event_time_bounds, curated_source_identity,
+                             read_curated, read_curated_window, write_curated)
 
 
 def _store() -> CuratedStore:
@@ -30,6 +32,23 @@ def _store() -> CuratedStore:
 def _marker_sha(path: Path) -> str:
     marker = path.with_name(path.name + ".COMPLETED.json")
     return sha256(marker.read_bytes()).hexdigest()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows staged-file publication contract")
+def test_staged_file_publication_works_without_hardlink_permission(monkeypatch,
+                                                                   tmp_path: Path) -> None:
+    target = tmp_path / "immutable.bin"
+
+    def deny_hardlink(*_args, **_kwargs):
+        raise PermissionError("hard links are unavailable")
+
+    monkeypatch.setattr(curated_io.os, "link", deny_hardlink)
+    curated_io._publish_new(target, b"first")
+
+    assert target.read_bytes() == b"first"
+    with pytest.raises(FileExistsError):
+        curated_io._publish_new(target, b"second")
+    assert target.read_bytes() == b"first"
 
 
 def test_curated_source_identity_reads_marker_without_decoding_payload(monkeypatch,
@@ -149,3 +168,14 @@ def test_curated_window_rejects_unisolated_legacy_before_decoding(
             expected_marker_sha256=_marker_sha(path),
             allow_legacy_isolated_snapshot=True,
         )
+
+
+def test_curated_event_bounds_use_footer_without_decoding_rows(monkeypatch, tmp_path):
+    path = tmp_path / "market.parquet"
+    write_curated(path, _store(), row_group_size=2)
+    monkeypatch.setattr(curated_io, "read_curated",
+                        lambda *_args: pytest.fail("full payload reader was called"))
+
+    bounds = curated_event_time_bounds(path)
+
+    assert bounds == {"min_ts_event_ns": MINUTE_NS, "max_ts_event_ns": 4 * MINUTE_NS}

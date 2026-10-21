@@ -14,7 +14,7 @@ from .io import (
     write_curated, write_fact_json,
 )
 from .quality import GapAction, GapDecision, RuleTimeline, decide_gap
-from .contracts import to_market_event
+from .contracts import InstrumentContractSpec, to_market_event
 from .binance_archive import import_day, import_range
 
 __all__ = [
@@ -25,6 +25,6 @@ __all__ = [
     "make_features", "bind_fold_scaler", "build_folds", "build_folds_from_spec", "ingest_parquet",
     "ingest_arrow", "read_curated", "store_raw", "store_raw_file", "validate_payload", "write_curated",
     "write_fact_json", "decide_gap",
-    "to_market_event",
+    "InstrumentContractSpec", "to_market_event",
     "import_day", "import_range",
 ]

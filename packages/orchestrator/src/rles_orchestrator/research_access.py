@@ -1,5 +1,6 @@
 """Resolve the shared project ledger; never derive it from an experiment output."""
 from contextvars import ContextVar
+from dataclasses import dataclass
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -7,7 +8,7 @@ from time import time_ns
 import uuid
 
 from rles_data.core import CuratedStore, DataError, digest, require_hash, require_ns
-from rles_data.io import read_curated_window
+from rles_data.io import curated_source_identity, read_curated_window
 from rles_research.access import ProjectResearchRegistry
 
 
@@ -53,7 +54,7 @@ def owner_for(config: dict) -> str:
 
 
 def record_development(config: dict, window: dict, *, label: str,
-                       source_identity: dict | None = None) -> None:
+                       source_identity: dict | None = None) -> str:
     owner = owner_for(config)
     identity = {"window": window, "environment": config["environment"], "label": label}
     if source_identity is not None:
@@ -67,7 +68,7 @@ def record_development(config: dict, window: dict, *, label: str,
             require_hash(source_identity[name])
         identity["source_identity"] = dict(source_identity)
     registry = project_registry()
-    registry.reserve(
+    return registry.reserve(
         # Keep the reservation key stable when an existing owner retries the
         # same named scope. The immutable identity comparison must see a changed
         # source/config and reject it; hashing the identity into the key would
@@ -79,10 +80,27 @@ def record_development(config: dict, window: dict, *, label: str,
     )
 
 
-def read_registered_train_window(config: dict, window: dict, *, marker_sha256: str,
-                                  label: str,
-                                  allow_legacy_isolated_snapshot: bool = False) -> CuratedStore:
-    """Reserve a development interval before decoding a scoped curated snapshot."""
+@dataclass(frozen=True)
+class RegisteredTrainRead:
+    """Scoped curated payload and the immutable registry/source receipt."""
+    store: CuratedStore
+    reservation_id: str
+    reservation_key: str
+    owner: str
+    source_identity: dict
+    reservation_identity: dict
+    market: str
+    family: str
+    start_ns: int
+    end_ns: int
+    split: str = "train"
+    registered_before_read: bool = True
+
+
+def read_registered_train_window_with_receipt(
+        config: dict, window: dict, *, marker_sha256: str, label: str,
+        allow_legacy_isolated_snapshot: bool = False) -> RegisteredTrainRead:
+    """Reserve exact source identity before decoding a scoped curated snapshot."""
     environment = config.get("environment")
     if (not isinstance(environment, dict) or not isinstance(environment.get("market_path"), str)
             or not isinstance(window, dict) or set(window) != {"start_ns", "end_ns"}
@@ -109,14 +127,66 @@ def read_registered_train_window(config: dict, window: dict, *, marker_sha256: s
         "curated_read_mode": ("whole_snapshot_isolated_v1"
                               if allow_legacy_isolated_snapshot else "row_group_scoped_v1"),
     }}
-    # The reservation includes the exact marker receipt and occurs before the
+    source_identity = curated_source_identity(environment["market_path"])
+    if source_identity["marker_sha256"] != marker_sha256:
+        raise DataError("curated marker identity changed before registered Train read")
+    # The reservation binds the exact immutable source identity before the
     # low-level reader opens any row-group payload.
-    record_development(scope_config, scope, label=label)
-    return read_curated_window(
+    reservation_identity = {
+        "window": scope, "environment": scope_config["environment"],
+        "label": label, "source_identity": source_identity,
+    }
+    owner = owner_for(scope_config)
+    reservation_key = digest([owner, label, scope, scope_config["environment"]])
+    reservation_id = record_development(
+        scope_config, scope, label=label, source_identity=source_identity,
+    )
+    store = read_curated_window(
         environment["market_path"], scope["start_ns"], scope["end_ns"],
         expected_marker_sha256=marker_sha256,
         allow_legacy_isolated_snapshot=allow_legacy_isolated_snapshot,
     )
+    return RegisteredTrainRead(
+        store=store, reservation_id=reservation_id,
+        reservation_key=reservation_key, owner=owner,
+        source_identity=source_identity, reservation_identity=reservation_identity,
+        market=market_key(environment["instrument"]), family=DATA_FAMILY,
+        start_ns=start_ns, end_ns=end_ns,
+    )
+
+
+def verify_registered_train_read(read: object) -> bool:
+    """Recheck the read receipt against the project registry's recorded token."""
+    if not isinstance(read, RegisteredTrainRead):
+        raise DataError("typed registered Train read receipt required")
+    scope = read.reservation_identity.get("window")
+    environment = read.reservation_identity.get("environment")
+    if (not isinstance(scope, dict)
+            or scope != {"start_ns": read.start_ns, "end_ns": read.end_ns}
+            or read.reservation_identity.get("source_identity") != read.source_identity
+            or not isinstance(environment, dict)
+            or environment.get("curated_marker_sha256")
+            != read.source_identity.get("marker_sha256")
+            or not isinstance(read.reservation_identity.get("label"), str)
+            or not read.reservation_identity["label"].startswith("train-")):
+        raise DataError("registered Train receipt fields do not match its frozen source/scope")
+    project_registry().verify_reservation(
+        key=read.reservation_key, token=read.reservation_id,
+        owner=read.owner, market=read.market, family=read.family,
+        start_ns=read.start_ns, end_ns=read.end_ns, purpose="development",
+        identity=read.reservation_identity,
+    )
+    return True
+
+
+def read_registered_train_window(config: dict, window: dict, *, marker_sha256: str,
+                                  label: str,
+                                  allow_legacy_isolated_snapshot: bool = False) -> CuratedStore:
+    """Compatibility wrapper; new imitation collectors should retain the receipt."""
+    return read_registered_train_window_with_receipt(
+        config, window, marker_sha256=marker_sha256, label=label,
+        allow_legacy_isolated_snapshot=allow_legacy_isolated_snapshot,
+    ).store
 
 
 def begin_application_trial(*, run_id: str, recipe: dict, feature_sha: str,

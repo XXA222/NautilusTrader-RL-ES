@@ -476,6 +476,41 @@ def test_linear_reconciliation_checks_open_marked_equity_and_rejects_mismatch() 
                                 rounding_per_event=Decimal(0))
 
 
+def test_native_metrics_reconcile_non_unit_linear_contract_multiplier() -> None:
+    multiplier = Decimal("0.001")
+    opening = {"event_id": "open-m", "client_order_id": "open-order", "order_side": "BUY",
+               "last_qty": "10", "last_px": "100", "commission": "0.01 USDT"}
+    closing = {"event_id": "close-m", "client_order_id": "close-order", "order_side": "SELL",
+               "last_qty": "10", "last_px": "102", "commission": "0.0102 USDT"}
+    position = {"side": "LONG", "quantity": "10", "multiplier": str(multiplier),
+                "is_inverse": False, "settlement_currency": "USDT"}
+
+    def snapshot(ts, equity, fills=(), positions=(), mark=None):
+        return SimpleNamespace(
+            decision_ts_ns=ts, equity=Decimal(equity), currency="USDT", fills=fills,
+            funding=(), positions=positions, orders=(), mark=mark,
+            contract_multiplier=multiplier,
+        )
+
+    snapshots = (
+        snapshot(1, "1000"),
+        snapshot(11, "1000", (opening,), (position,), Decimal("101")),
+        snapshot(21, "999.9998", (closing,)),
+    )
+    report = native_report(
+        snapshots,
+        fill_references={"open-order": Decimal("99"), "close-order": Decimal("103")},
+        sample_interval_ns=10,
+        linear_equity_rounding=Decimal(0),
+    )
+
+    assert sum(row["turnover_notional"] for row in report["account_rows"]) == pytest.approx(2.02)
+    assert report["metrics"]["total_slippage_cost"] == pytest.approx(0.02)
+    assert report["equity_reconciliation"]["max_abs_residual"] == "0"
+    assert report["equity_reconciliation"]["checked_open_barriers"] == 1
+    assert report["equity_reconciliation"]["rows"][1]["price_pnl_at_mark"] == "0.010"
+
+
 def test_linear_liquidation_facts_and_terminal_equity_reconcile_together() -> None:
     opened = {"event_id": "open-1", "client_order_id": "open-order", "order_side": "BUY",
               "last_qty": "1", "last_px": "100", "commission": "0.1 USDT"}

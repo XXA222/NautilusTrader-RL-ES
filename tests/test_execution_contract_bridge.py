@@ -24,6 +24,27 @@ from rles_risk import HardRiskConfig, HardRiskGuard
 pytestmark = pytest.mark.contracts
 
 
+def test_configured_high_leverage_keeps_incomplete_data_at_one_x() -> None:
+    guard = HardRiskGuard(HardRiskConfig(
+        Decimal("100000"), Decimal("3"), Decimal("0"), Decimal("1"), Decimal("1"),
+        require_mark=False, require_funding=False,
+    ))
+    verified = guard.apply(
+        Decimal("1"), budget_notional=Decimal("50000"), equity=Decimal("10000"),
+        free_margin=Decimal("10000"), current_notional=Decimal(0),
+        mark_available=True, funding_available=True, liquidation_capability=True,
+        data_quality_grade="DQ-A",
+    )
+    incomplete = guard.apply(
+        Decimal("1"), budget_notional=Decimal("50000"), equity=Decimal("10000"),
+        free_margin=Decimal("10000"), current_notional=Decimal(0),
+        mark_available=True, funding_available=True, liquidation_capability=True,
+        data_quality_grade="DQ-C",
+    )
+    assert verified.adjusted == Decimal("0.6")
+    assert incomplete.adjusted == Decimal("0.2")
+
+
 def _planner() -> TargetQuantityPlanner:
     config = ResolvedExecutionConfig(
         schema_version="0.4.0", deadband=Decimal("0"),
@@ -260,6 +281,76 @@ def test_hard_cap_reduction_bypasses_deadband(sign, requested) -> None:
     assert decision.action == "SUBMIT"
     assert decision.reason == "hard_risk_reduce"
     assert decision.delta_qty == Decimal("-0.01") * sign
+
+
+def test_hard_cap_reserves_entry_cost_to_preserve_post_fill_leverage() -> None:
+    guard = HardRiskGuard(HardRiskConfig(
+        Decimal("100000"), Decimal("10"), Decimal("0"), Decimal("1"), Decimal("1"),
+    ))
+    risk = guard.apply(
+        Decimal("1"), budget_notional=Decimal("100000"), equity=Decimal("10000"),
+        free_margin=Decimal("10000"), current_notional=Decimal("0"),
+        mark_available=True, funding_available=True, liquidation_capability=True,
+        data_quality_grade="DQ-B", estimated_cost_rate=Decimal("0.0005"),
+    )
+    projected_notional = risk.adjusted * Decimal("100000")
+    projected_equity = Decimal("10000") - projected_notional * Decimal("0.0005")
+    assert projected_notional <= Decimal("10") * projected_equity
+    assert risk.adjusted < Decimal("1")
+
+
+@pytest.mark.parametrize("current_sign", [Decimal("1"), Decimal("-1")])
+def test_hard_risk_reversal_flattens_before_opening_opposite_side(current_sign) -> None:
+    budget = Decimal("100000")
+    current_notional = Decimal("50000") * current_sign
+    risk = HardRiskGuard(HardRiskConfig(
+        Decimal("100000"), Decimal("10"), Decimal("0"), Decimal("1"), Decimal("1"),
+    )).apply(
+        -current_sign * Decimal("0.5"), budget_notional=budget, equity=Decimal("10000"),
+        free_margin=Decimal("10000"), current_notional=current_notional,
+        mark_available=True, funding_available=True, liquidation_capability=True,
+        data_quality_grade="DQ-B", estimated_cost_rate=Decimal("0.0005"),
+    )
+    assert risk.adjusted == 0
+    assert risk.force_reduce
+
+    current_qty = Decimal("0.025") * current_sign
+    decision = TargetQuantityPlanner(_planner().config).plan(
+        decision_id="reverse-only-after-flat", instrument=InstrumentRules(
+            "ETHUSDT-PERP.SIM", Decimal("0.001"), Decimal("0.001"), Decimal("20"), Decimal("1")),
+        target_exposure=risk.adjusted, risk_budget_notional=budget,
+        equity=Decimal("10000"), mark_price=Decimal("2000"), current_qty=current_qty,
+        pending=(), force_reduce=risk.force_reduce,
+    )
+    assert decision.action == "SUBMIT"
+    assert decision.reason == "hard_risk_reduce"
+    assert decision.delta_qty == -current_qty
+
+
+def test_incompatible_cost_estimate_blocks_opening_but_keeps_flatten_available() -> None:
+    budget = Decimal("100000")
+    guard = HardRiskGuard(HardRiskConfig(
+        Decimal("100000"), Decimal("10"), Decimal("0"), Decimal("1"), Decimal("1"),
+    ))
+    risk = guard.apply(
+        Decimal("0.5"), budget_notional=budget, equity=Decimal("10000"),
+        free_margin=Decimal("10000"), current_notional=Decimal("50000"),
+        mark_available=True, funding_available=True, liquidation_capability=True,
+        data_quality_grade="DQ-B", estimated_cost_rate=Decimal("0.11"),
+    )
+    assert risk.adjusted == 0
+    assert risk.force_reduce
+
+    decision = TargetQuantityPlanner(_planner().config).plan(
+        decision_id="cost-stress-flatten", instrument=InstrumentRules(
+            "ETHUSDT-PERP.SIM", Decimal("0.001"), Decimal("0.001"), Decimal("20"), Decimal("1")),
+        target_exposure=risk.adjusted, risk_budget_notional=budget,
+        equity=Decimal("10000"), mark_price=Decimal("2000"), current_qty=Decimal("0.025"),
+        pending=(), force_reduce=risk.force_reduce,
+    )
+    assert decision.action == "SUBMIT"
+    assert decision.reason == "hard_risk_reduce"
+    assert decision.delta_qty == Decimal("-0.025")
 
 
 @pytest.mark.parametrize("requested", ["0", "0.02"])

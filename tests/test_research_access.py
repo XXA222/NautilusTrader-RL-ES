@@ -69,6 +69,38 @@ def test_wfo_development_reservation_freezes_curated_source_identity_before_payl
         )
 
 
+def test_registered_train_receipt_verifier_rechecks_project_registry_token(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    registry = ProjectResearchRegistry(tmp_path / "project.sqlite")
+    monkeypatch.setattr(research_access, "project_registry", lambda: registry)
+    source_identity = {
+        "schema_version": "0.4.1", "snapshot_hash": "a" * 64,
+        "file_sha256": "b" * 64, "marker_sha256": "c" * 64, "events": 5,
+    }
+    window = {"start_ns": 100, "end_ns": 200}
+    environment = {"instrument": "ETHUSDT-PERP.BINANCE", "curated_marker_sha256": "c" * 64}
+    identity = {"window": window, "environment": environment,
+                "label": "train-inner", "source_identity": source_identity}
+    owner, market, family, key = "train-owner", "ETHUSDT", "perpetual-market-v1", "train-key"
+    token = registry.reserve(
+        key=key, owner=owner, market=market, family=family,
+        start_ns=100, end_ns=200, purpose="development", identity=identity,
+    )
+    from rles_orchestrator.research_access import RegisteredTrainRead
+    read = RegisteredTrainRead(
+        store=object(), reservation_id=token, reservation_key=key, owner=owner,
+        source_identity=source_identity, reservation_identity=identity,
+        market=market, family=family, start_ns=100, end_ns=200,
+    )
+
+    assert research_access.verify_registered_train_read(read) is True
+    with pytest.raises(ResearchLockError, match="absent or mismatched"):
+        research_access.verify_registered_train_read(
+            replace(read, reservation_id="forged-reservation-token"),
+        )
+
+
 @pytest.mark.parametrize("field,value,message", [
     ("snapshot_hash", "not-a-sha", "SHA-256"),
     ("events", 0, "source identity"),

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
+import json
 from typing import Any, Callable
 
 import gymnasium as gym
@@ -82,18 +83,161 @@ def _terminal_settlement_facts(before: Any, after: Any, *, policy_exposure: floa
     }
 
 
+def _event_timestamp(record: dict) -> int:
+    value = record.get("ts_event", record.get("ts_event_ns"))
+    if type(value) is not int or value < 0:
+        raise ContractNotReady("native ledger event lacks an integer event timestamp")
+    return value
+
+
+def _native_transition_facts(snapshot: Any, *, after_ns: int,
+                             settlement_ns: int,
+                             fill_references: dict[str, Decimal] | None = None) -> dict[str, Any]:
+    """Extract only native fill/Funding facts that occurred in this transition."""
+    fills = tuple(dict(row) for row in snapshot.fills
+                  if after_ns < _event_timestamp(row) <= settlement_ns)
+    funding = tuple(dict(row) for row in snapshot.funding
+                    if after_ns < _event_timestamp(row) <= settlement_ns)
+    currency = snapshot.currency
+    fees: dict[str, Decimal] = {}
+    funding_by_currency: dict[str, Decimal] = {}
+    references = (getattr(snapshot, "fill_references", {}) if fill_references is None
+                  else fill_references)
+    multiplier = Decimal(str(getattr(snapshot, "contract_multiplier", "1")))
+    if not multiplier.is_finite() or multiplier <= 0:
+        raise ContractNotReady("native contract multiplier is invalid")
+    slippage = Decimal(0)
+    slippage_complete = True
+    enriched_fills = []
+    for fill in fills:
+        client_order_id = fill.get("client_order_id")
+        if not isinstance(client_order_id, str) or not client_order_id:
+            raise ContractNotReady("native fill lacks a client order identity")
+        commission_parts = str(fill.get("commission", "")).split()
+        if len(commission_parts) != 2:
+            raise ContractNotReady("native fill commission lacks a currency")
+        try:
+            amount = Decimal(commission_parts[0])
+            quantity = Decimal(str(fill["last_qty"]))
+            price = Decimal(str(fill["last_px"]))
+        except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
+            raise ContractNotReady("native fill economics are invalid") from exc
+        parsed_fee_currency = commission_parts[1]
+        if not amount.is_finite() or amount < 0 or not parsed_fee_currency:
+            raise ContractNotReady("native commission must be finite and nonnegative")
+        fees[parsed_fee_currency] = fees.get(parsed_fee_currency, Decimal(0)) + amount
+        reference = references.get(client_order_id)
+        row = dict(fill)
+        if reference is None:
+            slippage_complete = False
+            row["reference_price"] = None
+            row["slippage_cost"] = None
+        else:
+            reference = Decimal(str(reference))
+            if not reference.is_finite() or reference <= 0 or quantity <= 0 or price <= 0:
+                raise ContractNotReady("native fill reference/economics are invalid")
+            side = fill.get("order_side")
+            if side not in {"BUY", "SELL"}:
+                raise ContractNotReady("native fill side is invalid")
+            sign = Decimal(1) if side == "BUY" else Decimal(-1)
+            cost = (price - reference) * quantity * sign * multiplier
+            slippage += cost
+            row["reference_price"] = str(reference)
+            row["slippage_cost"] = str(cost)
+        enriched_fills.append(row)
+    for adjustment in funding:
+        parts = str(adjustment.get("pnl_change", "")).split()
+        if len(parts) != 2:
+            raise ContractNotReady("native Funding fact lacks a currency")
+        try:
+            amount = Decimal(parts[0])
+        except (InvalidOperation, ValueError) as exc:
+            raise ContractNotReady("native Funding amount is invalid") from exc
+        if not amount.is_finite() or not parts[1]:
+            raise ContractNotReady("native Funding amount/currency is invalid")
+        funding_by_currency[parts[1]] = funding_by_currency.get(parts[1], Decimal(0)) + amount
+    fee_total: Decimal | None = (next(iter(fees.values())) if len(fees) == 1
+                                 else Decimal(0) if not fees else None)
+    fee_currency: str | None = (next(iter(fees)) if len(fees) == 1
+                                else currency if not fees else None)
+    funding_total: Decimal | None = (
+        next(iter(funding_by_currency.values())) if len(funding_by_currency) == 1
+        else Decimal(0) if not funding_by_currency else None
+    )
+    funding_currency: str | None = (
+        next(iter(funding_by_currency)) if len(funding_by_currency) == 1
+        else currency if not funding_by_currency else None
+    )
+    return {
+        "native_fills": tuple(enriched_fills), "native_funding": funding,
+        "fees": None if fee_total is None else str(fee_total), "fee_currency": fee_currency,
+        "funding_signed": None if funding_total is None else str(funding_total),
+        "funding_currency": funding_currency,
+        "slippage_cost": str(slippage) if slippage_complete else None,
+        "slippage_currency": currency,
+    }
+
+
+def _native_order_status_rows(snapshot: Any, order_ids: set[str]) -> tuple[dict[str, str], ...]:
+    """Return exact native status/quantity fields for the orders in one barrier."""
+    if not order_ids:
+        return ()
+    indexed: dict[str, dict[str, str]] = {}
+    for source_name in ("all_orders", "orders"):
+        rows = getattr(snapshot, source_name, None)
+        if not isinstance(rows, tuple):
+            raise ContractNotReady(f"native {source_name} status facts are missing")
+        for row in rows:
+            if not isinstance(row, dict):
+                raise ContractNotReady("native order status fact is not a mapping")
+            identity = row.get("client_order_id")
+            if identity is not None and (not isinstance(identity, str) or not identity.strip()):
+                raise ContractNotReady("native order status has an invalid client identity")
+            if identity not in order_ids:
+                continue
+            status = row.get("status")
+            fields = {
+                "client_order_id": str(identity),
+                "status": str(status),
+                "side": str(row.get("side", "")),
+                "quantity": str(row.get("quantity", "")),
+                "filled_qty": str(row.get("filled_qty", "")),
+            }
+            if any(not value for key, value in fields.items() if key != "filled_qty"):
+                raise ContractNotReady("native order status identity/quantity fields are incomplete")
+            previous = indexed.get(str(identity))
+            if previous is not None and any(previous[key] != fields[key] for key in fields):
+                raise ContractNotReady("native open/all-order status facts conflict")
+            indexed[str(identity)] = fields
+    missing = order_ids - indexed.keys()
+    if missing:
+        raise ContractNotReady(f"native status missing for referenced orders: {sorted(missing)}")
+    return tuple(indexed[identity] for identity in sorted(indexed))
+
+
+def _native_order_status_receipt(before: tuple[dict[str, str], ...],
+                                 after: tuple[dict[str, str], ...]) -> str:
+    encoded = json.dumps({"before": before, "after": after}, sort_keys=True,
+                         separators=(",", ":"), allow_nan=False).encode("utf-8")
+    return sha256(encoded).hexdigest()
+
+
 class NautilusBarrierEnv(gym.Env):
     metadata = {"render_modes": []}
 
     def __init__(self, *, episode_factory: Callable[..., Any], observation_builder: ObservationBuilder,
                  reward_config: RewardConfig, max_steps: int,
-                 transition_hash: str | None = None) -> None:
+                 transition_hash: str | None = None,
+                 fill_reference_reader: Callable[[], dict[str, Decimal]] | None = None) -> None:
         super().__init__()
         if not callable(episode_factory) or not isinstance(observation_builder, ObservationBuilder):
             raise TypeError("reviewed episode factory and observation builder required")
         if not isinstance(reward_config, RewardConfig) or type(max_steps) is not int or max_steps <= 0:
             raise ValueError("finite reward config and positive max steps required")
         self._factory = episode_factory
+        if fill_reference_reader is not None and not callable(fill_reference_reader):
+            raise TypeError("optional native fill reference reader must be callable")
+        self._fill_reference_reader = fill_reference_reader
         if transition_hash is not None and re.fullmatch(r"[0-9a-f]{64}", transition_hash) is None:
             raise ValueError("frozen transition hash must be SHA-256 lowercase hex")
         self._transition_hash = transition_hash
@@ -167,6 +311,29 @@ class NautilusBarrierEnv(gym.Env):
             return replay.to_dict()
         except (AttributeError, TypeError, ValueError) as exc:
             raise ContractNotReady("episode replay is not serializable") from exc
+
+    def set_leverage(self, leverage: Decimal | str | int) -> np.ndarray:
+        """Rebuild the native session at the current flat, order-free barrier."""
+        if self._episode is None or self._done:
+            raise ContractNotReady("leverage change requires a live decision barrier")
+        if type(leverage) is bool or isinstance(leverage, float):
+            raise TypeError("leverage must be a Decimal, integer, or decimal string")
+        try:
+            value = leverage if type(leverage) is Decimal else Decimal(str(leverage))
+        except Exception as exc:
+            raise ValueError("leverage must be a finite Decimal >= 1") from exc
+        change = getattr(self._episode, "set_leverage", None)
+        if not callable(change):
+            raise ContractNotReady("episode does not support safe session rebuilds")
+        try:
+            snapshot = change(value)
+        except BaseException:
+            if getattr(self._episode, "_state", None) == "CLOSED":
+                self._done = True
+            raise
+        observation = self._observation(snapshot)
+        self._last_observation = observation.copy()
+        return observation
 
     def _observation(self, snapshot: Any, *, guard_intervention: float = 0.0) -> np.ndarray:
         if self._episode is None:
@@ -303,6 +470,49 @@ class NautilusBarrierEnv(gym.Env):
                 # This is a finite, settled trading task, including max_steps.
                 # No account/position continues past this terminal observation.
                 terminated, truncated = True, False
+            try:
+                native_transition_facts = _native_transition_facts(
+                    snapshot, after_ns=previous_ts,
+                    settlement_ns=snapshot.decision_ts_ns,
+                    fill_references=(None if self._fill_reference_reader is None
+                                     else dict(self._fill_reference_reader())),
+                )
+                native_transition_facts_error = None
+            except ContractNotReady as exc:
+                native_transition_facts = {}
+                native_transition_facts_error = str(exc)
+            policy_fills = tuple(
+                row for row in result.snapshot.fills
+                if previous_ts < _event_timestamp(row) <= result.decision_ts_ns
+            )
+            policy_fill_order_ids = {
+                str(row["client_order_id"]) for row in policy_fills
+                if isinstance(row.get("client_order_id"), str)
+            }
+            policy_submit_id = (
+                "RLES-" + sha256(plan.idempotency_key.encode("utf-8")).hexdigest()
+                if plan.action == "SUBMIT" else None
+            )
+            pending_order_ids_after_policy = tuple(sorted(
+                str(order["client_order_id"])
+                for order in result.snapshot.orders
+                if isinstance(order.get("client_order_id"), str)
+            ))
+            relevant_policy_order_ids = (
+                set(pending_order_ids) | set(pending_order_ids_after_policy)
+                | set(related_order_ids) | policy_fill_order_ids
+            )
+            if policy_submit_id is not None:
+                relevant_policy_order_ids.add(policy_submit_id)
+            order_statuses_before = _native_order_status_rows(
+                pending_snapshot, set(pending_order_ids),
+            )
+            order_statuses_after = _native_order_status_rows(
+                result.snapshot, relevant_policy_order_ids,
+            )
+            native_order_status_receipt = _native_order_status_receipt(
+                order_statuses_before, order_statuses_after,
+            )
             breakdown = self._reward.calculate(native_equity=float(snapshot.equity), guard_intervention=guard)
             terminated = terminated or breakdown.insolvency
             transition_inputs = self._episode.observation_inputs(
@@ -353,7 +563,23 @@ class NautilusBarrierEnv(gym.Env):
                 "decision_ts_ns": result.decision_ts_ns,
                 "terminal_settled": bool(terminated or truncated),
                 "terminal_value_semantics": "finite_settlement_no_bootstrap_v1",
+                "decision_before_ns": previous_ts,
+                "settlement_after_ns": snapshot.decision_ts_ns,
+                "equity_before": str(policy_equity_before),
+                "equity_after": str(snapshot.equity),
+                "terminal_cause": (
+                    "insolvency" if breakdown.insolvency or float(result.snapshot.equity) <= 0
+                    else "time_limit" if bool(result.truncated or self._step_count >= self._max_steps)
+                    else "forced_close" if terminal_settlement is not None else "other"
+                ),
+                **native_transition_facts,
                 "policy_executed_action_pre_terminal": result.executed_action,
+                "native_pending_order_ids_before": pending_order_ids,
+                "native_pending_order_ids_after": pending_order_ids_after_policy,
+                "native_policy_fills": tuple(dict(row) for row in policy_fills),
+                "native_order_statuses_before": order_statuses_before,
+                "native_order_statuses_after": order_statuses_after,
+                "native_order_status_receipt": native_order_status_receipt,
                 "episode_window": dict(self._episode.episode_window),
                 "market_features": {
                     name: float(feature.value)
@@ -363,6 +589,8 @@ class NautilusBarrierEnv(gym.Env):
                     transition_inputs["account"].get("net_exposure", 0.0)
                 ),
             }
+            if native_transition_facts_error is not None:
+                info["native_transition_facts_error"] = native_transition_facts_error
             if terminal_settlement is not None:
                 info["terminal_settlement"] = terminal_settlement
             if terminated or truncated:

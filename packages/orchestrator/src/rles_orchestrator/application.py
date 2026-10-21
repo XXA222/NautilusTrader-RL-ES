@@ -40,7 +40,9 @@ from rles_rl_sb3.config import PolicySpec, RLConfig, SeedSpec, TransitionFingerp
 from .es_stage import ESStageExecutor
 from .diagnostics import ExecutionAttribution
 from .research_access import (begin_application_trial, finish_application_trial,
-                              read_registered_train_window, record_development, market_key)
+                              read_registered_train_window,
+                              read_registered_train_window_with_receipt,
+                              RegisteredTrainRead, record_development, market_key)
 from .rl_stage import RLStageExecutor
 from .workflow import Orchestrator, ProviderBackedStageRunner, Route, RunSpec, STAGES, StageBudget
 
@@ -391,7 +393,7 @@ def _training_factory_recipe_hash(config: dict) -> str:
     return digest(recipe)
 
 
-def _read_registered_train_store(config: dict) -> CuratedStore:
+def _read_registered_train_receipt(config: dict) -> RegisteredTrainRead:
     access = config.get("train_data_access")
     if (not isinstance(access, dict)
             or set(access) not in ({"start_ns", "end_ns", "marker_sha256", "label"},
@@ -405,15 +407,19 @@ def _read_registered_train_store(config: dict) -> CuratedStore:
                 "row_group_scoped_v1", "whole_snapshot_isolated_v1",
             }):
         raise DataError("invalid scoped Train data access configuration")
-    market_store = read_registered_train_window(
+    return read_registered_train_window_with_receipt(
         config, {"start_ns": access["start_ns"], "end_ns": access["end_ns"]},
         marker_sha256=access["marker_sha256"], label=access["label"],
         allow_legacy_isolated_snapshot=(
             access.get("source_mode", "row_group_scoped_v1") == "whole_snapshot_isolated_v1"
         ),
     )
+
+
+def _read_registered_train_store(config: dict) -> CuratedStore:
+    receipt = _read_registered_train_receipt(config)
     rules = load_rules(config["environment"]["rules_path"])
-    return CuratedStore((*market_store.events, *rules))
+    return CuratedStore((*receipt.store.events, *rules))
 
 
 def prepare(config: dict, *, fit_scaler: bool = True, scaler: Scaler | None = None,
@@ -428,7 +434,9 @@ def prepare(config: dict, *, fit_scaler: bool = True, scaler: Scaler | None = No
     if access is None:
         record_development(config, config["environment"], label="train")
     else:
-        prepared_store = _read_registered_train_store(config)
+        registered_read = _read_registered_train_receipt(config)
+        rules = load_rules(config["environment"]["rules_path"])
+        prepared_store = CuratedStore((*registered_read.store.events, *rules))
     factory = HistoricalEnvironmentFactory(**{
         **config["environment"], "split": "train_inner", "fit_scaler": fit_scaler,
         "scaler": scaler, "compact_report_snapshots": compact_report_snapshots,
@@ -541,7 +549,10 @@ def rollout(factory: HistoricalEnvironmentFactory, predict, *, seed: int,
             episode_count: int = 1, episode_steps: int | None = None,
             reset_options: dict | None = None,
             include_account_rows: bool = True,
-            include_execution_trace: bool = False) -> tuple[dict, np.ndarray]:
+            include_execution_trace: bool = False,
+            predictor_factory: Callable[[Any, dict], Any] | None = None,
+            decision_observer: Callable[[Any, np.ndarray, dict, bool, bool], None] | None = None
+            ) -> tuple[dict, np.ndarray]:
     if type(include_execution_trace) is not bool:
         raise DataError("include_execution_trace must be Boolean")
     env_options: dict[str, Any] = {"soft_multipliers": soft_parameters}
@@ -573,12 +584,17 @@ def rollout(factory: HistoricalEnvironmentFactory, predict, *, seed: int,
         reset_result = (env.reset(seed=seed) if reset_options is None
                         else env.reset(seed=seed, options=reset_options))
         observation, reset_info = reset_result
+        active_predict = predict if predictor_factory is None else predictor_factory(env, reset_info)
+        if not callable(active_predict):
+            raise DataError("rollout predictor factory must return a callable")
         if collect_observations:
             observations.append(observation.copy())
         while True:
             decision_observation = observation
-            action = np.asarray(predict(observation[None, :]), dtype=np.float32).reshape(1)
+            action = np.asarray(active_predict(observation[None, :]), dtype=np.float32).reshape(1)
             observation, _, terminated, truncated, info = env.step(action)
+            if decision_observer is not None:
+                decision_observer(env, decision_observation, info, bool(terminated), bool(truncated))
             if collect_observations:
                 observations.append(observation.copy())
             terminal_settlement = info.get("terminal_settlement")
@@ -968,8 +984,9 @@ def _training_actor_spec(training: HistoricalEnvironmentFactory, hidden: tuple[i
     reference_mark = Decimal(str(marks[-1].payload["price"]))
     money_fields = {"account.equity", "account.peak_equity", "account.cash", "account.free_margin",
                     "account.initial_margin", "account.maintenance_margin", "account.unrealized_pnl"}
+    quantity_scale = reference_mark * training.contract_spec.multiplier / training.budget
     scales = tuple(float(1 / training.capital) if name in money_fields else
-                   float(reference_mark / training.budget) if name == "account.position_quantity" else 1.0
+                   float(quantity_scale) if name == "account.position_quantity" else 1.0
                    for name in training.schema.names)
     return ActorGenomeSpec(training.schema.names, hidden, version=2, input_scale=scales)
 
@@ -1795,11 +1812,6 @@ def digest_schema(values: dict) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    arguments = list(sys.argv[1:] if argv is None else argv)
-    if arguments[:1] == ["world-model"]:
-        from rles_world_model.cli import main as world_model_main
-
-        return world_model_main(arguments[1:])
     parser = argparse.ArgumentParser(prog="rles", description=__doc__)
     parser.add_argument("command", choices=("market-audit", "validate", "train", "backtest", "diagnose-train", "wfo"))
     parser.add_argument("--config", required=True)

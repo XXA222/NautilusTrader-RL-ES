@@ -110,7 +110,7 @@ def test_native_linear_perpetual_liquidation_reconciles_to_flat_equity():
     from types import SimpleNamespace
 
     from nautilus_trader.model import (
-        CryptoPerpetual, InstrumentId, MarkPriceUpdate, StandardMarginModel, Symbol, Venue,
+        CryptoPerpetual, InstrumentId, LeveragedMarginModel, MarkPriceUpdate, Symbol, Venue,
     )
     from rles_research.native_metrics import native_report, reconcile_linear_equity
 
@@ -158,7 +158,7 @@ def test_native_linear_perpetual_liquidation_reconciles_to_flat_equity():
         venue=Venue.from_str("SIM"), oms_type=OmsType.NETTING,
         account_type=AccountType.MARGIN, base_currency=usdt,
         starting_balances=[Money.from_str("10000 USDT")],
-        margin_model=StandardMarginModel(),
+        default_leverage=Decimal("2"), margin_model=LeveragedMarginModel(),
         fee_model=MakerTakerFeeModel(Decimal("0.001"), Decimal("0.001")),
         liquidation_enabled=True, liquidation_trigger_ratio=1.0,
         liquidation_cancel_open_orders=True,
@@ -174,6 +174,8 @@ def test_native_linear_perpetual_liquidation_reconciles_to_flat_equity():
             engine.run(streaming=True)
         initial = reader.read(engine, 1)
         assert initial.equity == Decimal("10000")
+        account = engine.portfolio.account(account_id=AccountId.from_str("SIM-001"))
+        assert account.leverage(instrument.id) == Decimal("2")
 
         with redirect_stdout(io.StringIO()):
             engine.clear_data()

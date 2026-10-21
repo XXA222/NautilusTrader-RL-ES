@@ -1,0 +1,261 @@
+{
+  "schema": "rles.td3-leverage-funding-diagnostic-result.v1",
+  "registration_sha256": "f769763fdbb27f55f792fc87bbc4422edb260af3c152a1bd8e4730d7006e642c",
+  "source_bundle_sha256": "14283d71dc1970f71cfdc35ed8a3e8022b65f93921418c3b88577bb9038b8320",
+  "source_actor_hash": "1aa440a94435d3546d221170cb944fc727bf78c42656f01aac891bda23d216fa",
+  "source_config_sha256": "9658fb4df4ea9c47728ef4d76bb7e2d0c2e4f3ed8a5be6d4a15e11dee784ab57",
+  "market_source_identity": {
+    "schema_version": "0.4.0",
+    "snapshot_hash": "db78040301b4840dcaa59f2cbebc96da231760b65a650cd33569dfcbaa10c3e9",
+    "file_sha256": "d4bfb69209f3ca86f6f9a473aaf20d0db2c0225a6fd72a6e2eafd92ca466b68b",
+    "marker_sha256": "43c258c0b232d74b004e818e439b703d07e6ffed66746106937500e39de15a62",
+    "events": 90722
+  },
+  "scenario_rule_classification": "NON_HISTORICAL_SCENARIO_ONLY",
+  "training_window": {
+    "start_ns": 1704067500000000000,
+    "end_ns": 1704110400000000000,
+    "training_end_ns": 1704110400000000000
+  },
+  "evaluation_window": {
+    "start_ns": 1704110400000000000,
+    "end_ns": 1704153660000000000,
+    "previously_used_validation": true,
+    "independent_evaluation": false
+  },
+  "access_receipt": {
+    "reservation_key": "8f820cb545c797671292743834f8fa507939ec57fb5821d32b0951ccea8f768c",
+    "registered_before_read": true,
+    "source_mode": "whole_snapshot_isolated_v1",
+    "registered_source_window": {
+      "start_ns": 1704067200000000000,
+      "end_ns": 1704153660000000000
+    }
+  },
+  "paired_scenarios": [
+    {
+      "leverage_cap": "1",
+      "risk_budget_notional": "100000",
+      "max_notional": "100000",
+      "metrics": {
+        "net_return": -0.2639943301840011,
+        "max_drawdown": 0.2639943301840011,
+        "sharpe": -955.412206075329,
+        "sortino": -589.3866025879067,
+        "mean_period_return": -0.0004261676590792,
+        "std_period_return": 0.0003234938747996132,
+        "undefined_metrics": [],
+        "value_at_risk": 0.00097032650647777,
+        "conditional_value_at_risk": 0.0011879339434294662,
+        "observations": 719,
+        "turnover_ratio": 608.6514115549805,
+        "total_fee": 2618.2137412500006,
+        "total_funding": -3.48757059,
+        "total_slippage_cost": 18.060299999999987,
+        "gross_return_before_reported_costs": -1.8168999999899517e-05
+      },
+      "fee_total_usdt": 2618.2137412500006,
+      "funding_total_usdt": -3.48757059,
+      "slippage_total_usdt": 18.060299999999987,
+      "fills": 765,
+      "funding_payments": [
+        {
+          "type": "PositionAdjusted",
+          "trader_id": "TRADER-001",
+          "strategy_id": "Strategy-000",
+          "instrument_id": "ETHUSDT-PERP.SIM",
+          "position_id": "ETHUSDT-PERP.SIM-Strategy-000",
+          "account_id": "SIM-001",
+          "adjustment_type": "FUNDING",
+          "quantity_change": null,
+          "pnl_change": "-3.48757059 USDT",
+          "reason": "funding_settlement:fdd9155a-9fbb-40fc-b610-fdb999a1367f",
+          "event_id": "a4aadd92-0450-4348-9c94-ce594d09d2f4",
+          "ts_event": 1704124800001000001,
+          "ts_init": 1704124800001000001
+        }
+      ],
+      "funding_settlement_facts": [
+        {
+          "event_id": "binance:5a71469b0b363886:funding_settlement:3",
+          "settlement_ns": 1704124800000000000,
+          "rate": "0.00043011",
+          "settlement_mark": "2316.72581439",
+          "settlement_mark_event_id": "binance:28fe8ccc692246e6:mark:960",
+          "settlement_mark_event_ns": 1704124800000000000,
+          "fills_before_settlement": 256,
+          "signed_position_quantity_before_settlement": "3.500",
+          "native_payment_usdt": "-3.48757059",
+          "linear_formula_payment_usdt": "-3.4875642900954901500",
+          "formula_residual_usdt": "-0.0000062999045098500",
+          "native_payment_event_id": "a4aadd92-0450-4348-9c94-ce594d09d2f4"
+        },
+        {
+          "event_id": "binance:5a71469b0b363886:funding_settlement:4",
+          "settlement_ns": 1704153600000000000,
+          "rate": "0.00053505",
+          "settlement_mark": "2354.63000000",
+          "settlement_mark_event_id": "binance:28fe8ccc692246e6:mark:1440",
+          "settlement_mark_event_ns": 1704153600000000000,
+          "fills_before_settlement": 765,
+          "signed_position_quantity_before_settlement": "0.000",
+          "native_payment_usdt": "0",
+          "linear_formula_payment_usdt": "0E-19",
+          "formula_residual_usdt": "0E-19",
+          "native_payment_event_id": null
+        }
+      ],
+      "liquidations": 0,
+      "liquidations_observed": true,
+      "liquidation_orders": [],
+      "risk_guard_interventions": 718,
+      "exposure": {
+        "maximum_gross_leverage": 1.0029267083086477,
+        "native_snapshot_count": 721
+      },
+      "dataset_quality": {
+        "grade": "DQ-B",
+        "findings": [
+          "conservative_availability"
+        ],
+        "missing_minutes": 0,
+        "counts": {
+          "best_quote": 43200,
+          "funding_settlement": 2,
+          "funding_update": 2,
+          "index": 721,
+          "instrument_rule": 0,
+          "mark": 721,
+          "ohlcv_1m": 721,
+          "trade_flow_1s": 0
+        },
+        "snapshot_hash": "23e3cf9adbbf0ab3d145dc9d12d6589da7326123ecb2afba2078f21fe3b31ff4",
+        "start_ns": 1704110400000000000,
+        "end_ns": 1704153660000000000,
+        "duplicate_count": 0,
+        "conflict_count": 0,
+        "verified_coverage": [
+          "funding_settlement",
+          "funding_update",
+          "index",
+          "instrument_rule",
+          "mark"
+        ]
+      },
+      "evaluation_scope": {
+        "split": "train_inner",
+        "formal": false,
+        "start_ns": 1704110400000000000,
+        "end_ns": 1704153660000000000,
+        "project_access_key": "8f820cb545c797671292743834f8fa507939ec57fb5821d32b0951ccea8f768c"
+      }
+    },
+    {
+      "leverage_cap": "10",
+      "risk_budget_notional": "100000",
+      "max_notional": "100000",
+      "metrics": {
+        "net_return": -0.3739863679849994,
+        "max_drawdown": 0.3739863679849994,
+        "sharpe": -941.1636254858184,
+        "sortino": -585.2497949399442,
+        "mean_period_return": -0.0006510989912256434,
+        "std_period_return": 0.000501716341569299,
+        "undefined_metrics": [],
+        "value_at_risk": 0.001473589890694127,
+        "conditional_value_at_risk": 0.0019236838698203794,
+        "observations": 719,
+        "turnover_ratio": 988.7803500154223,
+        "total_fee": 3935.810399850002,
+        "total_funding": 0.0,
+        "total_slippage_cost": -13.220229999999999,
+        "gross_return_before_reported_costs": 0.018272649000000175
+      },
+      "fee_total_usdt": 3935.810399850002,
+      "funding_total_usdt": 0.0,
+      "slippage_total_usdt": -13.220229999999999,
+      "fills": 793,
+      "funding_payments": [],
+      "funding_settlement_facts": [
+        {
+          "event_id": "binance:5a71469b0b363886:funding_settlement:3",
+          "settlement_ns": 1704124800000000000,
+          "rate": "0.00043011",
+          "settlement_mark": "2316.72581439",
+          "settlement_mark_event_id": "binance:28fe8ccc692246e6:mark:960",
+          "settlement_mark_event_ns": 1704124800000000000,
+          "fills_before_settlement": 262,
+          "signed_position_quantity_before_settlement": "0.000",
+          "native_payment_usdt": "0",
+          "linear_formula_payment_usdt": "0E-19",
+          "formula_residual_usdt": "0E-19",
+          "native_payment_event_id": null
+        },
+        {
+          "event_id": "binance:5a71469b0b363886:funding_settlement:4",
+          "settlement_ns": 1704153600000000000,
+          "rate": "0.00053505",
+          "settlement_mark": "2354.63000000",
+          "settlement_mark_event_id": "binance:28fe8ccc692246e6:mark:1440",
+          "settlement_mark_event_ns": 1704153600000000000,
+          "fills_before_settlement": 793,
+          "signed_position_quantity_before_settlement": "0.000",
+          "native_payment_usdt": "0",
+          "linear_formula_payment_usdt": "0E-19",
+          "formula_residual_usdt": "0E-19",
+          "native_payment_event_id": null
+        }
+      ],
+      "liquidations": 0,
+      "liquidations_observed": true,
+      "liquidation_orders": [],
+      "risk_guard_interventions": 718,
+      "exposure": {
+        "maximum_gross_leverage": 2.1111480954567168,
+        "native_snapshot_count": 721
+      },
+      "dataset_quality": {
+        "grade": "DQ-B",
+        "findings": [
+          "conservative_availability"
+        ],
+        "missing_minutes": 0,
+        "counts": {
+          "best_quote": 43200,
+          "funding_settlement": 2,
+          "funding_update": 2,
+          "index": 721,
+          "instrument_rule": 0,
+          "mark": 721,
+          "ohlcv_1m": 721,
+          "trade_flow_1s": 0
+        },
+        "snapshot_hash": "23e3cf9adbbf0ab3d145dc9d12d6589da7326123ecb2afba2078f21fe3b31ff4",
+        "start_ns": 1704110400000000000,
+        "end_ns": 1704153660000000000,
+        "duplicate_count": 0,
+        "conflict_count": 0,
+        "verified_coverage": [
+          "funding_settlement",
+          "funding_update",
+          "index",
+          "instrument_rule",
+          "mark"
+        ]
+      },
+      "evaluation_scope": {
+        "split": "train_inner",
+        "formal": false,
+        "start_ns": 1704110400000000000,
+        "end_ns": 1704153660000000000,
+        "project_access_key": "8f820cb545c797671292743834f8fa507939ec57fb5821d32b0951ccea8f768c"
+      }
+    }
+  ],
+  "limitations": [
+    "The frozen TD3 actor was trained at 1x with a 1000 USDT notional budget; 10x is an out-of-distribution fixed-actor exposure-cap scenario.",
+    "The evaluation interval was previously used as Validation; this replay is not independent evidence and is for development diagnosis only.",
+    "Initial/maintenance margin, fees and liquidation settings are scenario assumptions, not authenticated historical Binance tiers.",
+    "The paired 1x control shares the 100000 USDT risk budget and maximum notional; only the account leverage cap changes between paired scenarios."
+  ]
+}

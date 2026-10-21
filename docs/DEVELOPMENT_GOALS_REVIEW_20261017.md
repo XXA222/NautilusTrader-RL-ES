@@ -20,9 +20,19 @@
 
 ## 连续任务队列与续做游标
 
-**当前工程续做：M0.1 原生金额解析及 M0.2 分发覆盖/manifest 范围缺口已修复。** A08 现在拒绝会被旧逗号清理逻辑改写的畸形 native money token；研究指标与原生清算回归 **83 passed**。分发 smoke 覆盖当前构建中的全部 **12 个 RLES 包**，包括 `rles_world_model`；source manifest 排除嵌套 `.tmp`、`.venv*` 和 `dist*` 生成目录。2026-10-18 又修复 GitHub 工作流硬编码 11 wheels 的问题，改为按 workspace 包数核对；wheel smoke 现逐项导入 12 包声明的 7 个 console/plugin entry points 并检查归档来源。当前 Windows 默认 selector **669 passed、1 CUDA-only skipped、102 deselected、46 warnings**，Ruff 和 `mypy packages qa`（148 files）通过；12 wheels/12 sdists 构建及 wheel manifest **all_match=true**，隔离 wheel/entry-point smoke 通过。M0.1 的真实现金流真实性与完整性、M0.2 clean Hosted Linux/Windows CI、M1.2 独立 Validation、M1.3 兼容阶段输入、M2.3 真实深度、M3.2 新授权独立覆盖仍受各自外部门禁限制；继续寻找其它已具备条件的代码缺口。
+## 2026-10-21 杠杆与项目范围复核
+
+按用户指示，RouteB `rles-world-model` 包及其 CLI/研究接线、配置、QA、测试和 wheel smoke 注册已移除；当前 workspace 有 **11** 个 RLES 包。杠杆风险限额现预留按执行配方估计的费用与滑点，避免成交成本降低权益后超出配置杠杆。杠杆仍只允许空仓且无订单时调整，随后重建 session 并重放。
+
+当前本机验证：Windows 全量测试 **788 passed、5 CUDA-only skipped、53 dependency warnings**；Ruff 通过；MyPy **141 files** 通过。HardRiskGuard→Planner 反转先平仓和极端费用估计必须允许强制平仓的回归均通过。历史工厂对跨有效 instrument-rule 版本的窗口本就采取 fail-closed，本轮补了回归覆盖并删除重复检查。Windows staged-file 发布对硬链接的限制也已修复并纳入该全量回归。当前 11 wheels/11 sdists 已重建，wheel manifest `all_match=True`，隔离导入及 entry-point smoke 通过。冻结策略 1x/10x 配对复放记录在 `docs/audit_evidence/20261020/td3_10x_funding/summary_r4.json`；它复用了已消费的 Validation 窗口并使用 scenario-only 交易规则，不能视为独立表现或历史规则证明。分档保证金/清算经济、真实账户现金流、Hosted CI 与 Hedge Mode 仍是未闭合门禁。
+
+待所有者核验的本地候选清理项：忽略的环境（`.venv*`、`.rles-python`）、生成缓存/构建结果（`.tmp`、`.artifacts`、`dist*`、`.uv-cache`、`.mypy_cache`、`.pytest_cache`、`.ruff_cache`）、`.codex-remote-attachments`，以及独立检出的上游 `nautilus_trader/`。未删除它们，因为可能保留复现输入或当前需要的依赖检出；详见最新开发执行记录。
+
+**历史进度（2026-10-18，已被 2026-10-21 的项目范围复核 supersede）：** M0.1 原生金额解析及 M0.2 分发覆盖/manifest 范围当时已修复。该时点的 workspace 有 **12 个 RLES 包**，包括 `rles_world_model`；Windows 默认 selector 为 **669 passed、1 CUDA-only skipped、102 deselected、46 warnings**，Ruff 和 MyPy（148 files）通过，12 wheels/12 sdists 的 manifest 为 `all_match=true`。这些是 2026-10-18 的历史结果，不描述当前包数或当前测试状态。2026-10-21 按用户指示移除了 RouteB `rles_world_model` 包及接线；当前包数、最新本机验证和未关闭门禁以本文上方“2026-10-21 杠杆与项目范围复核”和 [当前目标入口](DEVELOPMENT_GOAL_CURRENT.md) 为准。该时点记录的 M0/M1/M2/M3/M4 外部依赖状态同样只代表当时进度；后续更新见开发执行记录。
 
 **最新工程进展：N04 supervised GPU quota 正常释放和后代保护回归已通过。** Windows Job 的 PID 清单同时含有 Python launcher parent 和实际 owner；现在释放前先确认共享 GPU 内核锁已空闲，并确认 Job 内其它活动 PID 都是 owner 的祖先，活动应用后代会令 quota release 拒绝。`tests/test_resource_recovery.py tests/test_compute_device.py` **27 passed**，Ruff 与 Windows MyPy 通过。N04 仍不构成 VRAM 上限或跨 OS-user/平台认证；下一项仍按任务表选择依赖已满足的真实代码缺口。
+
+**M4.1/A09 合成规格闭环已完成。** BTC/ETH/SOL 的原生 Funding/equity parity 和最小数量/名义额拒单原因现有确定性覆盖；Planner 对被 dated minimum 清零的目标返回明确的 `below minimum executable quantity/notional`。low-capacity QA 从已验证数据集里的 dated rule 解析 base currency，不再依赖 ETH 默认值。相关原生集成组 **199 passed**，Ruff、Windows MyPy **148 files** 和 `git diff --check` 通过。剩余 M0/M1/M2/M3/M4.1 部分状态均对应真实现金流、clean Hosted CI、历史访问/试验记录、独立 Validation/新授权样本、兼容阶段工件、真实深度或可信标的规则；索引与执行记录已列明恢复条件。M4.2 仍为 deferred，不在双向持仓/保证金/清算/Funding 合同明确前开放。此轮余项复核未发现可以在现有授权与依赖下继续实施的工程包。
 
 **M2.2/A12 决策级费用归因补全：** 执行轨迹此前把 native fill commission 中币种后的金额直接相加；现在按币种汇总，单币种仍提供兼容 `fee` 与 `fee_currency`，多币种只提供 `fees_by_currency` 并将无单位总额置为 `null`。费用格式、非有限值及混合币种回归通过；完整 `tests/test_historical_factory.py` **59 passed**，Ruff 与 Windows MyPy 通过。没有读取市场或账户数据；本改动修复报告单位语义，不扩展或认证多标的能力。
 
@@ -58,8 +68,8 @@ M1.1 已通过实现等价验收。M1.2 默认保留旧 `FitnessSpec`；新 `con
 | 12 / M3.2 | A13 | PARTIAL（代码诊断通过，研究覆盖待授权） | 训练 diagnostics 分列 interaction samples、唯一决策 timestamp/revisit fraction、Episode overlap pair 和固定 volatility/trend/Funding regime bins；本轮 overlap pair 统计改为 O(n log n) sweep/heap，57 项 RL/native Episode 回归通过。Stage60 v4 使用复用 Train 日期；历史 `recorded` 标签不构成新读授权，独立市场覆盖仍缺合法的新授权协议 |
 | 13 / M3.3 | A14 | PASS（Train-inner 诊断）/ 未晋级 | 36 份冻结 Base/Stress 报告完成 51,732 步逐决策归因、固定状态分组和区块 bootstrap；权益对账通过，零 Validation/Test/Holdout 查询；冻结 RL 全部落入 deadband、无实际敞口/成交，未通过跨窗口基线优势门槛 |
 | 14 / M3.4 | A11/A14 | CONDITIONAL | 上述研究门禁及合格独立窗口；先小预算筛查，再决定路线扩张 |
-| 15 / M4.1 | A09 | DEFERRED | 当前 ETH NETTING 经济主线完成后开展通用标的元数据 |
-| 16 / M4.2 | A09 | DEFERRED | M4.1 及独立保证金/双向持仓合同与金标准数据 |
+| 15 / M4.1 | A09 | PARTIAL（合约单位实现与合成 BTC/ETH/SOL 回归通过；真实规则/费用认证待外部证据） | 规则事件可携带哈希绑定的显式 `contract_spec`；非 legacy 标的缺规格即拒绝。历史工厂、特征单位、观测账户币种、数量规划及原生线性永续消费该规格；手续费、Funding、成交额、滑点和权益对账统一使用冻结乘数。BTC/ETH/SOL 同构小样本覆盖不同乘数、数量精度、最小数量/名义额、Funding 费用币种及平仓/持仓权益单位；ETH golden 保持回归通过。该合成工程范围完成，真实交易所规则/费用与经济认证仍受 M0.1/M2.3 等门禁约束 |
+| 16 / M4.2 | A09 | PARTIAL / Hedge Mode DEFERRED | linear NETTING 固定杠杆和空仓重建已实现；Hedge Mode 及真实分档保证金/清算/Funding 合同与金标准数据待定义 |
 
 依赖只约束依赖它的工作：远程 CI、历史规则或真实深度阻塞时，可以继续不依赖该证据的工程修复与明确标注的 Train-inner 诊断。M1 的 P0 工作不必等待真实深度或正式 Holdout。依赖未满足时不得开启正式晋级实验，也不得把可推进的工程项一起搁置。
 
@@ -111,9 +121,9 @@ M1.1 已通过实现等价验收。M1.2 默认保留旧 `FitnessSpec`；新 `con
 
 ## 里程碑 M4：能力扩展（最后实施）
 
-**M4.1 标的元数据（A09，P2）**。将 ETH 数量单位等硬编码替换为从已验证 InstrumentRule/合约规格导出的元数据，先保持单资产 NETTING 行为；BTC/ETH/SOL 用同构小样本验证数量精度、最小名义额、Funding 与权益单位。验收为切换标的和规则不修改源码常量，原 ETH 金标准不变。
+**M4.1 标的元数据（A09，P2）**。将 ETH 数量单位等硬编码替换为从已验证 InstrumentRule/合约规格导出的元数据，先保持单资产 NETTING 行为；BTC/ETH/SOL 用同构小样本验证数量精度、最小名义额、Funding 与权益单位。`instrument_rule.contract_spec` 固定原始符号、base/quote/settlement currency、inverse 标记和 multiplier；非 legacy 标的缺规格时失败关闭。历史工厂、特征/账户单位、native `CryptoPerpetual`、Planner 数量和名义敞口、native turnover/slippage/cash-flow/equity reconciliation 均消费该规格。BTC/ETH/SOL 的合成 Funding/equity parity、非单位 multiplier 原生金标准，以及三币种最小数量/名义额拒绝用例已通过；低于规则的目标现返回准确 NOOP 原因。QA 特征分析也从该窗口的 dated rule 解析 base currency。工程验收通过；真实规则、费用/Funding 与多标的经济认证仍待可信来源。Inverse adapter 与 Hedge Mode 未认证，M4.2 保持延后。
 
-**M4.2 Hedge Mode 与杠杆认证（A09，P2）**。独立设计双向持仓账本、保证金与维持保证金、Mark 强平触发及 Funding/撮合事件的金标准回放。验收前保留 `>1` 倍杠杆限制和 NETTING 能力说明；不通过删除限制来宣称支持杠杆或独立多空。
+**M4.2 Hedge Mode 与杠杆认证（A09，P2）**。linear NETTING 回放支持原生 `>1x` 杠杆，准入限 `DQ-A/B`；缺少证据时仍封顶 `1x`。杠杆固定在配置/episode 中，活动 episode 只能在空仓、无挂单的决策屏障调用 `env.set_leverage()`，该操作以当前权益作为新 session 起始余额，在相同市场时点重建引擎并更新风险上限。Nautilus 内置 leveraged 模型会同时缩放初始与维持保证金，造成高倍数边界与真实 dated 维持率失真；现改用 `StandardMarginModel`，将初始率设为 `dated_initial_rate / leverage`、维持率保持 dated rule 原值，并拒绝初始率低于维持率的组合。因此可支持 2x 以上，但上限由规则两项保证金率共同决定。3x session rebuild、实际线性持仓维持保证金、replay v3 与 checkpoint 恢复回归通过。Nautilus 2.0.0rc6 每进程只允许一个活动引擎，因此切换时先关闭旧引擎；若新 session 创建失败，episode 关闭并需 reset。此实现不认证真实交易所分档保证金经济。仍需独立设计双向持仓账本及真实保证金、维持保证金、Mark 强平和 Funding/撮合金标准；Hedge Mode 保持未认证。
 
 ## 跨轮次续做规则
 

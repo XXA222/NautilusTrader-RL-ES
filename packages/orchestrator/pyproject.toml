@@ -14,7 +14,7 @@ dependencies = ["rles-contracts>=0.4.0.dev0,<0.5.0", "numpy>=2.0"]
 rles = "rles_orchestrator.application:main"
 
 [project.optional-dependencies]
-application = ["rles-gym-bridge[historical]>=0.4.0.dev2,<0.5.0", "rles-rl-sb3>=0.4.1,<0.5.0", "rles-es-evotorch>=0.4.0.dev2,<0.5.0", "rles-research>=0.4.1,<0.5.0", "rles-compute-runtime>=0.4.1,<0.5.0", "rles-world-model>=0.1.0.dev0,<0.2.0"]
+application = ["rles-gym-bridge[historical]>=0.4.0.dev2,<0.5.0", "rles-rl-sb3>=0.4.1,<0.5.0", "rles-es-evotorch>=0.4.0.dev2,<0.5.0", "rles-research>=0.4.1,<0.5.0", "rles-compute-runtime>=0.4.1,<0.5.0"]
 native-es-worker = ["rles-es-evotorch>=0.4.0.dev2,<0.5.0", "rles-gym-bridge>=0.4.0.dev2,<0.5.0", "rles-rl-sb3>=0.4.1,<0.5.0"]
 native-es-runtime = ["rles-es-evotorch>=0.4.0.dev2,<0.5.0", "rles-compute-runtime>=0.4.1,<0.5.0", "rles-research>=0.4.1,<0.5.0"]
 native-rl-runtime = ["rles-rl-sb3>=0.4.1,<0.5.0", "rles-es-evotorch>=0.4.0.dev2,<0.5.0"]

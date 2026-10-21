@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import asdict, replace
 from hashlib import sha256
 import json
+import inspect
 import math
 from pathlib import Path
 import re
@@ -47,6 +48,44 @@ _CANDIDATE_FIELDS = {
     "seed", "hidden_layers", "normalize_observation", "hyperparameters", "distillation",
     "deadband", "es_input_scaling", "feature_profile", "zero_target_policy",
 }
+
+
+class WFOValidationAccess:
+    """Per-candidate capability for a predeclared Validation WFO query.
+
+    The callback must consume it before constructing a Validation reader.
+    The WFO ledger query is rechecked at consumption and the caller verifies
+    consumption before accepting the callback's bundle/report artifacts.
+    """
+
+    def __init__(self, identity: dict, verify: Callable[[], None]):
+        self._identity = dict(identity)
+        self._verify = verify
+        self._bundle_sha256: str | None = None
+
+    @property
+    def identity(self) -> dict:
+        value = dict(self._identity)
+        if self._bundle_sha256 is not None:
+            value["bundle_sha256"] = self._bundle_sha256
+        return value
+
+    @property
+    def consumed(self) -> bool:
+        return self._bundle_sha256 is not None
+
+    @property
+    def bundle_sha256(self) -> str | None:
+        return self._bundle_sha256
+
+    def consume(self, *, bundle_sha256: str) -> None:
+        if self.consumed:
+            raise DataError("WFO Validation capability may be consumed only once")
+        if (not isinstance(bundle_sha256, str) or len(bundle_sha256) != 64
+                or any(char not in "0123456789abcdef" for char in bundle_sha256)):
+            raise DataError("WFO Validation capability requires the frozen bundle SHA-256")
+        self._verify()
+        self._bundle_sha256 = bundle_sha256
 
 
 def _dsr_trial_count_evidence(candidate_ids: list[str], ledger_summary: dict,
@@ -145,7 +184,8 @@ def _candidate(base: dict, values: dict, output: Path) -> dict:
     if "feature_profile" in values:
         profile = values["feature_profile"]
         if not isinstance(profile, str) or profile not in {
-            "legacy", "causal_mtf_v1", "causal_mtf_v2", "causal_mtf_v3",
+            "legacy", "causal_mtf_v1", "causal_mtf_v2", "causal_mtf_v3", "causal_mtf_v4",
+            "causal_mtf_v5",
         }:
             raise DataError("invalid WFO candidate feature profile")
         environment = base.get("environment")
@@ -176,6 +216,13 @@ def _candidate(base: dict, values: dict, output: Path) -> dict:
         result["environment"] = {**environment, "execution": execution}
     result["output"] = str(output)
     return result
+
+
+def _candidate_feature_identity(profile: str, feature_spec_hash: str) -> str:
+    """Bind versioned causal feature semantics, not only the shared layout hash."""
+    if profile in {"causal_mtf_v3", "causal_mtf_v4", "causal_mtf_v5"}:
+        return digest({"profile": profile, "feature_spec": feature_spec_hash})
+    return feature_spec_hash
 
 
 def _with_window(environment: dict, *, start_ns: int, end_ns: int, coverage_policy: dict) -> dict:
@@ -586,34 +633,98 @@ def _run_wfo(config: dict, *, train_fn: Callable[..., dict],
         if backtest_fn is backtest:
             report = backtest_fn(run, bundle_root, evaluation_access=access)
         else:
-            # Dependency-injected runners still charge the same access scope.
-            access.consume(bundle_sha=_verify_file(bundle_root / "bundle.json"),
-                           split=run["evaluation"]["split"],
-                           start_ns=run["evaluation"]["start_ns"],
-                           end_ns=run["evaluation"]["end_ns"],
-                           market=research_access.market_key(instrument),
-                           mode=run["evaluation"].get("mode", "base"))
-            report = backtest_fn(run, bundle_root)
+            try:
+                accepts_access = "evaluation_access" in inspect.signature(backtest_fn).parameters
+            except (TypeError, ValueError):
+                accepts_access = False
+            if accepts_access:
+                # Capability-aware callbacks consume this exact scope before
+                # constructing a data reader; WFO completes it after writing
+                # the verified report. Legacy two-argument callbacks are
+                # charged here before invocation, as before.
+                report = backtest_fn(run, bundle_root, evaluation_access=access)
+            else:
+                access.consume(bundle_sha=_verify_file(bundle_root / "bundle.json"),
+                               split=run["evaluation"]["split"],
+                               start_ns=run["evaluation"]["start_ns"],
+                               end_ns=run["evaluation"]["end_ns"],
+                               market=research_access.market_key(instrument),
+                               mode=run["evaluation"].get("mode", "base"))
+                report = backtest_fn(run, bundle_root)
         return report, access
+
+    def make_validation_access(run: dict, query_id: str, candidate_id: str,
+                               fold_id: str) -> WFOValidationAccess:
+        window = run.get("evaluation")
+        if not isinstance(window, dict):
+            raise DataError("WFO Validation capability requires an evaluation window")
+        identity = {
+            "protocol_id": protocol_id, "query_id": query_id,
+            "candidate_id": candidate_id, "fold_id": fold_id,
+            "source_sha256": market_source_identity["snapshot_hash"],
+            "market": research_access.market_key(instrument),
+            "split": "validation", "start_ns": window["start_ns"],
+            "end_ns": window["end_ns"], "mode": window.get("mode", "base"),
+        }
+
+        def verify_query() -> None:
+            if ledger.query(protocol_id, query_id) != {
+                    "query_id": query_id, "kind": "validation",
+                    "candidate": candidate_id, "fold_id": fold_id,
+            }:
+                raise DataError("WFO Validation capability has no matching durable ledger query")
+            if (window.get("split") != "validation"
+                    or window.get("start_ns") != identity["start_ns"]
+                    or window.get("end_ns") != identity["end_ns"]):
+                raise DataError("WFO Validation capability differs from its frozen evaluation window")
+
+        return WFOValidationAccess(identity, verify_query)
+
+    def train_validation_candidate(run: dict, *, query_id: str,
+                                   candidate_id: str, fold_id: str) -> dict:
+        capability = make_validation_access(run, query_id, candidate_id, fold_id)
+        try:
+            accepts_validation_access = (
+                "validation_access" in inspect.signature(train_fn).parameters
+            )
+        except (TypeError, ValueError):
+            accepts_validation_access = False
+        if not accepts_validation_access:
+            return train_fn(run)
+        scoped_run = {**run, "wfo_candidate_id": candidate_id, "wfo_fold_id": fold_id}
+        trained = train_fn(scoped_run, validation_access=capability)
+        if (not isinstance(trained, dict) or not isinstance(trained.get("output"), str)
+                or Path(trained["output"]).resolve() != Path(run["output"]).resolve()):
+            raise DataError("WFO train callback returned an unexpected Validation artifact directory")
+        actual_bundle_sha = _verify_file(Path(trained["output"]) / "bundle.json")
+        if capability.bundle_sha256 != actual_bundle_sha:
+            raise DataError("WFO train callback did not bind Validation access to its frozen bundle")
+        return trained
     template = settings["coverage_template"]
     default_profile = environment.get("feature_profile", "legacy")
+    if "base_currency" not in environment and instrument != "ETHUSDT-PERP.SIM":
+        raise DataError("WFO requires base_currency for a non-legacy instrument")
+    base_currency = environment.get("base_currency", "ETH")
+    if not isinstance(base_currency, str) or re.fullmatch(r"[A-Z][A-Z0-9]{0,11}", base_currency) is None:
+        raise DataError("WFO environment requires a valid contract base currency")
     candidate_profiles = {
         values["candidate_id"]: values.get("feature_profile", default_profile)
         for values in candidates
     }
     if any(not isinstance(profile, str) or profile not in {
-        "legacy", "causal_mtf_v1", "causal_mtf_v2", "causal_mtf_v3",
+        "legacy", "causal_mtf_v1", "causal_mtf_v2", "causal_mtf_v3", "causal_mtf_v4",
+        "causal_mtf_v5",
     } for profile in candidate_profiles.values()):
         raise DataError("WFO candidates contain an unknown feature profile")
     candidate_features = {
-        identity: (historical_feature_spec(dict(template["maximum_age_ns"]))
+        identity: (historical_feature_spec(dict(template["maximum_age_ns"]), base_currency=base_currency)
                    if profile == "legacy" else
-                   historical_feature_spec(dict(template["maximum_age_ns"]), profile=profile))
+                   historical_feature_spec(dict(template["maximum_age_ns"]), profile=profile,
+                                           base_currency=base_currency))
         for identity, profile in candidate_profiles.items()
     }
     candidate_feature_hashes = {
-        identity: (digest({"profile": candidate_profiles[identity], "feature_spec": spec.hash})
-                   if candidate_profiles[identity] == "causal_mtf_v3" else spec.hash)
+        identity: _candidate_feature_identity(candidate_profiles[identity], spec.hash)
         for identity, spec in candidate_features.items()
     }
     protocol_feature_hash = digest(candidate_feature_hashes)
@@ -843,7 +954,11 @@ def _run_wfo(config: dict, *, train_fn: Callable[..., dict],
                         checkpoint = _latest_final_retrain_checkpoint(output, str(run.get("route", "A0")))
                         if checkpoint is None:
                             raise DataError("partial WFO Validation training has no completed stage checkpoint; start a new protocol attempt")
-                        trained = train_fn({**run, "resume_checkpoint": str(checkpoint)})
+                        resumed_candidate = {**run, "resume_checkpoint": str(checkpoint)}
+                        trained = train_validation_candidate(
+                            resumed_candidate, query_id=query_id,
+                            candidate_id=candidate_id, fold_id=fold_id,
+                        )
                         if Path(trained["output"]).resolve() != output.resolve():
                             raise DataError("resumed WFO Validation training returned a different output")
                     report_hash, bundle_hash = _verify_file(report_path), _verify_file(bundle_path)
@@ -858,7 +973,10 @@ def _run_wfo(config: dict, *, train_fn: Callable[..., dict],
                     if output.exists():
                         raise DataError("WFO candidate output exists without its durable Validation reservation")
                     ledger.record_query(protocol_id, query_id, "validation", candidate_id, fold_id)
-                    trained = train_fn(run)
+                    trained = train_validation_candidate(
+                        run, query_id=query_id, candidate_id=candidate_id,
+                        fold_id=fold_id,
+                    )
                 report_path = Path(trained["output"]) / "report.json"
                 _verify_file(report_path)
                 report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -911,10 +1029,50 @@ def _run_wfo(config: dict, *, train_fn: Callable[..., dict],
                                 end_ns=manifest.validation.score_end_ns, coverage_policy=coverage_policy,
                             )
                         else:
-                            stress_report = stress_validation_fn(
-                                run, bundle_root, start_ns=manifest.validation.score_start_ns,
-                                end_ns=manifest.validation.score_end_ns, coverage_policy=coverage_policy,
-                            )
+                            stress_run = {
+                                **run,
+                                "wfo_candidate_id": candidate_id,
+                                "wfo_fold_id": fold_id,
+                                "evaluation": {
+                                    "split": "validation", "mode": "stress",
+                                    "start_ns": manifest.validation.score_start_ns,
+                                    "end_ns": manifest.validation.score_end_ns,
+                                    "coverage_policy": coverage_policy,
+                                },
+                            }
+                            try:
+                                accepts_validation_access = (
+                                    "validation_access" in inspect.signature(
+                                        stress_validation_fn
+                                    ).parameters
+                                )
+                            except (TypeError, ValueError):
+                                accepts_validation_access = False
+                            if accepts_validation_access:
+                                stress_access = make_validation_access(
+                                    stress_run, stress_query_id, candidate_id, fold_id,
+                                )
+                                stress_report = stress_validation_fn(
+                                    stress_run, bundle_root,
+                                    start_ns=manifest.validation.score_start_ns,
+                                    end_ns=manifest.validation.score_end_ns,
+                                    coverage_policy=coverage_policy,
+                                    validation_access=stress_access,
+                                )
+                                if (not stress_access.consumed
+                                        or stress_access.bundle_sha256 != _verify_file(
+                                            bundle_root / "bundle.json"
+                                        )):
+                                    raise DataError(
+                                        "stress Validation callback did not consume the capability "
+                                        "for the frozen candidate bundle"
+                                    )
+                            else:
+                                stress_report = stress_validation_fn(
+                                    run, bundle_root, start_ns=manifest.validation.score_start_ns,
+                                    end_ns=manifest.validation.score_end_ns,
+                                    coverage_policy=coverage_policy,
+                                )
                         if not isinstance(stress_report, dict) or stress_report.get("execution_mode") != "stress":
                             raise DataError("stress Validation evaluator must report execution_mode=stress")
                         stress_root.mkdir(parents=True)

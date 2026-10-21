@@ -230,8 +230,13 @@ def test_prepare_uses_registered_scoped_market_before_factory(monkeypatch):
     }
     market = SimpleNamespace(events=("market-row",))
     calls = []
-    monkeypatch.setattr(application, "read_registered_train_window",
-                        lambda *args, **kwargs: calls.append((args, kwargs)) or market)
+    receipt = SimpleNamespace(
+        store=market, reservation_id="reservation-1", owner="train-owner",
+        source_identity={"marker_sha256": "a" * 64}, split="train",
+        registered_before_read=True,
+    )
+    monkeypatch.setattr(application, "read_registered_train_window_with_receipt",
+                        lambda *args, **kwargs: calls.append((args, kwargs)) or receipt)
     monkeypatch.setattr(application, "load_rules", lambda _path: ("rule-row",))
     monkeypatch.setattr(application, "CuratedStore", lambda events: tuple(events))
     monkeypatch.setattr(application, "record_development",
@@ -265,7 +270,7 @@ def test_prepare_rejects_unhashable_source_mode_before_registered_reader(monkeyp
                                "marker_sha256": "a" * 64, "label": "train-scope",
                                "source_mode": []},
     }
-    monkeypatch.setattr(application, "read_registered_train_window",
+    monkeypatch.setattr(application, "read_registered_train_window_with_receipt",
                         lambda *_args, **_kwargs: pytest.fail("invalid source mode reached reader"))
     with pytest.raises(DataError, match="invalid scoped Train data access"):
         application.prepare(config)

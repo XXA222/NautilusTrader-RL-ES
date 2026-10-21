@@ -203,6 +203,37 @@ def _fill_values(fill: dict) -> tuple[Decimal, Decimal]:
     return quantity, price
 
 
+def _contract_multiplier(snapshots: Sequence[Any]) -> Decimal:
+    """Resolve one frozen linear contract multiplier for native ledger facts.
+
+    Older synthetic fixtures without contract metadata retain the unit default.
+    Production snapshots carry the multiplier, and any native position rows must
+    agree with it before their account economics are summarized.
+    """
+    values: list[Decimal] = []
+    for snapshot in snapshots:
+        value = getattr(snapshot, "contract_multiplier", None)
+        if value is not None:
+            values.append(_decimal(value, "contract multiplier"))
+        positions = getattr(snapshot, "positions", ())
+        if (not isinstance(positions, SequenceABC)
+                or isinstance(positions, (str, bytes, bytearray))):
+            raise MetricsError("native position history must be a sequence")
+        for position in positions:
+            if not isinstance(position, Mapping):
+                raise MetricsError("native position must be a mapping")
+            position_value = position.get("multiplier")
+            if position_value is not None:
+                values.append(_decimal(position_value, "position multiplier"))
+    if not values:
+        return Decimal(1)
+    if any(value <= 0 for value in values):
+        raise MetricsError("native contract multiplier must be positive")
+    if any(value != values[0] for value in values[1:]):
+        raise MetricsError("native snapshots and positions have conflicting contract multipliers")
+    return values[0]
+
+
 def iter_account_rows(snapshots: Sequence[Any], *, fill_references: Mapping[str, Decimal],
                       external_cashflows: Sequence[Mapping[str, Any]] = (),
                       allow_price_improvement: bool = False) -> Iterator[dict]:
@@ -221,6 +252,7 @@ def iter_account_rows(snapshots: Sequence[Any], *, fill_references: Mapping[str,
     # flatten). Stable sorting preserves their event order. Merge their facts
     # and use the last barrier's account state for the one sampled equity row.
     ordered = _ordered_snapshots(snapshots)
+    multiplier = _contract_multiplier(ordered)
     for item in ordered:
         _snapshot_records(item, "fills", "fill")
         _snapshot_records(item, "funding", "funding")
@@ -240,11 +272,11 @@ def iter_account_rows(snapshots: Sequence[Any], *, fill_references: Mapping[str,
             if reference <= 0:
                 raise MetricsError("native fill reference must be positive")
             sign = 1 if fill["order_side"] == "BUY" else -1
-            cost = (price - reference) * quantity * sign
+            cost = (price - reference) * quantity * sign * multiplier
             if cost < 0 and not allow_price_improvement:
                 raise MetricsError("conservative model produced favorable slippage")
             slippage += cost
-            turnover += quantity * price
+            turnover += quantity * price * multiplier
             fee += _money(fill["commission"], snapshot.currency)
         for adjustment in _new_facts((adjustment for item in same_time
                                      for adjustment in _snapshot_records(item, "funding", "funding")),
@@ -269,14 +301,14 @@ def reconcile_linear_equity(snapshots: Sequence[Any], *,
                             external_cashflows: Sequence[Mapping[str, Any]] = (),
                             rounding_per_event: Decimal = Decimal("0.00000001"),
                             include_rows: bool = True) -> dict:
-    """Independently reconcile quote-settled, unit-multiplier linear accounts.
+    """Independently reconcile quote-settled linear accounts with frozen multipliers.
 
     Requires a flat, event-free starting barrier. External cashflows must be
     supplied as explicit source-identified facts aligned to unique sample barriers.
     The caller is responsible for verifying the source; the recorded SHA-256 only
     identifies the supplied source artifact.
     Check every flat barrier and, when the native snapshot contains a complete
-    unit-multiplier linear position plus its authoritative mark, check open
+    linear position plus its authoritative mark, check open
     barriers using unrealized price PnL. Actual fill prices already include
     execution slippage. Inverse contracts, multi-asset accounts and external
     deposits/withdrawals without independent typed source facts are outside this contract.
@@ -285,6 +317,7 @@ def reconcile_linear_equity(snapshots: Sequence[Any], *,
             or rounding_per_event < 0 or type(include_rows) is not bool):
         raise MetricsError("finite nonnegative Decimal rounding and Boolean rows required")
     ordered = _ordered_snapshots(snapshots)
+    multiplier = _contract_multiplier(ordered)
     for item in ordered:
         _snapshot_records(item, "positions", "position")
         _snapshot_records(item, "orders", "order")
@@ -311,7 +344,7 @@ def reconcile_linear_equity(snapshots: Sequence[Any], *,
             size, price = _fill_values(fill)
             signed = size if fill["order_side"] == "BUY" else -size
             quantity += signed
-            cash -= signed * price
+            cash -= signed * price * multiplier
             fee += _money(fill["commission"], snapshot.currency)
         for adjustment in _new_facts(_snapshot_records(snapshot, "funding", "funding"),
                                      adjustments, "funding"):
@@ -333,9 +366,6 @@ def reconcile_linear_equity(snapshots: Sequence[Any], *,
                     raise MetricsError("inverse position is outside linear equity reconciliation")
                 if position.get("is_inverse") is not False:
                     raise MetricsError("native position inverse capability is unknown")
-                multiplier = _decimal(position.get("multiplier"), "position multiplier")
-                if multiplier != 1:
-                    raise MetricsError("non-unit position multiplier is outside linear equity reconciliation")
                 if position.get("settlement_currency") != snapshot.currency:
                     raise MetricsError("position settlement currency differs from account currency")
                 side = position.get("side")
@@ -349,7 +379,7 @@ def reconcile_linear_equity(snapshots: Sequence[Any], *,
                 mark = _decimal(mark_value, "mark price")
                 if mark <= 0:
                     raise MetricsError("native mark price must be positive")
-                expected = initial + quantity * mark + cash - fee + funding + external_cashflow
+                expected = initial + quantity * mark * multiplier + cash - fee + funding + external_cashflow
                 actual = _decimal(snapshot.equity, "equity")
                 residual = actual - expected
                 tolerance = rounding_per_event * (len(fills) + len(adjustments) + 1)
@@ -361,7 +391,7 @@ def reconcile_linear_equity(snapshots: Sequence[Any], *,
                 if include_rows:
                     rows.append({"barrier_index": index, "ts_ns": snapshot.decision_ts_ns,
                                  "native_equity": str(actual), "expected_equity": str(expected),
-                                 "price_pnl_at_mark": str(cash + quantity * mark),
+                                 "price_pnl_at_mark": str(cash + quantity * mark * multiplier),
                                  "mark_price": str(mark), "signed_quantity": str(quantity),
                                  "fee": str(fee), "funding": str(funding),
                                  "external_cashflow": str(external_cashflow),
@@ -390,7 +420,7 @@ def reconcile_linear_equity(snapshots: Sequence[Any], *,
                          "funding": str(funding), "external_cashflow": str(external_cashflow),
                          "residual": str(residual),
                          "tolerance": str(tolerance)})
-    result: dict = {"scope": "flat_and_marked_open_barriers_quote_settled_unit_linear_with_explicit_cashflow_sources",
+    result: dict = {"scope": "flat_and_marked_open_barriers_quote_settled_linear_with_frozen_multiplier_and_explicit_cashflow_sources",
               "checked_flat_barriers": checked, "open_barriers": open_barriers,
               "unchecked_open_barriers": unchecked_open,
               "checked_open_barriers": checked_open,

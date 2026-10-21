@@ -93,6 +93,47 @@ def test_direct_multi_timeframe_aggregation_preserves_closed_and_delayed_bar_rul
                             instrument="BTC/USD", lookback_buckets=3)[0]["close"] == 105.0
 
 
+def test_15m_aggregation_requires_exact_close_complete_data_and_no_gap() -> None:
+    events = []
+    for minute in range(1, 17):
+        close = 100.0 + minute
+        ts = minute * MINUTE_NS
+        available = (minute + 1) * MINUTE_NS if minute == 14 else ts
+        events.append(Event(
+            f"fifteen-{minute}", "ohlcv_1m", ts, ts, available, Availability.NATIVE,
+            "a" * 64,
+            {"instrument": "BTC/USD", "open": str(close - 0.5), "high": str(close + 1),
+             "low": str(close - 1), "close": str(close), "volume": "1"},
+            "test-source",
+        ))
+    complete_store = CuratedStore(reversed(events))
+
+    before_close = aggregate_closed(
+        complete_store, 14 * MINUTE_NS, 15, instrument="BTC/USD", lookback_buckets=1)
+    at_close = aggregate_closed(
+        complete_store, 15 * MINUTE_NS, 15, instrument="BTC/USD", lookback_buckets=1)
+    after_close_with_partial_next_bucket = aggregate_closed(
+        complete_store, 16 * MINUTE_NS, 15, instrument="BTC/USD", lookback_buckets=2)
+
+    assert before_close == ()
+    assert at_close == ({
+        "close_ns": 15 * MINUTE_NS,
+        "available_at_ns": 15 * MINUTE_NS,
+        "open": 100.5,
+        "high": 116.0,
+        "low": 100.0,
+        "close": 115.0,
+        "volume": 15.0,
+    },)
+    assert after_close_with_partial_next_bucket == at_close
+
+    missing_minute_store = CuratedStore(
+        event for event in events if event.event_id != "fifteen-8")
+    assert aggregate_closed(
+        missing_minute_store, 15 * MINUTE_NS, 15,
+        instrument="BTC/USD", lookback_buckets=1) == ()
+
+
 def test_direct_multi_timeframe_aggregation_rejects_duplicate_close_timestamp() -> None:
     events = tuple(_bar(f"bar-{minute}", minute, 100.0 + minute) for minute in range(1, 6))
     store = CuratedStore((*events, _bar("bar-3-copy", 3, 103.0)))

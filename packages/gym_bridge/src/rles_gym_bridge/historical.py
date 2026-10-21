@@ -9,11 +9,12 @@ from bisect import bisect_left, bisect_right
 import json
 from math import gcd
 from pathlib import Path
+import re
 from types import SimpleNamespace
 from typing import Any
 
 from rles_contracts.dto import DataQualityGrade, ExecutionPlan
-from rles_data.contracts import to_market_event
+from rles_data.contracts import InstrumentContractSpec, to_market_event
 from rles_data.core import Availability, CuratedStore, DataError, Event, FeatureField, FeatureSpec, KINDS, MINUTE_NS, Window, digest
 from rles_data.coverage import CoveragePolicy
 from rles_data.features import Scaler, fit_train, make_feature_row
@@ -23,7 +24,7 @@ from rles_nautilus_adapter.perpetual import QUOTE_MAX_AGE_NS, make_perpetual_ses
 from rles_nautilus_adapter.session import VisibleBatch
 from rles_risk import HardRiskConfig, HardRiskGuard, SoftRiskParams, SoftRiskTransform
 
-from .episode import BarrierEpisode, BarrierFrame, EpisodeReplay, RiskActionReview
+from .episode import BarrierEpisode, BarrierFrame, EpisodeReplay, RiskActionReview, SessionRebuildInterrupted
 from .env import NautilusBarrierEnv
 from .l2_bridge import L2FrozenScalerAdapter, visible_market_features
 from .observation import ObservationBuilder, ObservationSchema
@@ -31,6 +32,88 @@ from .reward import RewardConfig
 
 
 _FUNDING_TIME_HORIZON_NS = 24 * 60 * 60 * 1_000_000_000
+
+
+class _NativePositionClock:
+    """Track open-exposure and latest-fill clocks from native fill events only."""
+
+    def __init__(self) -> None:
+        self._quantity = Decimal(0)
+        self._opened_at_ns: int | None = None
+        self._last_fill_at_ns: int | None = None
+        self._fills: dict[str, dict] = {}
+
+    @staticmethod
+    def _timestamp_ns(value: Any, label: str) -> int:
+        if type(value) is not int or value <= 0:
+            raise DataError(f"native {label} timestamp must be a positive integer")
+        return value
+
+    def observe(self, snapshot: Any) -> dict[str, float]:
+        fresh = []
+        for fill in snapshot.fills:
+            event_id = fill.get("event_id")
+            if not isinstance(event_id, str) or not event_id:
+                raise DataError("native fill lacks a stable identity for causal clocks")
+            previous = self._fills.get(event_id)
+            if previous is not None:
+                if previous != fill:
+                    raise DataError("native fill identity has conflicting facts")
+                continue
+            fresh.append(fill)
+        fresh.sort(key=lambda row: (self._timestamp_ns(row.get("ts_event"), "fill"),
+                                    str(row["event_id"])))
+        for fill in fresh:
+            side = fill.get("order_side")
+            try:
+                quantity = Decimal(str(fill["last_qty"]))
+                timestamp_ns = self._timestamp_ns(fill.get("ts_event"), "fill")
+            except (KeyError, ValueError, TypeError, ArithmeticError) as exc:
+                raise DataError("native fill lacks valid quantity or event time") from exc
+            if (side not in {"BUY", "SELL"} or not quantity.is_finite() or quantity <= 0
+                    or timestamp_ns <= 0 or timestamp_ns > snapshot.decision_ts_ns):
+                raise DataError("native fill facts are invalid for causal clocks")
+            signed_fill = quantity if side == "BUY" else -quantity
+            updated = self._quantity + signed_fill
+            if self._quantity == 0 and updated != 0:
+                self._opened_at_ns = timestamp_ns
+            elif updated == 0:
+                self._opened_at_ns = None
+            elif (self._quantity > 0 > updated) or (self._quantity < 0 < updated):
+                self._opened_at_ns = timestamp_ns
+            self._quantity = updated
+            self._last_fill_at_ns = timestamp_ns
+            self._fills[str(fill["event_id"])] = dict(fill)
+
+        pending_ages = []
+        pending_ids: set[str] = set()
+        for order in snapshot.orders:
+            client_id = order.get("client_order_id")
+            try:
+                submitted_at_ns = self._timestamp_ns(order.get("ts_init"), "pending order")
+            except (KeyError, ValueError, TypeError, ArithmeticError) as exc:
+                raise DataError("native pending order lacks a valid creation timestamp") from exc
+            if (not isinstance(client_id, str) or not client_id or client_id in pending_ids
+                    or submitted_at_ns <= 0 or submitted_at_ns > snapshot.decision_ts_ns):
+                raise DataError("native pending order identity/time is invalid")
+            pending_ids.add(client_id)
+            pending_ages.append((snapshot.decision_ts_ns - submitted_at_ns) / MINUTE_NS)
+
+        native_quantity = signed_quantity(snapshot)
+        if native_quantity != self._quantity:
+            raise DataError("native fill clock quantity does not reconcile to the position ledger")
+        now = snapshot.decision_ts_ns
+        has_position_age = self._opened_at_ns is not None
+        has_fill_age = self._last_fill_at_ns is not None
+        return {
+            "position_age_minutes": ((now - self._opened_at_ns) / MINUTE_NS
+                                     if has_position_age else 0.0),
+            "has_position_age": float(has_position_age),
+            "minutes_since_fill": ((now - self._last_fill_at_ns) / MINUTE_NS
+                                   if has_fill_age else 0.0),
+            "has_seen_fill": float(has_fill_age),
+            "pending_order_age_minutes": max(pending_ages, default=0.0),
+        }
 
 
 def scheduled_funding_time_features(decision_ts_ns: int, settlement_times_ns: tuple[int, ...]) -> dict[str, float]:
@@ -59,6 +142,26 @@ def _money(value: Any) -> Decimal:
     if not result.is_finite():
         raise DataError("nonfinite native account amount")
     return result
+
+
+def _native_unrealized_pnl_pct(snapshot: Any, *, settlement_currency: str) -> float:
+    """Compute aggregate native position PnL over native position notional."""
+    if not snapshot.positions:
+        return 0.0
+    unrealized = Decimal(0)
+    notional = Decimal(0)
+    for position in snapshot.positions:
+        if (position.get("unrealized_pnl_currency") != settlement_currency
+                or position.get("notional_currency") != settlement_currency):
+            raise DataError("native position PnL and notional currencies do not match settlement")
+        unrealized += _money(position.get("unrealized_pnl"))
+        position_notional = _money(position.get("notional_value"))
+        if position_notional <= 0:
+            raise DataError("native position notional must be positive")
+        notional += position_notional
+    if not notional.is_finite() or notional <= 0 or not unrealized.is_finite():
+        raise DataError("native position PnL percentage denominator is invalid")
+    return float(unrealized / notional)
 
 
 def signed_quantity(snapshot) -> Decimal:
@@ -99,30 +202,50 @@ def load_rules(path: str | Path) -> tuple[Event, ...]:
     return tuple(events)
 
 
-def historical_feature_spec(maximum_age_ns: dict[str, int], *, profile: str = "legacy") -> FeatureSpec:
+def historical_feature_spec(maximum_age_ns: dict[str, int], *, profile: str = "legacy",
+                            base_currency: str) -> FeatureSpec:
     """Return a frozen causal feature recipe selected by the run configuration.
 
     ``legacy`` preserves the original observation identity for existing bundles.
     ``causal_mtf_v1`` adds closed-bar return and volatility context at longer
     horizons. ``causal_mtf_v2`` also adds bounded trend-efficiency features that
     distinguish persistent directional movement from choppy price paths. The
-    ``causal_mtf_v3`` adds a source-scheduled next-settlement countdown to the
-    observation schema. Its market features, observation schema and transition
-    identity remain bound to the selected recipe.
+    ``causal_mtf_v3`` adds a source-scheduled next-settlement countdown.
+    ``causal_mtf_v4`` adds native-fill-derived position and fill clocks while
+    retaining the scheduled funding context. ``causal_mtf_v5`` adds a complete
+    UTC-closed daily return and a five-minute realized-volatility input. Each
+    recipe binds its own identity.
     """
     if set(maximum_age_ns) != {"mark", "index", "funding_update"}:
         raise DataError("historical feature recipe requires complete freshness limits")
-    if not isinstance(profile, str) or profile not in {"legacy", "causal_mtf_v1", "causal_mtf_v2", "causal_mtf_v3"}:
+    if not isinstance(profile, str) or profile not in {
+        "legacy", "causal_mtf_v1", "causal_mtf_v2", "causal_mtf_v3", "causal_mtf_v4",
+        "causal_mtf_v5",
+    }:
         raise DataError("unsupported historical feature profile")
+    if not isinstance(base_currency, str) or re.fullmatch(r"[A-Z][A-Z0-9]{0,11}", base_currency) is None:
+        raise DataError("feature base currency must be explicit")
     fields: tuple[FeatureField, ...] = (
         FeatureField("return_1m", "float64", "ratio", "ohlcv_1m", 1, 1, "return"),
         FeatureField("volatility_5m", "float64", "ratio", "ohlcv_1m", 5, 1, "volatility"),
-        FeatureField("volume_5m", "float64", "ETH", "ohlcv_1m", 5, 1, "volume_mean"),
+        FeatureField("volume_5m", "float64", base_currency, "ohlcv_1m", 5, 1, "volume_mean"),
         FeatureField("basis", "float64", "ratio", "mark", 1, 1, "basis", maximum_age_ns["mark"]),
         FeatureField("last_settled_funding", "float64", "ratio", "funding_update", 1, 1,
                      "latest", maximum_age_ns["funding_update"]),
     )
-    if profile in {"causal_mtf_v1", "causal_mtf_v2", "causal_mtf_v3"}:
+    if profile == "causal_mtf_v5":
+        fields += (
+            FeatureField("volatility_1m", "float64", "ratio", "ohlcv_1m", 60, 1,
+                         "volatility"),
+            FeatureField("closed_return_1h", "float64", "ratio", "ohlcv_1m", 1, 60, "return"),
+            FeatureField("closed_return_1d", "float64", "ratio", "ohlcv_1m", 1, 1440, "return"),
+            FeatureField("closed_trend_efficiency_1h", "float64", "ratio", "ohlcv_1m", 1, 60,
+                         "trend_efficiency"),
+            FeatureField("closed_trend_efficiency_1d", "float64", "ratio", "ohlcv_1m", 1, 1440,
+                         "trend_efficiency"),
+        )
+    if profile in {"causal_mtf_v1", "causal_mtf_v2", "causal_mtf_v3", "causal_mtf_v4",
+                   "causal_mtf_v5"}:
         fields += (
             FeatureField("return_5m", "float64", "ratio", "ohlcv_1m", 5, 1, "return"),
             FeatureField("return_15m", "float64", "ratio", "ohlcv_1m", 15, 1, "return"),
@@ -130,7 +253,7 @@ def historical_feature_spec(maximum_age_ns: dict[str, int], *, profile: str = "l
             FeatureField("volatility_15m", "float64", "ratio", "ohlcv_1m", 15, 1, "volatility"),
             FeatureField("volatility_60m", "float64", "ratio", "ohlcv_1m", 60, 1, "volatility"),
         )
-    if profile in {"causal_mtf_v2", "causal_mtf_v3"}:
+    if profile in {"causal_mtf_v2", "causal_mtf_v3", "causal_mtf_v4", "causal_mtf_v5"}:
         fields += (
             FeatureField("trend_efficiency_15m", "float64", "ratio", "ohlcv_1m", 15, 1, "trend_efficiency"),
             FeatureField("trend_efficiency_60m", "float64", "ratio", "ohlcv_1m", 60, 1, "trend_efficiency"),
@@ -206,6 +329,7 @@ class HistoricalEnvironmentFactory:
                  compact_report_snapshots: bool = False,
                  feature_profile: str = "legacy", reward_scale: float = 1.0,
                  reward_lambda_dd: float = 0.0, reward_lambda_guard: float = 0.0,
+                 base_currency: str | None = None,
                  prepared_store: CuratedStore | None = None) -> None:
         # Set only by the application layer after prepare() computes its
         # frozen root-config recipe identity.
@@ -221,7 +345,8 @@ class HistoricalEnvironmentFactory:
         if type(compact_report_snapshots) is not bool:
             raise DataError("report snapshot compaction flag must be Boolean")
         if not isinstance(feature_profile, str) or feature_profile not in {
-            "legacy", "causal_mtf_v1", "causal_mtf_v2", "causal_mtf_v3",
+            "legacy", "causal_mtf_v1", "causal_mtf_v2", "causal_mtf_v3", "causal_mtf_v4",
+            "causal_mtf_v5",
         }:
             raise DataError("unsupported historical feature profile")
         self.compact_native_history = compact_native_history
@@ -250,31 +375,67 @@ class HistoricalEnvironmentFactory:
         self.capital, self.budget = Decimal(starting_balance), Decimal(risk_budget_notional)
         if not self.capital.is_finite() or self.capital <= 0 or not self.budget.is_finite() or self.budget <= 0:
             raise DataError("positive finite capital and risk budget required")
-        if self.hard.max_leverage > 1 or self.hard.incomplete_data_max_leverage > 1:
-            raise DataError("leveraged liquidation replay is not yet certified by this factory")
+        if self.hard.max_leverage > 1 and self.quality.grade.value not in {"DQ-A", "DQ-B"}:
+            raise DataError("leverage above 1x requires DQ-A/B market and liquidation evidence")
         self.rule = self.store.latest_rule(start_ns, instrument)
+        self.contract_spec = InstrumentContractSpec.from_rule_payload(self.rule.payload, instrument_id=instrument)
+        fill_cost = self.execution.fill(self.mode)
+        taker_fee = Decimal(self.rule.payload["taker_fee"])
+        if self.mode == "stress" and taker_fee > 0:
+            taker_fee *= fill_cost.fee_multiplier
+        self.hard_execution_cost_rate = (
+            max(Decimal(0), taker_fee) + max(Decimal(0), fill_cost.slippage_bps) / Decimal(10000)
+        )
+        initial_margin_rate = Decimal(self.rule.payload["initial_margin_rate"])
+        maintenance_rate = Decimal(self.rule.payload["maintenance_margin_rate"])
+        if (initial_margin_rate <= 0
+                or initial_margin_rate / self.hard.max_leverage < maintenance_rate):
+            raise DataError("configured leverage would reduce initial margin below dated maintenance margin")
+        if (self.feature_profile in {"causal_mtf_v4", "causal_mtf_v5"}
+                and (self.contract_spec.is_inverse
+                     or self.contract_spec.settlement_currency != self.contract_spec.quote_currency)):
+            raise DataError("causal_mtf_v4 PnL percentage requires a linear quote-settled contract")
+        if base_currency is not None and base_currency != self.contract_spec.base_currency:
+            raise DataError("configured base currency differs from dated contract metadata")
         if any(dict(self.store.latest_rule(t, instrument).payload) != dict(self.rule.payload)
                for t in (end_ns - 1,)):
             raise DataError("split episode at historical instrument-rule changes")
-        self.features = historical_feature_spec(dict(self.coverage.maximum_age_ns), profile=self.feature_profile)
-        account = ("equity", "peak_equity", "drawdown", "cash", "free_margin", "initial_margin",
-                   "maintenance_margin", "unrealized_pnl", "net_exposure", "position_quantity")
+        self.features = historical_feature_spec(dict(self.coverage.maximum_age_ns), profile=self.feature_profile,
+                                                base_currency=self.contract_spec.base_currency)
+        account: tuple[str, ...] = (
+            "equity", "peak_equity", "drawdown", "cash", "free_margin", "initial_margin",
+            "maintenance_margin", "unrealized_pnl", "net_exposure", "position_quantity",
+        )
+        if self.feature_profile in {"causal_mtf_v4", "causal_mtf_v5"}:
+            account += ("unrealized_pnl_pct",)
         execution_names = (
             "prev_executed_target", "prev_raw_target", "pending_order_count",
             "pending_signed_exposure", "pending_gross_exposure", "fill_rate",
         )
         names = tuple("market." + f.name for f in self.features.fields) + tuple("account." + n for n in account)
-        units = tuple(f.unit for f in self.features.fields) + ("USDT", "USDT", "ratio", "USDT", "USDT", "USDT", "USDT", "USDT", "ratio", "ETH")
+        quote, base = self.contract_spec.quote_currency, self.contract_spec.base_currency
+        units = tuple(f.unit for f in self.features.fields) + (
+            quote, quote, "ratio", quote, quote, quote, quote, quote, "ratio", base,
+        )
+        if self.feature_profile in {"causal_mtf_v4", "causal_mtf_v5"}:
+            units += ("ratio",)
         time_names = (("time.funding_settlement_within_24h",
                        "time.funding_settlement_time_to_event_24h")
-                      if self.feature_profile == "causal_mtf_v3" else ())
-        if (self.feature_profile == "causal_mtf_v3"
+                      if self.feature_profile in {"causal_mtf_v3", "causal_mtf_v4", "causal_mtf_v5"} else ())
+        if (self.feature_profile in {"causal_mtf_v3", "causal_mtf_v4", "causal_mtf_v5"}
                 and self.coverage.known_schedule_times_ns is None):
-            raise DataError("causal_mtf_v3 requires a source-declared future funding calendar")
-        self.schema = ObservationSchema("0.4.0", names + time_names + ("risk.guard_intervention", "risk.headroom")
-                                        + tuple("execution." + n for n in execution_names),
+            raise DataError(f"{self.feature_profile} requires a source-declared future funding calendar")
+        execution_features = (("position_age_minutes", "has_position_age", "minutes_since_fill", "has_seen_fill",
+                               "pending_order_age_minutes")
+                              if self.feature_profile in {"causal_mtf_v4", "causal_mtf_v5"} else ())
+        observation_version = ("0.6.0" if self.feature_profile == "causal_mtf_v5" else
+                               "0.5.0" if self.feature_profile == "causal_mtf_v4" else "0.4.0")
+        self.schema = ObservationSchema(observation_version, names + time_names + ("risk.guard_intervention", "risk.headroom")
+                                        + tuple("execution." + n for n in execution_names + execution_features),
                                         units + ("ratio",) * len(time_names)
-                                        + ("ratio", "ratio", "ratio", "ratio", "count", "ratio", "ratio", "ratio"))
+                                        + ("ratio", "ratio", "ratio", "ratio", "count", "ratio", "ratio", "ratio")
+                                        + (("minutes", "boolean", "minutes", "boolean", "minutes")
+                                           if execution_features else ()))
         # Fold membership uses economic event time. Availability still becomes
         # each row's decision clock, so delayed facts never become observable
         # early and cannot drift into a different score split merely due to
@@ -337,10 +498,10 @@ class HistoricalEnvironmentFactory:
             transition_identity["reward_lambda_dd"] = self.reward_config.lambda_dd
         if self.reward_config.lambda_guard != 0.0:
             transition_identity["reward_lambda_guard"] = self.reward_config.lambda_guard
-        if self.feature_profile == "causal_mtf_v3":
+        if self.feature_profile in {"causal_mtf_v3", "causal_mtf_v4", "causal_mtf_v5"}:
             known_schedule = self.coverage.known_schedule_times_ns
             if known_schedule is None:
-                raise DataError("causal_mtf_v3 requires a source-declared future funding calendar")
+                raise DataError(f"{self.feature_profile} requires a source-declared future funding calendar")
             transition_identity["feature_profile"] = self.feature_profile
             transition_identity["known_schedule"] = digest({
                 symbol: tuple(times)
@@ -416,10 +577,10 @@ class HistoricalEnvironmentFactory:
                 row, self.features, self.schema, instrument=self.instrument,
                 decision_ts_ns=row.decision_ts_ns,
             )
-            if self.feature_profile == "causal_mtf_v3":
+            if self.feature_profile in {"causal_mtf_v3", "causal_mtf_v4", "causal_mtf_v5"}:
                 known_schedule = self.coverage.known_schedule_times_ns
                 if known_schedule is None:
-                    raise DataError("causal_mtf_v3 requires a source-declared future funding calendar")
+                    raise DataError(f"{self.feature_profile} requires a source-declared future funding calendar")
                 time_features = scheduled_funding_time_features(
                     row.decision_ts_ns, known_schedule[self.instrument],
                 )
@@ -453,7 +614,7 @@ class HistoricalEnvironmentFactory:
         cash, free = native_balances(snapshot)
         if snapshot.mark is None:
             raise DataError("native mark required for exposure observations")
-        notional = signed_quantity(snapshot) * snapshot.mark
+        notional = signed_quantity(snapshot) * snapshot.mark * self.contract_spec.multiplier
         initial = sum((_money(m["initial"]) for m in snapshot.margins), Decimal(0))
         maintenance = sum((_money(m["maintenance"]) for m in snapshot.margins), Decimal(0))
         submitted = Decimal(str(getattr(snapshot, "cumulative_submitted_qty", 0)))
@@ -469,8 +630,8 @@ class HistoricalEnvironmentFactory:
             if side not in {"BUY", "SELL"} or not leaves.is_finite() or leaves < 0:
                 raise DataError("native pending order side/quantity invalid for observation")
             signed = leaves if side == "BUY" else -leaves
-            pending_signed += signed * snapshot.mark / self.budget
-            pending_gross += leaves * snapshot.mark / self.budget
+            pending_signed += signed * snapshot.mark * self.contract_spec.multiplier / self.budget
+            pending_gross += leaves * snapshot.mark * self.contract_spec.multiplier / self.budget
         cap = min(self.hard.max_notional, snapshot.equity * self.hard.max_leverage)
         return {
             "account": {"cash": float(cash), "free_margin": float(free), "initial_margin": float(initial),
@@ -537,6 +698,7 @@ class HistoricalEnvironmentFactory:
             order_filled: dict[str, Decimal] = {}
             cumulative_submitted = Decimal(0)
             cumulative_filled = Decimal(0)
+            suppress_rebuild_bootstrap = [False]
 
             def unique_delta(records, seen, identity_field="event_id"):
                 delta = []
@@ -556,6 +718,9 @@ class HistoricalEnvironmentFactory:
 
             def record_snapshot(snapshot):
                 nonlocal cumulative_submitted, cumulative_filled
+                if suppress_rebuild_bootstrap[0]:
+                    suppress_rebuild_bootstrap[0] = False
+                    return
                 for order in snapshot.all_orders:
                     identity = str(order.get("client_order_id", ""))
                     if not identity:
@@ -589,6 +754,9 @@ class HistoricalEnvironmentFactory:
                     # grow with every fill and are not required by the report.
                     position_fields = ("position_id", "side", "quantity", "multiplier", "is_inverse",
                                        "settlement_currency")
+                    if self.feature_profile in {"causal_mtf_v4", "causal_mtf_v5"}:
+                        position_fields += ("unrealized_pnl", "unrealized_pnl_currency",
+                                             "notional_value", "notional_currency")
                     report_positions = tuple({key: row.get(key) for key in position_fields}
                                               for row in snapshot.positions)
                 else:
@@ -611,6 +779,8 @@ class HistoricalEnvironmentFactory:
                     decision_ts_ns=snapshot.decision_ts_ns,
                     cumulative_submitted_qty=cumulative_submitted,
                     cumulative_filled_qty=cumulative_filled,
+                    fill_references=dict(self.fill_references),
+                    contract_multiplier=self.contract_spec.multiplier,
                 )
                 self.snapshots.append(compact)
 
@@ -620,17 +790,26 @@ class HistoricalEnvironmentFactory:
                     raise DataError("multiple native fill references per order require event-level allocation")
                 self.fill_references[client_id] = reference
 
-            session = make_perpetual_session(rule=self.rule.payload, execution=self.execution, mode=self.mode,
-                                             starting_balance=self.capital, record_snapshot=record_snapshot,
-                                             record_fill_reference=record_reference,
-                                             compact_native_history=self.compact_native_history)
+            def make_session(starting_balance, leverage):
+                return make_perpetual_session(
+                    rule=self.rule.payload, contract_spec=self.contract_spec,
+                    execution=self.execution, mode=self.mode,
+                    starting_balance=starting_balance, leverage=leverage,
+                    record_snapshot=record_snapshot,
+                    record_fill_reference=record_reference,
+                    compact_native_history=self.compact_native_history,
+                    include_position_pnl=(self.feature_profile in {
+                        "causal_mtf_v4", "causal_mtf_v5"}),
+                )
+
+            session = make_session(self.capital, self.hard.max_leverage)
+            hard_ref = [HardRiskGuard(self.hard)]
             planner = TargetQuantityPlanner(self.execution)
             rules = InstrumentRules(self.instrument, Decimal(self.rule.payload["step_size"]),
                                     Decimal(self.rule.payload["min_qty"]), Decimal(self.rule.payload["min_notional"]),
-                                    Decimal(1), self.rule.payload.get("reduce_only_min_notional_exempt", False))
+                                    self.contract_spec.multiplier,
+                                    self.rule.payload.get("reduce_only_min_notional_exempt", False))
             soft = SoftRiskTransform(self.soft if not soft_multipliers else self.soft.with_multipliers(soft_multipliers))
-            hard = HardRiskGuard(self.hard)
-
             def plan_with_rounding(target, snapshot, *, terminal=False, force_reduce=False):
                 decision = planner.plan(
                     decision_id=f"{'terminal' if terminal else 'policy'}-{snapshot.decision_ts_ns}",
@@ -641,7 +820,7 @@ class HistoricalEnvironmentFactory:
                 )
                 contract_plan = to_contract_plan(
                     decision, ExecutionPlan, latency_model_id=self.execution.latency(self.mode).model_id,
-                    quantity_unit="ETH",
+                    quantity_unit=self.contract_spec.base_currency,
                 )
                 rounded_exposure = (decision.target_qty * snapshot.mark * rules.contract_multiplier
                                     / self.budget)
@@ -652,14 +831,16 @@ class HistoricalEnvironmentFactory:
                                           force_reduce=force_reduce)[0]
 
             def plan_action(action, snapshot, drawdown):
-                current = signed_quantity(snapshot) * snapshot.mark / self.budget
+                current = (signed_quantity(snapshot) * snapshot.mark * self.contract_spec.multiplier
+                           / self.budget)
                 known = self.store.visible(snapshot.decision_ts_ns, "funding_update")
                 rate = Decimal(str(known[-1].payload["rate"])) if known else None
                 softened = soft.apply(action, current_exposure=current, drawdown=drawdown, funding_abs=rate)
-                adjusted = hard.apply(softened.adjusted, budget_notional=self.budget, equity=snapshot.equity,
+                adjusted = hard_ref[0].apply(softened.adjusted, budget_notional=self.budget, equity=snapshot.equity,
                                       free_margin=native_balances(snapshot)[1], current_notional=current * self.budget,
                                       mark_available=True, funding_available=rate is not None,
-                                      liquidation_capability=True, data_quality_grade=self.quality.grade.value)
+                                      liquidation_capability=True, data_quality_grade=self.quality.grade.value,
+                                      estimated_cost_rate=self.hard_execution_cost_rate)
                 contract_plan, rounded_exposure = plan_with_rounding(
                     adjusted.adjusted, snapshot, force_reduce=adjusted.force_reduce,
                 )
@@ -679,6 +860,61 @@ class HistoricalEnvironmentFactory:
                 start_offset=start_offset, episode_rows=episode_rows,
                 feed_start_ns=feed_start_ns,
             )
+
+            position_clock = (_NativePositionClock()
+                              if self.feature_profile in {"causal_mtf_v4", "causal_mtf_v5"}
+                              else None)
+
+            def native_observation_state(snapshot):
+                values = self.observation_state(snapshot)
+                if position_clock is not None:
+                    values["account"]["unrealized_pnl_pct"] = _native_unrealized_pnl_pct(
+                        snapshot, settlement_currency=self.contract_spec.settlement_currency,
+                    )
+                    values["execution"].update(position_clock.observe(snapshot))
+                return values
+
+            def rebuild_session(old_session, leverage, snapshot, frame, action_step, identity):
+                if self.quality.grade.value not in {"DQ-A", "DQ-B"} and leverage > 1:
+                    raise DataError("high leverage requires verified DQ-A or DQ-B market data")
+                if (snapshot.orders or snapshot.positions or snapshot.equity <= 0
+                        or snapshot.currency != self.contract_spec.quote_currency):
+                    raise DataError("leverage change requires a positive-equity flat account with no orders")
+                next_hard = HardRiskConfig(**{
+                    **asdict(self.hard), "max_leverage": leverage,
+                })
+                next_guard = HardRiskGuard(next_hard)
+                next_identity = dict(identity)
+                next_identity["config_hash"] = digest({
+                    "parent_config_hash": identity["config_hash"],
+                    "leverage": str(leverage),
+                    "action_step": action_step,
+                })
+                next_session = make_session(Decimal(str(snapshot.equity)), leverage)
+                try:
+                    # Nautilus rc6 permits one live native engine per process.
+                    # The episode has already proven this barrier flat and order-free.
+                    old_session.close()
+                    next_session.open(SimpleNamespace(**next_identity))
+                    suppress_rebuild_bootstrap[0] = True
+                    next_snapshot = next_session.bootstrap(
+                        frame.batches, decision_ts_ns=frame.timestamp_ns,
+                    )
+                    if suppress_rebuild_bootstrap[0]:
+                        raise DataError("rebuilt native session did not report its bootstrap snapshot")
+                    if (Decimal(str(next_snapshot.equity)) != Decimal(str(snapshot.equity))
+                            or next_snapshot.currency != snapshot.currency
+                            or next_snapshot.orders or next_snapshot.positions):
+                        raise DataError("rebuilt native session changed account facts at the leverage barrier")
+                except BaseException as exc:
+                    suppress_rebuild_bootstrap[0] = False
+                    next_session.close()
+                    raise SessionRebuildInterrupted(
+                        "new native session failed after the old engine was closed; reset the episode",
+                    ) from exc
+                hard_ref[0] = next_guard
+                return next_session, next_identity, next_snapshot
+
             episode = BarrierEpisode(
                 native_session=session,
                 native_identity={"dataset_hash": self.store.snapshot_hash,
@@ -686,10 +922,13 @@ class HistoricalEnvironmentFactory:
                                  "config_hash": self.config_hash},
                 transition_hash=transition, frames=frames, scoring_frames=len(frames) - 2,
                 plan_action=plan_action, plan_terminal=lambda s: plan(Decimal(0), s, terminal=True),
-                executed_exposure=lambda s: signed_quantity(s) * s.mark / self.budget,
-                reward_config=self.reward_config, replay=current_replay,
+                executed_exposure=lambda s: (signed_quantity(s) * s.mark * self.contract_spec.multiplier
+                                             / self.budget),
+                reward_config=self.reward_config,
+                replay=current_replay,
                 episode_index=episode_index, episode_start_offset=start_offset,
-                observation_state=self.observation_state,
+                observation_state=native_observation_state,
+                rebuild_session=rebuild_session,
             )
             pending_replay = None
             return episode
@@ -699,11 +938,21 @@ class HistoricalEnvironmentFactory:
                                   observation_builder=ObservationBuilder(self.schema, scaler=bridge, expected_scaler_hash=bridge.fingerprint,
                                                                         split="train" if self.split == "train_inner" else self.split),
                                   reward_config=self.reward_config, max_steps=selected_steps,
-                                  transition_hash=transition)
+                                  transition_hash=transition,
+                                  fill_reference_reader=lambda: dict(self.fill_references))
 
     def metadata(self) -> dict:
         return {
             "quality": asdict(self.quality), "features": asdict(self.features),
+            "contract_spec": {
+                "instrument_id": self.contract_spec.instrument_id,
+                "raw_symbol": self.contract_spec.raw_symbol,
+                "base_currency": self.contract_spec.base_currency,
+                "quote_currency": self.contract_spec.quote_currency,
+                "settlement_currency": self.contract_spec.settlement_currency,
+                "is_inverse": self.contract_spec.is_inverse,
+                "multiplier": str(self.contract_spec.multiplier),
+            },
             "feature_profile": self.feature_profile,
             "reward_config": asdict(self.reward_config),
             "known_schedule_times_ns": (None if self.coverage.known_schedule_times_ns is None else

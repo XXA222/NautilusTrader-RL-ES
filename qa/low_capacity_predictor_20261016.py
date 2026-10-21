@@ -10,6 +10,7 @@ import time
 
 import numpy as np
 
+from rles_data.contracts import InstrumentContractSpec
 from rles_data.core import CuratedStore, DataError, MINUTE_NS
 from rles_data.coverage import CoveragePolicy
 from rles_data.features import make_feature_row
@@ -140,8 +141,11 @@ def run(plan_path: Path, output: Path) -> dict:
             raise DataError("source market/rules do not match the frozen data identity")
         environment = bundle["environment"]
         instrument = environment["instrument"]
+        dated_rule = store.latest_rule(int(environment["start_ns"]), instrument)
+        contract_spec = InstrumentContractSpec.from_rule_payload(dated_rule.payload, instrument_id=instrument)
         spec = historical_feature_spec(environment["coverage_policy"]["maximum_age_ns"],
-                                       profile=plan["feature_profile"])
+                                       profile=plan["feature_profile"],
+                                       base_currency=contract_spec.base_currency)
         scaler = _scaler(bundle_root)
         if scaler.feature_hash != spec.hash:
             raise DataError("frozen feature/scaler identity mismatch")

@@ -115,8 +115,10 @@ class TargetQuantityPlanner:
         # otherwise be partially reduced into unexecutable dust, making the
         # terminal flatten fail later in the same episode.
         target_notional = abs(target_qty * mark * instrument.contract_multiplier)
-        if target_qty != 0 and (abs(target_qty) < instrument.min_qty
-                                or target_notional < instrument.min_notional):
+        target_below_minimum = target_qty != 0 and (
+            abs(target_qty) < instrument.min_qty or target_notional < instrument.min_notional
+        )
+        if target_below_minimum:
             target_qty = Decimal(0)
         delta = target_qty - current
         policy_flat = self.config.zero_target_policy == "close" and target_exposure == 0
@@ -153,6 +155,8 @@ class TargetQuantityPlanner:
             if abs(target_exposure - exposure_now) < self.config.deadband:
                 return outcome("NOOP", "deadband")
         if delta == 0:
+            if target_below_minimum:
+                return outcome("NOOP", "below minimum executable quantity/notional")
             return outcome("NOOP", "quantity rounded to no change")
         # Binance USDⓈ-M permits Reduce-Only orders below the symbol min-notional.
         # The exception is opt-in per dated InstrumentRules; quantity and step

@@ -40,6 +40,8 @@ class HardRiskConfig:
             raise ValueError("invalid hard equity/margin guard")
         if self.incomplete_data_max_leverage > self.max_leverage:
             raise ValueError("missing-data limit cannot increase leverage")
+        if self.incomplete_data_max_leverage > 1:
+            raise ValueError("incomplete-data leverage limit cannot exceed 1x")
         if type(self.require_mark) is not bool or type(self.require_funding) is not bool:
             raise TypeError("hard capability flags must be bool")
 
@@ -144,12 +146,14 @@ class HardRiskGuard:
     def apply(self, requested: Decimal, *, budget_notional: Decimal, equity: Decimal,
               free_margin: Decimal, current_notional: Decimal,
               mark_available: bool, funding_available: bool,
-              liquidation_capability: bool, data_quality_grade: str) -> RiskDecisionInternal:
+              liquidation_capability: bool, data_quality_grade: str,
+              estimated_cost_rate: Decimal = Decimal(0)) -> RiskDecisionInternal:
         target, budget = _d(requested), _d(budget_notional, positive=True)
         equity, free, current = _d(equity), _d(free_margin), _d(current_notional)
+        cost_rate = _d(estimated_cost_rate)
         if any(type(x) is not bool for x in (mark_available, funding_available, liquidation_capability)):
             raise RiskHalt("capability assertions must be explicit booleans")
-        if abs(target) > 1 or equity < 0:
+        if abs(target) > 1 or equity < 0 or cost_rate < 0:
             raise RiskHalt("invalid risk or account facts")
         # Native free margin may genuinely be negative near liquidation.
         # Preserve the ability to reduce exposure, while forbidding new exposure.
@@ -172,6 +176,24 @@ class HardRiskGuard:
         verified = liquidation_capability and data_quality_grade in {"DQ-A", "DQ-B"}
         max_leverage = cfg.max_leverage if verified else min(cfg.max_leverage, cfg.incomplete_data_max_leverage)
         cap = min(cfg.max_notional, equity * max_leverage)
+        # Fees and modeled adverse slippage reduce equity as soon as the order
+        # fills. Reserve their expected cost so the post-fill gross exposure
+        # still respects the configured leverage. Solve the piecewise bound for
+        # a same-side add or reduction using the signed native current exposure.
+        leverage_cost = max_leverage * cost_rate
+        current_abs = abs(current)
+        if leverage_cost >= 1:
+            # No nonzero target can be guaranteed under this cost estimate.
+            # Keep the reduction path available so an existing position can
+            # still be closed; the planner will submit a strict flatten.
+            post_cost_cap = Decimal(0)
+        elif current_abs <= cap:
+            post_cost_cap = ((max_leverage * equity + leverage_cost * current_abs)
+                             / (1 + leverage_cost))
+        else:
+            post_cost_cap = ((max_leverage * equity - leverage_cost * current_abs)
+                             / (1 - leverage_cost))
+        cap = min(cap, max(Decimal(0), post_cost_cap))
         if not verified and cap > equity * cfg.incomplete_data_max_leverage:
             raise AssertionError("capability downgrade was ineffective")
         adjusted = max(-cap / budget, min(cap / budget, target))
