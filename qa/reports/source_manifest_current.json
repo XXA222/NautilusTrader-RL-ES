@@ -1,7 +1,7 @@
 {
   "schema": "rles.source-manifest.v1",
-  "generated_at_utc": "2026-10-21T05:43:32.260951+00:00",
-  "source_identity_sha256": "e6ca6c7b1262884f8e864357c145e6ecf20071a1eb23ee9c3db3f29e4752596d",
+  "generated_at_utc": "2026-10-21T05:46:06.767922+00:00",
+  "source_identity_sha256": "61eeea96dc63ed7d5661ff226f3387c15a41b33965e1a483ccc897b6ed7af042",
   "scope": {
     "included": [
       ".gitattributes",
@@ -341,7 +341,7 @@
   },
   "workspace_git": {
     "path": ".",
-    "commit": "fe8a2d34989e1dafbf9fee2aed34ee2249b67c0c",
+    "commit": "a121d7bd37256b8fba600839e5d49101c524a10b",
     "tracked_worktree_clean": true,
     "status_entries": [],
     "tracked_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
