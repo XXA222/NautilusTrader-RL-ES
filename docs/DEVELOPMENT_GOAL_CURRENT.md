@@ -23,7 +23,7 @@
 
 最新执行记录还修正了 A09 的线性 NETTING 杠杆边界：2x 以上不再受 `maintenance_rate * leverage <= 1` 这一模型伪限制。固定杠杆通过 `StandardMarginModel` 的初始保证金 `dated_initial_rate / leverage` 实现，维持保证金直接使用 dated rule；配置只在有效初始保证金不低于维持保证金时接受。空仓、无订单的 session 重建、replay v3 和 checkpoint 恢复不变。3x 含实际原生持仓/维持保证金回归通过。外部交易所分档保证金经济和 Hedge Mode 仍未认证；A09 真实规则/经济认证保持 `PARTIAL`。外部依赖状态见[任务索引](DEVELOPMENT_GOALS_REVIEW_20261017.md)和[最新执行记录](DEVELOPMENT_PLAN_20261017.md)。
 
-2026-10-21 续做原生资金结算去重审计：不同源 ID 的 `funding_settlement` 若落在同一 instrument/settlement timestamp，旧逻辑仍可能安排两笔入账。`EngineSession` 现在跨整段待处理批次及已 replay 批次检查结算经济键，并在全批校验通过前不调用有状态解码器。全量 **805 passed、5 CUDA-only skipped、53 warnings、457.16s**；全仓 Ruff 和 MyPy 105 个源码文件通过；11 wheels/11 sdists 及 11 包/5 entry point 隔离 smoke 通过。源/wheel manifest 在本地备份后刷新。账户现金流水、账户专属杠杆档位、Hedge Mode、独立验证样本和 Hosted CI 仍是待认证边界。
+2026-10-21 续做原生资金结算去重审计：不同源 ID 的 `funding_settlement` 若落在同一 instrument/settlement timestamp，旧逻辑仍可能安排两笔入账；`EngineSession` 现跨待处理和已 replay 批次检查结算经济键，并在全批校验前不调用有状态解码器。另修复数据审计会把相同 payload 的重复结算判为干净数据：现明确报告 `duplicate_funding_settlement` 并降为 DQ-D。全量 **806 passed、5 CUDA-only skipped、53 warnings、446.85s**；全仓 Ruff 和 MyPy 105 个源码文件通过；11 wheels/11 sdists 及 11 包/5 entry point 隔离 smoke 通过。源/wheel manifest 在本地备份后刷新。账户现金流水、账户专属杠杆档位、Hedge Mode、独立验证样本和 Hosted CI 仍是待认证边界。
 
 2026-10-21 完成费用/滑点预留后的杠杆限额修正，移除了 RouteB 包及接线，并修复 Windows staged-file 原子发布。严格字段和有符号手续费变更后的最新全量套件 **798 passed、5 CUDA-only skipped、53 warnings**；全量 Ruff 与 Windows MyPy（141 files）通过。11 wheels/11 sdists 已重建，wheel manifest `all_match=True`，11 个安装 wheel 及 entry point smoke 通过。负佣金返佣现由规则、transition 和经济报表按有符号资金流处理，杠杆成本预留仍只计正费用。杠杆仅在空仓、无订单后重建 session 才能修改。当前状态为本机工程验证通过，不等于交易所真实经济认证或跨平台 Hosted CI 放行。
 

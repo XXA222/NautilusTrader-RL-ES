@@ -548,9 +548,14 @@ class CuratedStore:
             else:
                 continue  # mark/index/funding updates may legitimately share event timestamps
             fingerprint = digest(p)
-            old = economic_keys.setdefault(key, fingerprint)
-            if old != fingerprint:
-                conflicting.add(str(key))
+            old = economic_keys.get(key)
+            if old is not None:
+                if event.kind == "funding_settlement":
+                    conflicting.add(f"duplicate_funding_settlement:{key[1]}:{key[2]}")
+                if old != fingerprint:
+                    conflicting.add(str(key))
+            else:
+                economic_keys[key] = fingerprint
         rules = sorted((e for e in self.events if e.kind == "instrument_rule"),
                        key=lambda e: (str(e.payload["instrument"]), e.payload["effective_ns"], e.event_id))
         for i, earlier in enumerate(rules):
@@ -711,6 +716,8 @@ class CuratedStore:
         if self._conflicts:
             grade = Grade.D
             findings.add("conflicting_economic_facts")
+        if any(conflict.startswith("duplicate_funding_settlement:") for conflict in self._conflicts):
+            findings.add("duplicate_funding_settlement")
         if any(e.availability_source == Availability.MISSING for e in selected):
             grade = Grade.D
             findings.add("availability_missing")
