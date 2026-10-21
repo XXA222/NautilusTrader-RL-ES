@@ -67,6 +67,20 @@ def validate_payload(kind: str, p: dict[str, Any], ts: int) -> None:
             raise DataError("trade_flow_1s low price is above an observed endpoint")
     elif kind in ("funding_update", "funding_settlement"):
         _number(p, "rate", signed=True)
+        interval = p.get("interval_minutes")
+        if interval is not None and (type(interval) is not int or interval <= 0):
+            raise DataError("interval_minutes must be a positive integer when provided")
+        if kind == "funding_update":
+            semantics = p.get("rate_semantics")
+            if semantics is not None and semantics != "last_settled_rate":
+                raise DataError("unsupported funding_update rate_semantics")
+            next_funding_value = p.get("next_funding_ns")
+            if next_funding_value is not None:
+                next_funding = require_ns(next_funding_value)
+                if next_funding <= ts:
+                    raise DataError("next_funding_ns must follow the update timestamp")
+                if semantics == "last_settled_rate":
+                    raise DataError("last settled funding rate cannot schedule a future payment")
         if kind == "funding_settlement":
             settlement_value = p.get("settlement_ns")
             if type(settlement_value) is not int:

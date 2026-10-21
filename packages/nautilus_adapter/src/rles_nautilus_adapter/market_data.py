@@ -107,6 +107,9 @@ class NativeMarketEventDecoder:
         if kind in {"funding_update", "funding_settlement"}:
             rate = self._decimal(payload, "rate")
             if kind == "funding_update":
+                semantics = payload.get("rate_semantics")
+                if semantics is not None and semantics != "last_settled_rate":
+                    raise EngineBoundaryError("unsupported native funding rate semantics")
                 boundary = payload.get("next_funding_ns")
                 interval = payload.get("interval_minutes")
                 if boundary is not None and (type(boundary) is not int or boundary <= ts_event):

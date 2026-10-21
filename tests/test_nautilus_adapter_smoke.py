@@ -817,6 +817,11 @@ def test_native_market_event_decoder_checks_index_quality_scope_and_funding_conf
             "instrument": str(instrument.id), "rate": "0.001",
             "rate_semantics": "last_settled_rate", "next_funding_ns": 600,
         }))
+    with pytest.raises(EngineBoundaryError, match="unsupported native funding rate semantics"):
+        decoder(market_event("unknown-rate-semantics", "funding_update", 501, {
+            "instrument": str(instrument.id), "rate": "0.001",
+            "rate_semantics": "settled_last_rate", "interval_minutes": 480,
+        }))
     with pytest.raises(EngineBoundaryError, match="conflicting funding rates"):
         decoder(market_event("settlement-conflict", "funding_settlement", 200, {
             "instrument": str(instrument.id), "rate": "0.002", "settlement_ns": 200,

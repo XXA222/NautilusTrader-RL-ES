@@ -32,6 +32,25 @@ def test_funding_settlement_requires_integer_native_timestamp() -> None:
         )
 
 
+def test_funding_update_rejects_unknown_semantics_and_invalid_schedule() -> None:
+    base = {"instrument": "ETHUSDT", "rate": "0.001"}
+    with pytest.raises(DataError, match="unsupported funding_update rate_semantics"):
+        validate_payload("funding_update", {**base, "rate_semantics": "last-settled-rate"}, 10)
+    with pytest.raises(DataError, match="last settled funding rate cannot schedule"):
+        validate_payload(
+            "funding_update", {**base, "rate_semantics": "last_settled_rate", "next_funding_ns": 20}, 10,
+        )
+    with pytest.raises(DataError, match="interval_minutes must be a positive integer"):
+        validate_payload("funding_update", {**base, "interval_minutes": 480.0}, 10)
+
+
+def test_funding_update_accepts_explicit_future_schedule_without_unknown_semantics() -> None:
+    validate_payload(
+        "funding_update", {"instrument": "ETHUSDT", "rate": "0.001",
+                           "interval_minutes": 480, "next_funding_ns": 20}, 10,
+    )
+
+
 def test_instrument_rule_rejects_noninteger_effective_timestamp() -> None:
     rule = {
         "instrument": "ETHUSDT",
