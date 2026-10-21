@@ -198,6 +198,12 @@ def test_flat_barrier_leverage_change_rebuilds_session_and_replays(tmp_path):
         _observation, _info = original.reset(seed=101)
         before = original._episode._snapshot
         old_engine = original._episode._session
+        with pytest.raises(ValueError, match="initial margin below dated maintenance margin"):
+            original.set_leverage("6")
+        assert original._episode._session is old_engine
+        assert original._episode._snapshot == before
+        assert original._episode.leverage_changes == ()
+
         observation = original.set_leverage("3")
         changed = original._episode._snapshot
         assert original._episode._session is not old_engine

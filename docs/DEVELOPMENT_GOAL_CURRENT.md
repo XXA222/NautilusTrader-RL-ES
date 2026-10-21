@@ -23,7 +23,7 @@
 
 最新执行记录还修正了 A09 的线性 NETTING 杠杆边界：2x 以上不再受 `maintenance_rate * leverage <= 1` 这一模型伪限制。固定杠杆通过 `StandardMarginModel` 的初始保证金 `dated_initial_rate / leverage` 实现，维持保证金直接使用 dated rule；配置只在有效初始保证金不低于维持保证金时接受。空仓、无订单的 session 重建、replay v3 和 checkpoint 恢复不变。3x 含实际原生持仓/维持保证金回归通过。外部交易所分档保证金经济和 Hedge Mode 仍未认证；A09 真实规则/经济认证保持 `PARTIAL`。外部依赖状态见[任务索引](DEVELOPMENT_GOALS_REVIEW_20261017.md)和[最新执行记录](DEVELOPMENT_PLAN_20261017.md)。
 
-2026-10-21 资金结算审计进一步发现 mark 精度被下单 tick 截断：ETHUSDT 开发 fixture 的 2,880 条 mark/index 中有 2,860 条精度高于 0.01 tick；延迟结算 `2000.123` 曾被舍入到 `2000.12`。现按发布精度构造 native mark/index 价格，实际 native 资金账本精度回归通过，黄金 equity/funding 随之更新。另修复 Windows process ancestry 将重用 PID 误判为父进程环。合并后的全量 **807 passed、5 CUDA-only skipped、53 warnings、456.40s**；全仓 Ruff 与 MyPy 105 个源码文件通过；11 wheels/11 sdists、11 包/5 entry point 隔离 smoke 通过。fixture 的交易规则仍是 scenario-only。账户现金流水、账户专属杠杆档位、Hedge Mode、独立验证样本和 Hosted CI 仍未认证。
+2026-10-21 资金结算审计进一步发现 mark 精度被下单 tick 截断：ETHUSDT 开发 fixture 的 2,880 条 mark/index 中有 2,860 条精度高于 0.01 tick；延迟结算 `2000.123` 曾被舍入到 `2000.12`。现按发布精度构造 native mark/index 价格，实际 native 资金账本精度回归通过，黄金 equity/funding 随之更新。另修复 Windows process ancestry 将重用 PID 误判为父进程环。合并后的全量 **808 passed、5 CUDA-only skipped、53 warnings、437.74s**；全仓 Ruff 与 MyPy 105 个源码文件通过；11 wheels/11 sdists、11 包/5 entry point 隔离 smoke 通过。fixture 的交易规则仍是 scenario-only。账户现金流水、账户专属杠杆档位、Hedge Mode、独立验证样本和 Hosted CI 仍未认证。
 
 2026-10-21 完成费用/滑点预留后的杠杆限额修正，移除了 RouteB 包及接线，并修复 Windows staged-file 原子发布。严格字段和有符号手续费变更后的最新全量套件 **798 passed、5 CUDA-only skipped、53 warnings**；全量 Ruff 与 Windows MyPy（141 files）通过。11 wheels/11 sdists 已重建，wheel manifest `all_match=True`，11 个安装 wheel 及 entry point smoke 通过。负佣金返佣现由规则、transition 和经济报表按有符号资金流处理，杠杆成本预留仍只计正费用。杠杆仅在空仓、无订单后重建 session 才能修改。当前状态为本机工程验证通过，不等于交易所真实经济认证或跨平台 Hosted CI 放行。
 
@@ -54,3 +54,5 @@ REST funding 导入再补了单行边界：只有一条结算时，接口数据�
 2026-10-21 REST funding cadence审计：首条 API 结算记录此前错误借用后续结算间隔；当频率切换时会将未来间隔误标给过去。现在首条记录不附推断 interval，后续只按前序可观察记录计算，last-settled feature 也不再携带/预测付款周期。针对 8h→4h 切换的回归通过。全量 **808 passed、5 CUDA-only skipped、53 warnings**；Ruff、MyPy 105 files、11 wheels/11 sdists 及 11 包/5 入口隔离 smoke 通过。此证据仍是代码回归，不认证账户现金流或账户专属资金规则。
 
 单条 REST 窄窗修复：单条结果已经携带明确结算时间、费率和 mark；无需推测 interval。已移除旧的“至少两条才能导入”拒绝，并用无 interval 的 delayed native settlement 验证仍按精确 mark 只扣一次。定向 6 passed，更新后的全量 **808 passed、5 CUDA-only skipped、53 warnings**；Ruff/MyPy 105 files、11 wheels/11 sdists 和 11 包/5 入口 smoke 通过。
+
+2026-10-21 动态杠杆边界复核：session 重建会经原生工厂重复校验 `dated_initial_rate / leverage >= dated_maintenance_rate`，非法杠杆在关闭旧引擎前拒绝。新增 6x 对 20% maintenance 的拒绝及旧 engine/账户快照/replay 记录不变回归；同屏障再成功切到 3x，整段 replay 仍恢复一致。最新全量 **808 passed、5 skipped、53 warnings、437.74s**。Binance 账户级分档保证金/真实资金流水及 Hedge Mode 仍未认证。
