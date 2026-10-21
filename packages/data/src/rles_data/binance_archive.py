@@ -332,10 +332,11 @@ def funding_api_events(content: bytes, *, symbol: str, instrument: str, source_u
                        expected_sha256: str, delay_ns: int) -> tuple[Event, ...]:
     """Normalize official REST funding history without claiming archive checksums.
 
-    Funding interval is derived from adjacent observed settlement timestamps because
-    the REST response does not publish a historical interval field. A single row
-    therefore uses the next row's observed gap; settlement timestamps may carry
-    millisecond jitter, so only gaps within one second of a whole minute pass.
+    Funding interval is derived from the previous observed settlement timestamp
+    because the REST response does not publish a historical interval field. The
+    first row has no preceding observation and therefore carries no interval.
+    Settlement timestamps may carry millisecond jitter, so only observed gaps
+    within one second of a whole minute pass.
     """
     if type(delay_ns) is not int or delay_ns <= 0:
         raise DataError("funding API ingress requires an explicit positive availability delay")
@@ -372,18 +373,20 @@ def funding_api_events(content: bytes, *, symbol: str, instrument: str, source_u
 
     result: list[Event] = []
     for index, (ts, rate, mark_price) in enumerate(normalized):
-        neighbor = normalized[index - 1][0] if index else normalized[index + 1][0]
-        gap_ns = abs(ts - neighbor)
-        minute_ns = 60 * 1_000_000_000
-        interval_minutes = round(gap_ns / minute_ns)
-        if interval_minutes <= 0 or abs(gap_ns - interval_minutes * minute_ns) > 1_000_000_000:
-            raise DataError("funding API settlement gap must be within one second of whole minutes")
+        interval_minutes = None
+        if index:
+            gap_ns = ts - normalized[index - 1][0]
+            minute_ns = 60 * 1_000_000_000
+            interval_minutes = round(gap_ns / minute_ns)
+            if interval_minutes <= 0 or abs(gap_ns - interval_minutes * minute_ns) > 1_000_000_000:
+                raise DataError("funding API settlement gap must be within one second of whole minutes")
+        settlement_payload = {"rate": rate, "settlement_ns": ts,
+                              "settlement_mark_price": mark_price}
+        if interval_minutes is not None:
+            settlement_payload["interval_minutes"] = interval_minutes
         for kind, payload in (
-            ("funding_settlement", {"rate": rate, "settlement_ns": ts,
-                                    "settlement_mark_price": mark_price,
-                                    "interval_minutes": interval_minutes}),
-            ("funding_update", {"rate": rate, "rate_semantics": "last_settled_rate",
-                                "interval_minutes": interval_minutes}),
+            ("funding_settlement", settlement_payload),
+            ("funding_update", {"rate": rate, "rate_semantics": "last_settled_rate"}),
         ):
             result.append(Event(
                 f"binance-api:{expected_sha256[:16]}:{kind}:{ts}", kind, ts,

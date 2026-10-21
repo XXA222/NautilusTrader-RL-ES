@@ -227,11 +227,35 @@ def test_funding_api_events_preserve_settlement_facts_and_observed_interval():
     assert [event.payload["settlement_mark_price"] for event in settlements] == [
         row["markPrice"] for row in rows
     ]
-    assert all(event.payload["interval_minutes"] == 480 for event in settlements)
+    assert [event.payload.get("interval_minutes") for event in settlements] == [None, 480]
     assert all(event.payload["rate_semantics"] == "last_settled_rate" for event in updates)
+    assert all("interval_minutes" not in event.payload for event in updates)
     assert all(event.availability_source == Availability.DERIVED for event in events)
     assert all(event.available_at_ns == event.ts_event_ns + 1_000_000 for event in events)
     assert all(event.source_hash == digest for event in events)
+
+
+def test_funding_api_events_do_not_assign_a_future_gap_to_the_first_settlement():
+    import json
+
+    base = 1_800_000_000_000
+    rows = [
+        {"symbol": "ETHUSDT", "fundingTime": base,
+         "fundingRate": "0.0001", "markPrice": "2000", "rateType": "Regular"},
+        {"symbol": "ETHUSDT", "fundingTime": base + 28_800_000,
+         "fundingRate": "0.0002", "markPrice": "2001", "rateType": "Regular"},
+        {"symbol": "ETHUSDT", "fundingTime": base + 43_200_000,
+         "fundingRate": "0.0003", "markPrice": "2002", "rateType": "Regular"},
+    ]
+    content = json.dumps(rows).encode("utf-8")
+    events = binance_archive.funding_api_events(
+        content, symbol="ETHUSDT", instrument="ETHUSDT-PERP.SIM",
+        source_url="https://fapi.binance.com/fapi/v1/fundingRate?fixture",
+        expected_sha256=sha256(content).hexdigest(), delay_ns=1_000_000,
+    )
+
+    settlements = [event for event in events if event.kind == "funding_settlement"]
+    assert [event.payload.get("interval_minutes") for event in settlements] == [None, 480, 240]
 
 
 def test_funding_api_events_reject_unsorted_or_non_minute_settlement_gaps():

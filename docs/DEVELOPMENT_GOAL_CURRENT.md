@@ -50,3 +50,5 @@ instrument_rule 现执行严格字段 allowlist，避免 exchange leverage brack
 REST funding 导入再补了单行边界：只有一条结算时，接口数据不足以推断 interval，原逻辑会抛 `IndexError`。现明确失败为 `DataError`，不猜测周期。定向套件 **55 passed**，目标 Ruff 和 MyPy 通过；最终全量 **802 passed、5 skipped、53 warnings、412.59s**。最终构建 11 wheels/11 sdists，隔离 smoke 加载 11 包和 5 个入口通过；source/wheel manifests 刷新和本地备份已完成。真实资金流水、账户分档保证金、Hedge Mode、独立验证数据及 Hosted CI 门禁不变。
 
 资金更新语义继续加固：数据 schema 和 native decoder 都拒绝未知的显式 `rate_semantics`，并校验 funding interval 与 future settlement timestamp；`last_settled_rate` 不能携带未来结算时间。现有未标语义且明确给了 future boundary 的预测更新保持兼容。定向 72 passed；最终全量 **804 passed、5 skipped、53 warnings、466.08s**；全仓 Ruff 和 MyPy 105 files 通过。最终 wheel 构建、manifest 和本地备份本轮收尾。
+
+2026-10-21 REST funding cadence审计：首条 API 结算记录此前错误借用后续结算间隔；当频率切换时会将未来间隔误标给过去。现在首条记录不附推断 interval，后续只按前序可观察记录计算，last-settled feature 也不再携带/预测付款周期。针对 8h→4h 切换的回归通过。全量 **808 passed、5 CUDA-only skipped、53 warnings**；Ruff、MyPy 105 files、11 wheels/11 sdists 及 11 包/5 入口隔离 smoke 通过。此证据仍是代码回归，不认证账户现金流或账户专属资金规则。
