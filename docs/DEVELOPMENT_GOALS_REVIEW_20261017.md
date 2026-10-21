@@ -75,7 +75,7 @@ M1.1 已通过实现等价验收。M1.2 默认保留旧 `FitnessSpec`；新 `con
 | 13 / M3.3 | A14 | PASS（Train-inner 诊断）/ 未晋级 | 36 份冻结 Base/Stress 报告完成 51,732 步逐决策归因、固定状态分组和区块 bootstrap；权益对账通过，零 Validation/Test/Holdout 查询；冻结 RL 全部落入 deadband、无实际敞口/成交，未通过跨窗口基线优势门槛 |
 | 14 / M3.4 | A11/A14 | CONDITIONAL | 上述研究门禁及合格独立窗口；先小预算筛查，再决定路线扩张 |
 | 15 / M4.1 | A09 | PARTIAL（合约单位实现与合成 BTC/ETH/SOL 回归通过；真实规则/费用认证待外部证据） | 规则事件可携带哈希绑定的显式 `contract_spec`；非 legacy 标的缺规格即拒绝。历史工厂、特征单位、观测账户币种、数量规划及原生线性永续消费该规格；手续费、Funding、成交额、滑点和权益对账统一使用冻结乘数。BTC/ETH/SOL 同构小样本覆盖不同乘数、数量精度、最小数量/名义额、Funding 费用币种及平仓/持仓权益单位；ETH golden 保持回归通过。该合成工程范围完成，真实交易所规则/费用与经济认证仍受 M0.1/M2.3 等门禁约束 |
-| 16 / M4.2 | A09 | PARTIAL / Hedge Mode DEFERRED | linear NETTING 固定杠杆和空仓重建已实现；Hedge Mode 及真实分档保证金/清算/Funding 合同与金标准数据待定义 |
+| 16 / M4.2 | A09 | PARTIAL / Hedge Mode DEFERRED | linear NETTING 固定杠杆和空仓无订单后重建已实现；2x/10x 与动态 3x 的 native initial/maintenance margin 已回归。`account.initial_margin` 现合并原生挂单预留及按持仓、mark、杠杆计算的初始保证金。最新全量 819 passed、5 CUDA-only skipped；Ruff/MyPy、11 wheels/11 sdists、wheel manifest 和隔离 smoke 通过。Hedge Mode 及真实账户分档保证金/清算/Funding 合同与金标准数据待定义 |
 
 依赖只约束依赖它的工作：远程 CI、历史规则或真实深度阻塞时，可以继续不依赖该证据的工程修复与明确标注的 Train-inner 诊断。M1 的 P0 工作不必等待真实深度或正式 Holdout。依赖未满足时不得开启正式晋级实验，也不得把可推进的工程项一起搁置。
 
