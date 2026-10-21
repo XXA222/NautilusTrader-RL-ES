@@ -1,7 +1,7 @@
 {
   "schema": "rles.source-manifest.v1",
-  "generated_at_utc": "2026-10-21T04:08:00.590804+00:00",
-  "source_identity_sha256": "88221b6b3395fb1fb315615c05308a623339d36c42bac2de0b2def533be1dc6c",
+  "generated_at_utc": "2026-10-21T04:09:51.341418+00:00",
+  "source_identity_sha256": "0d5c14ad47832879660c4903d450cb3b15c48fadcc30ba9de84ceccc3e549564",
   "scope": {
     "included": [
       ".gitattributes",
@@ -341,15 +341,12 @@
   },
   "workspace_git": {
     "path": ".",
-    "commit": "14a66e66edf7015e8d8706169187949e0e2922c7",
+    "commit": "e69e8da715f58d56969d776391e21e534bd311e3",
     "tracked_worktree_clean": false,
     "status_entries": [
-      " M docs/DEVELOPMENT_GOALS_REVIEW_20261017.md",
-      " M docs/DEVELOPMENT_GOAL_CURRENT.md",
-      " M docs/DEVELOPMENT_PLAN_20261017.md",
-      " M tests/test_binance_cashflows.py"
+      " M docs/DEVELOPMENT_PLAN_20261017.md"
     ],
-    "tracked_diff_sha256": "9e49070b016ec2bed3ea028215445c787c20ab0a2c33e4b0dd9437ce936d12e4"
+    "tracked_diff_sha256": "5b5a4e8228936dc38760e8839a21ce6f367293ac573412674239046e8b92cef8"
   },
   "files": [
     {
